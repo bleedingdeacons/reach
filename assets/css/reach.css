@@ -1,0 +1,278 @@
+/*
+ * Reach — mobile-first styles.
+ *
+ * One stylesheet for both pages. Built on a single column, large
+ * touch targets (44px+ following the iOS / WCAG guideline), and a
+ * neutral palette that doesn't compete with whatever the host site
+ * looks like — Reach pages don't inherit theme chrome, so they need
+ * to be self-contained but also unremarkable.
+ *
+ * No CSS framework, no preprocessor — the whole file is small enough
+ * that the cost of a build step would dwarf the cost of editing the
+ * file directly.
+ */
+
+* { box-sizing: border-box; }
+
+:root {
+    --reach-bg: #f5f6f8;
+    --reach-card: #ffffff;
+    --reach-text: #1a1d21;
+    --reach-muted: #5b6471;
+    --reach-border: #d8dce2;
+    --reach-accent: #1f6feb;
+    --reach-accent-hover: #1857c0;
+    --reach-error: #b3261e;
+    --reach-success: #1f7a3a;
+    --reach-radius: 12px;
+    --reach-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.04);
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--reach-bg);
+    color: var(--reach-text);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    min-height: 100vh;
+    min-height: 100svh;
+}
+
+.reach-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100svh;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+
+.reach-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: var(--reach-muted);
+}
+.reach-header__who {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+}
+.reach-signout {
+    background: transparent;
+    border: 1px solid var(--reach-border);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font: inherit;
+    color: var(--reach-text);
+    min-height: 36px;
+    cursor: pointer;
+}
+.reach-signout:active { background: var(--reach-bg); }
+
+.reach-card {
+    background: var(--reach-card);
+    border-radius: var(--reach-radius);
+    padding: 24px 20px;
+    box-shadow: var(--reach-shadow);
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    flex: 1 0 auto;
+}
+
+.reach-title {
+    margin: 0 0 8px;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+.reach-subtitle {
+    margin: 0 0 24px;
+    color: var(--reach-muted);
+    font-size: 15px;
+}
+
+.reach-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.reach-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 16px;
+    border: 1px solid var(--reach-border);
+    border-radius: var(--reach-radius);
+    background: #fff;
+    color: var(--reach-text);
+    font: 500 16px/1.2 inherit;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .15s ease, border-color .15s ease;
+}
+.reach-btn:active { background: var(--reach-bg); }
+.reach-btn:disabled { opacity: .5; cursor: not-allowed; }
+.reach-btn__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    font-weight: 700;
+    font-size: 18px;
+    flex: 0 0 auto;
+}
+
+.reach-btn--google     .reach-btn__icon { color: #4285f4; }
+.reach-btn--microsoft  .reach-btn__icon { color: #00a4ef; }
+.reach-btn--apple      { background: #000; color: #fff; border-color: #000; }
+.reach-btn--apple:active { background: #1a1a1a; }
+
+.reach-btn--primary {
+    background: var(--reach-accent);
+    color: #fff;
+    border-color: var(--reach-accent);
+    position: relative;
+}
+.reach-btn--primary:active { background: var(--reach-accent-hover); border-color: var(--reach-accent-hover); }
+.reach-btn--primary.is-loading .reach-btn__label { visibility: hidden; }
+.reach-btn--primary .reach-btn__spinner { display: none; }
+.reach-btn--primary.is-loading .reach-btn__spinner {
+    display: block;
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: reach-spin .8s linear infinite;
+}
+@keyframes reach-spin { to { transform: rotate(360deg); } }
+
+.reach-fineprint {
+    color: var(--reach-muted);
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.reach-form {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 20px;
+}
+.reach-label {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--reach-text);
+    display: block;
+    margin-bottom: 6px;
+}
+.reach-input {
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 14px;
+    border: 1px solid var(--reach-border);
+    border-radius: var(--reach-radius);
+    background: #fff;
+    color: var(--reach-text);
+    font: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+}
+.reach-input:focus {
+    outline: none;
+    border-color: var(--reach-accent);
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, .15);
+}
+
+.reach-fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.reach-fieldset .reach-label { margin-bottom: 4px; }
+.reach-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--reach-border);
+    border-radius: var(--reach-radius);
+    font-size: 15px;
+    cursor: pointer;
+    min-height: 44px;
+}
+.reach-check input { width: 18px; height: 18px; accent-color: var(--reach-accent); }
+
+.reach-status {
+    min-height: 1.5em;
+    font-size: 14px;
+    color: var(--reach-muted);
+    margin: 8px 0 4px;
+}
+.reach-status.is-error { color: var(--reach-error); }
+.reach-status.is-success { color: var(--reach-success); }
+
+.reach-error {
+    color: var(--reach-error);
+    font-size: 14px;
+}
+
+.reach-results {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.reach-result {
+    padding: 16px;
+    border: 1px solid var(--reach-border);
+    border-radius: var(--reach-radius);
+    background: #fff;
+}
+.reach-result__top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.reach-result__name { font-weight: 600; font-size: 16px; }
+.reach-result__dist { font-size: 13px; color: var(--reach-muted); }
+.reach-result__contact { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.reach-result__contact a {
+    color: var(--reach-accent);
+    text-decoration: none;
+    font-weight: 500;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+}
+.reach-result__contact a:active { text-decoration: underline; }
+.reach-result__accepts {
+    font-size: 13px;
+    color: var(--reach-muted);
+    margin-top: 8px;
+}
+
+@media (min-width: 640px) {
+    .reach-page { padding-top: 48px; padding-bottom: 48px; }
+}
