@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\Admin\SettingsPage;
 use Reach\Core\ReachServiceProvider;
 use Reach\Frontend\PageRouter;
+use Reach\Rest\CallAttemptController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Psr\Container\ContainerInterface;
@@ -56,6 +57,7 @@ class Plugin
         // REST controllers.
         self::$container->get(OAuthController::class)->register();
         self::$container->get(NearestMembersController::class)->register();
+        self::$container->get(CallAttemptController::class)->register();
 
         // Frontend pages (rewrite rules + template_redirect).
         self::$container->get(PageRouter::class)->register();

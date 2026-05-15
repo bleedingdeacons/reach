@@ -29,6 +29,7 @@ if (!defined('ABSPATH')) {
 /** @var \Reach\Session\Session|null $session */
 $email = $session !== null ? $session->email : '';
 $restUrl  = esc_url(rest_url('reach/v1/nearest-members'));
+$attemptsUrl = esc_url(rest_url('reach/v1/call-attempts'));
 $signOutUrl = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl = esc_url(home_url('/reach/signin'));
 $nonce = wp_create_nonce('wp_rest');
@@ -81,6 +82,7 @@ $nonce = wp_create_nonce('wp_rest');
     <script>
         window.REACH_CONFIG = {
             restUrl: <?php echo wp_json_encode($restUrl); ?>,
+            attemptsUrl: <?php echo wp_json_encode($attemptsUrl); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
             signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
             nonce: <?php echo wp_json_encode($nonce); ?>

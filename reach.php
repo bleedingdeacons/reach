@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Reach
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple; mobile-first member finder powered by Compass. Requires Unity, Scrutiny, and Compass.
- * Version: 0.1.0
+ * Version: 1.0.1
  * Requires at least: 6.1
  * Requires PHP: 8.1
  * Requires Plugins: unity, scrutiny, compass
@@ -125,6 +125,12 @@ register_activation_hook(__FILE__, function () {
     // Ensure our frontend routes are reachable on first activation.
     \Reach\Frontend\PageRouter::addRewriteRules();
     flush_rewrite_rules();
+
+    // Install/upgrade the call-attempts table. dbDelta is idempotent
+    // and diffs against the live schema, so this is safe on every
+    // activation including upgrades.
+    global $wpdb;
+    \Reach\CallAttempts\WpdbCallAttemptRepository::install($wpdb);
 });
 
 register_deactivation_hook(__FILE__, function () {

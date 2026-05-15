@@ -17,7 +17,12 @@ use Reach\Auth\Providers\AppleProvider;
 use Reach\Auth\Providers\GoogleProvider;
 use Reach\Auth\Providers\MicrosoftProvider;
 use Reach\Auth\StateStore;
+use Reach\CallAttempts\AttemptTokenMinter;
+use Reach\CallAttempts\CallAttemptRepository;
+use Reach\CallAttempts\ResponsivenessScorer;
+use Reach\CallAttempts\WpdbCallAttemptRepository;
 use Reach\Frontend\PageRouter;
+use Reach\Rest\CallAttemptController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Session\CurrentSession;
@@ -65,6 +70,14 @@ final class ReachServiceProvider
             return $registry;
         });
 
+        // Call-attempt logging & responsiveness signal.
+        $container->register(AttemptTokenMinter::class, fn() => new AttemptTokenMinter());
+        $container->register(ResponsivenessScorer::class, fn() => new ResponsivenessScorer());
+        $container->register(CallAttemptRepository::class, function () {
+            global $wpdb;
+            return new WpdbCallAttemptRepository($wpdb);
+        });
+
         // REST controllers.
         $container->register(OAuthController::class, fn(ContainerInterface $c) => new OAuthController(
             $c->get(ProviderRegistry::class),
@@ -77,6 +90,17 @@ final class ReachServiceProvider
             $c->get(AuditLogger::class),
             $c->get(CurrentSession::class),
             $c->get(Settings::class),
+            $c->get(CallAttemptRepository::class),
+            $c->get(ResponsivenessScorer::class),
+            $c->get(AttemptTokenMinter::class),
+        ));
+
+        $container->register(CallAttemptController::class, fn(ContainerInterface $c) => new CallAttemptController(
+            $c->get(CallAttemptRepository::class),
+            $c->get(AttemptTokenMinter::class),
+            $c->get(CurrentSession::class),
+            $c->get(Settings::class),
+            $c->get(AuditLogger::class),
         ));
 
         // Frontend + admin.

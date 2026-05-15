@@ -11,6 +11,9 @@ if (!defined('ABSPATH')) {
 use Compass\Resolution\NearestMembersResolver;
 use Compass\Resolution\ResolutionResult;
 use Compass\Resolution\ScoredMember;
+use Reach\CallAttempts\AttemptTokenMinter;
+use Reach\CallAttempts\CallAttemptRepository;
+use Reach\CallAttempts\ResponsivenessScorer;
 use Reach\Core\Settings;
 use Reach\Session\CurrentSession;
 use Scrutiny\Audit\Interfaces\AuditLogger;
@@ -70,6 +73,9 @@ final class NearestMembersController
         private readonly AuditLogger $auditLogger,
         private readonly CurrentSession $session,
         private readonly Settings $settings,
+        private readonly CallAttemptRepository $callAttempts,
+        private readonly ResponsivenessScorer $scorer,
+        private readonly AttemptTokenMinter $attemptTokens,
     ) {
     }
 
@@ -191,17 +197,42 @@ final class NearestMembersController
 
     private function projectResponse(ResolutionResult $result): array
     {
+        $now = time();
+        $session = $this->session->get();
+        $viewerEmail = $session !== null ? $session->email : '';
+
+        // Pull recent attempts in one query, score in PHP. The query is
+        // bounded by the current result-set's member ids, so it stays
+        // small even on a busy install.
+        $memberIds = array_map(
+            static fn(ScoredMember $sm): int => $sm->member->getId(),
+            $result->members,
+        );
+        $recentAttempts = $this->callAttempts->forMembersSince(
+            $memberIds,
+            ResponsivenessScorer::LOOKBACK_SECONDS,
+            $now,
+        );
+        $badges = $this->scorer->scoreMany($memberIds, $recentAttempts);
+
         $members = array_map(
-            function (ScoredMember $scored): array {
+            function (ScoredMember $scored) use ($badges, $viewerEmail, $now): array {
                 $m = $scored->member;
+                $id = $m->getId();
                 return [
-                    'id'              => $m->getId(),
+                    'id'              => $id,
                     'anonymous_name'  => $m->getAnonymousName(),
                     'area'            => $m->getArea(),
                     'accepts'         => $m->getAccepts(),
                     'personal_email'  => $m->getPersonalEmail(),
                     'mobile_number'   => $m->getMobileNumber(),
                     'distance_km'     => round($scored->distanceKm, 1),
+                    'responsiveness'  => $badges[$id] ?? null,
+                    // Bind a token so the find-page can log an outcome
+                    // for *this* member without re-fetching the list.
+                    'attempt_token'   => $viewerEmail !== ''
+                        ? $this->attemptTokens->mint($viewerEmail, $id, $now)
+                        : null,
                 ];
             },
             $result->members

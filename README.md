@@ -68,6 +68,29 @@ No WordPress users are created. There is no server-side session table. The cooki
 | `/reach/v1/oauth/signout`                  | POST   | Clear the session cookie           |
 | `/reach/v1/session`                        | GET    | Returns current session info       |
 | `/reach/v1/nearest-members`                | GET    | Same shape as Compass's endpoint   |
+| `/reach/v1/call-attempts`                  | POST   | Record an attempt to call a member |
+
+## Call attempts and responsiveness signal
+
+Each result on the find page can show a short badge — *Reached recently*, *No recent reply*, or *Number may be out of date* — and three outcome buttons under the contact links: **Spoke**, **No answer**, **Wrong / bad number**. The badge is a coarse hint to the next caller; the buttons let the current caller record what happened.
+
+Outcomes are stored in `wp_reach_call_attempts` (one row per attempt). Rules:
+
+- Only the Reach user who was shown a member can log an outcome for that member. Each result carries a short-lived HMAC token binding (viewer email, member id); the POST verifies it.
+- Repeat taps by the same viewer against the same member within 30 minutes update the existing row instead of creating duplicates.
+- Every recorded attempt creates one Scrutiny audit entry with the outcome and viewer in the source detail. The free-text `note` field is for the caller's own context and is **never** written to the audit trail.
+
+Badges are computed at request time over the last 14 days from `wp_reach_call_attempts`. Thresholds (in `ResponsivenessScorer`):
+
+- *Reached recently* — at least one `reached` outcome in the window. Beats everything else.
+- *Number may be out of date* — `wrong_or_bad_number` reports from 2+ distinct viewers.
+- *No recent reply* — `no_answer` outcomes totalling 3+, from 2+ distinct viewers, with no successful `reached` in the window.
+
+The distinct-viewer requirement is deliberate: it prevents a single frustrated caller from labelling a member unresponsive.
+
+### Privacy note
+
+Members do not directly see these badges, but the signal *is* a new kind of data exposure: other Reach users can see that a member hasn't been answering recently. Admins should mention this in their member onboarding so it isn't a surprise. The badges are intentionally coarse — no counts, no dates, no caller identities are surfaced to other users.
 
 ## Audit logging
 

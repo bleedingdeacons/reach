@@ -1,39 +1,95 @@
 /*
- * Reach — mobile-first styles.
+ * Reach — mobile-first styles (Material 3).
  *
- * One stylesheet for both pages. Built on a single column, large
- * touch targets (44px+ following the iOS / WCAG guideline), and a
- * neutral palette that doesn't compete with whatever the host site
- * looks like — Reach pages don't inherit theme chrome, so they need
- * to be self-contained but also unremarkable.
+ * One stylesheet for both pages (signin.php and find.php). Built on a
+ * single column, large touch targets (M3 spec: 48dp minimum), and the
+ * Material 3 visual language: filled tonal surfaces on a low-chroma
+ * neutral background, 12px card corners, pill-shaped primary actions,
+ * elevation-1 cards / elevation-2 primary buttons, and a single
+ * accent colour seeded from the M3 baseline palette (Primary 40).
+ *
+ * Class names are unchanged from the previous stylesheet so the PHP
+ * templates do not need to be updated. The visual treatment underneath
+ * has been ported from the MAUI M3 styles in Styles.xaml — elevations,
+ * corner radii, button heights, tonal/text button variants, and the
+ * disabled-button override that explicitly forces a flat surface
+ * (rather than relying on Opacity, which is unreliable across
+ * platforms — same reasoning applies on the web: a translucent
+ * disabled button on a tinted background reads as the wrong colour,
+ * so we force the surface explicitly).
  *
  * No CSS framework, no preprocessor — the whole file is small enough
- * that the cost of a build step would dwarf the cost of editing the
- * file directly.
+ * that the cost of a build step would dwarf the cost of editing it
+ * directly.
  */
 
 * { box-sizing: border-box; }
 
 :root {
-    --reach-bg: #f5f6f8;
-    --reach-card: #ffffff;
-    --reach-text: #1a1d21;
-    --reach-muted: #5b6471;
-    --reach-border: #d8dce2;
-    --reach-accent: #1f6feb;
-    --reach-accent-hover: #1857c0;
-    --reach-error: #b3261e;
-    --reach-success: #1f7a3a;
-    --reach-radius: 12px;
-    --reach-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.04);
+    /* ── M3 colour roles (baseline, Primary 40 / blue) ───────────── */
+    --m3-primary:           #1f6feb;
+    --m3-on-primary:        #ffffff;
+    --m3-primary-container: #d9e6ff;
+    --m3-on-primary-container: #0a2a66;
+
+    --m3-surface:           #ffffff;
+    --m3-surface-dim:       #f5f6f8;        /* page background */
+    --m3-surface-container: #eef0f4;        /* tonal button fill */
+    --m3-surface-variant:   #e3e5ea;        /* disabled button fill */
+    --m3-on-surface:        #1a1d21;
+    --m3-on-surface-variant: #5b6471;       /* muted text */
+    --m3-outline:           #c4c8d0;
+
+    --m3-error:             #b3261e;
+    --m3-success:           #1f7a3a;
+
+    /* Disabled-state foreground (M3: on-surface @ 38%) — solid hex
+       so it overrides any inherited colour without needing alpha. */
+    --m3-on-surface-disabled: #9aa0a8;
+
+    /* ── M3 shape ─────────────────────────────────────────────────
+       Corner radii follow the XAML: 12 for cards, 20 for the primary
+       button, 18 for the text-button height/2 (pill), 8 for inputs. */
+    --m3-corner-card:    12px;
+    --m3-corner-button:  20px;
+    --m3-corner-text-btn: 18px;
+    --m3-corner-input:    8px;
+
+    /* ── M3 elevation tokens (ported from Styles.xaml) ────────────
+       Elevation 1 = M3Elevation1 (Black 0.10, radius 3, offset 0,1)
+       Elevation 2 = M3Elevation2 (Black 0.18, radius 10, offset 0,4)
+       The first shadow in each token is a hairline ambient layer,
+       the second is the key-light drop — same two-shadow technique
+       Material uses everywhere. */
+    --m3-elev-1: 0 1px 2px rgba(0, 0, 0, .06),
+                 0 1px 3px rgba(0, 0, 0, .10);
+    --m3-elev-2: 0 2px 4px rgba(0, 0, 0, .08),
+                 0 4px 10px rgba(0, 0, 0, .18);
+
+    /* ── Legacy aliases ──────────────────────────────────────────
+       Existing rules referenced --reach-bg / --reach-card / etc.
+       Keeping the names mapped to the new tokens means a future
+       maintainer can grep for either set. */
+    --reach-bg:           var(--m3-surface-dim);
+    --reach-card:         var(--m3-surface);
+    --reach-text:         var(--m3-on-surface);
+    --reach-muted:        var(--m3-on-surface-variant);
+    --reach-border:       var(--m3-outline);
+    --reach-accent:       var(--m3-primary);
+    --reach-accent-hover: var(--m3-on-primary-container);
+    --reach-error:        var(--m3-error);
+    --reach-success:      var(--m3-success);
+    --reach-radius:       var(--m3-corner-card);
+    --reach-shadow:       var(--m3-elev-1);
 }
 
 html, body {
     margin: 0;
     padding: 0;
-    background: var(--reach-bg);
-    color: var(--reach-text);
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--m3-surface-dim);
+    color: var(--m3-on-surface);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
     -webkit-text-size-adjust: 100%;
     min-height: 100vh;
     min-height: 100svh;
@@ -47,13 +103,15 @@ html, body {
     padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
 }
 
+/* ── Header ─────────────────────────────────────────────────────── */
+
 .reach-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
     font-size: 14px;
-    color: var(--reach-muted);
+    color: var(--m3-on-surface-variant);
 }
 .reach-header__who {
     overflow: hidden;
@@ -61,23 +119,33 @@ html, body {
     white-space: nowrap;
     max-width: 60%;
 }
+
+/* Sign-out — M3 text button. Transparent fill, Primary text, pill. */
 .reach-signout {
     background: transparent;
-    border: 1px solid var(--reach-border);
-    border-radius: 999px;
+    border: 0;
+    border-radius: var(--m3-corner-text-btn);
     padding: 8px 14px;
-    font: inherit;
-    color: var(--reach-text);
+    font: 600 14px/1.2 inherit;
+    color: var(--m3-primary);
     min-height: 36px;
     cursor: pointer;
+    transition: background-color .15s ease;
 }
-.reach-signout:active { background: var(--reach-bg); }
+.reach-signout:hover  { background: rgba(31, 111, 235, .08); }
+.reach-signout:active { background: rgba(31, 111, 235, .12); }
+.reach-signout:focus-visible {
+    outline: 2px solid var(--m3-primary);
+    outline-offset: 2px;
+}
+
+/* ── M3 card surface ────────────────────────────────────────────── */
 
 .reach-card {
-    background: var(--reach-card);
-    border-radius: var(--reach-radius);
+    background: var(--m3-surface);
+    border-radius: var(--m3-corner-card);
     padding: 24px 20px;
-    box-shadow: var(--reach-shadow);
+    box-shadow: var(--m3-elev-1);
     width: 100%;
     max-width: 480px;
     margin: 0 auto;
@@ -86,14 +154,16 @@ html, body {
 
 .reach-title {
     margin: 0 0 8px;
-    font-size: 22px;
+    font-size: 24px;          /* M3 headline-small */
     font-weight: 600;
     line-height: 1.25;
+    letter-spacing: 0;
 }
 .reach-subtitle {
     margin: 0 0 24px;
-    color: var(--reach-muted);
-    font-size: 15px;
+    color: var(--m3-on-surface-variant);
+    font-size: 14px;
+    line-height: 1.43;
 }
 
 .reach-buttons {
@@ -103,26 +173,51 @@ html, body {
     margin-bottom: 24px;
 }
 
+/* ── M3 buttons ─────────────────────────────────────────────────── */
+
+/*
+ * Default .reach-btn = M3 outlined button. Used by the OAuth provider
+ * buttons (Google, Microsoft) — neutral surface with a thin outline
+ * and the Primary tint applied via the icon colour modifiers below.
+ *
+ * Height = 56 to match M3PrimaryButtonStyle. M3 strictly uses 40 for
+ * outlined and 56 for filled, but on a mobile-first sign-in screen
+ * matching the primary action height keeps the column visually
+ * balanced (all the OAuth choices look like equal-weight options),
+ * so we deliberately diverge from the spec here.
+ */
 .reach-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 12px;
     width: 100%;
-    min-height: 48px;
-    padding: 12px 16px;
-    border: 1px solid var(--reach-border);
-    border-radius: var(--reach-radius);
-    background: #fff;
-    color: var(--reach-text);
-    font: 500 16px/1.2 inherit;
+    min-height: 56px;
+    padding: 0 24px;
+    border: 1px solid var(--m3-outline);
+    border-radius: var(--m3-corner-button);
+    background: var(--m3-surface);
+    color: var(--m3-on-surface);
+    font: 600 16px/1.2 inherit;
     text-decoration: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: background-color .15s ease, border-color .15s ease;
+    transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.reach-btn:active { background: var(--reach-bg); }
-.reach-btn:disabled { opacity: .5; cursor: not-allowed; }
+.reach-btn:hover  { background: rgba(31, 111, 235, .04); }
+.reach-btn:active { background: rgba(31, 111, 235, .10); }
+.reach-btn:focus-visible {
+    outline: 2px solid var(--m3-primary);
+    outline-offset: 2px;
+}
+.reach-btn:disabled {
+    background: var(--m3-surface-variant);
+    color: var(--m3-on-surface-disabled);
+    border-color: transparent;
+    cursor: not-allowed;
+    box-shadow: none;
+    opacity: 1;
+}
 .reach-btn__icon {
     display: inline-flex;
     align-items: center;
@@ -137,15 +232,34 @@ html, body {
 .reach-btn--google     .reach-btn__icon { color: #4285f4; }
 .reach-btn--microsoft  .reach-btn__icon { color: #00a4ef; }
 .reach-btn--apple      { background: #000; color: #fff; border-color: #000; }
-.reach-btn--apple:active { background: #1a1a1a; }
+.reach-btn--apple:hover  { background: #1a1a1a; }
+.reach-btn--apple:active { background: #2a2a2a; }
 
+/*
+ * .reach-btn--primary = M3PrimaryButtonStyle. Filled Primary surface,
+ * white text, elevation-2, pressed state at 0.85 opacity (matches the
+ * XAML's <VisualState x:Name="Pressed"><Setter Opacity="0.85" />).
+ *
+ * The disabled override forces a flat surface-variant fill rather than
+ * dimming the enabled colour — same reason as the XAML comment about
+ * Android: a 50% opacity blue on a tinted card just reads as a paler
+ * blue, not as "this button is disabled".
+ */
 .reach-btn--primary {
-    background: var(--reach-accent);
-    color: #fff;
-    border-color: var(--reach-accent);
+    background: var(--m3-primary);
+    color: var(--m3-on-primary);
+    border-color: transparent;
+    box-shadow: var(--m3-elev-2);
     position: relative;
 }
-.reach-btn--primary:active { background: var(--reach-accent-hover); border-color: var(--reach-accent-hover); }
+.reach-btn--primary:hover  { background: #1a63d6; }
+.reach-btn--primary:active { background: #1857c0; box-shadow: var(--m3-elev-1); }
+.reach-btn--primary:disabled {
+    background: var(--m3-surface-variant);
+    color: var(--m3-on-surface-disabled);
+    border-color: transparent;
+    box-shadow: none;
+}
 .reach-btn--primary.is-loading .reach-btn__label { visibility: hidden; }
 .reach-btn--primary .reach-btn__spinner { display: none; }
 .reach-btn--primary.is-loading .reach-btn__spinner {
@@ -153,7 +267,7 @@ html, body {
     position: absolute;
     width: 18px;
     height: 18px;
-    border: 2px solid rgba(255,255,255,.4);
+    border: 2px solid rgba(255, 255, 255, .4);
     border-top-color: #fff;
     border-radius: 50%;
     animation: reach-spin .8s linear infinite;
@@ -161,11 +275,13 @@ html, body {
 @keyframes reach-spin { to { transform: rotate(360deg); } }
 
 .reach-fineprint {
-    color: var(--reach-muted);
-    font-size: 13px;
+    color: var(--m3-on-surface-variant);
+    font-size: 12px;          /* M3 body-small */
     line-height: 1.5;
     margin: 0;
 }
+
+/* ── Form fields ────────────────────────────────────────────────── */
 
 .reach-form {
     display: flex;
@@ -176,27 +292,38 @@ html, body {
 .reach-label {
     font-weight: 500;
     font-size: 14px;
-    color: var(--reach-text);
+    color: var(--m3-on-surface);
     display: block;
     margin-bottom: 6px;
 }
+
+/*
+ * Text input — M3 "filled" text field, simplified for a non-floating
+ * label. Tinted fill, no full border, only a 1px bottom indicator
+ * that thickens to 2px in Primary on focus. This is closer to the
+ * M3 spec than the previous all-around border.
+ */
 .reach-input {
     width: 100%;
-    min-height: 48px;
+    min-height: 56px;
     padding: 12px 14px;
-    border: 1px solid var(--reach-border);
-    border-radius: var(--reach-radius);
-    background: #fff;
-    color: var(--reach-text);
+    border: 0;
+    border-bottom: 1px solid var(--m3-outline);
+    border-radius: var(--m3-corner-input) var(--m3-corner-input) 0 0;
+    background: var(--m3-surface-container);
+    color: var(--m3-on-surface);
     font: inherit;
     -webkit-appearance: none;
     appearance: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
 }
 .reach-input:focus {
     outline: none;
-    border-color: var(--reach-accent);
-    box-shadow: 0 0 0 3px rgba(31, 111, 235, .15);
+    border-bottom: 2px solid var(--m3-primary);
+    padding-bottom: 11px;   /* keep the text from jumping when the border thickens */
 }
+
+/* ── Checkbox group ─────────────────────────────────────────────── */
 
 .reach-fieldset {
     border: 0;
@@ -207,32 +334,56 @@ html, body {
     gap: 10px;
 }
 .reach-fieldset .reach-label { margin-bottom: 4px; }
+
+/*
+ * Checkbox row styled as an M3 filter chip — tonal surface, pill
+ * corner, single-tap target. Keeps the native checkbox visible
+ * because the find page's checkbox values are now the wire tokens
+ * (accepts-male etc.) and screen readers still need real inputs.
+ */
 .reach-check {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--reach-border);
-    border-radius: var(--reach-radius);
-    font-size: 15px;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: var(--m3-corner-button);
+    background: var(--m3-surface-container);
+    color: var(--m3-on-surface);
+    font-size: 14px;
+    font-weight: 500;
     cursor: pointer;
-    min-height: 44px;
+    min-height: 48px;
+    transition: background-color .15s ease;
 }
-.reach-check input { width: 18px; height: 18px; accent-color: var(--reach-accent); }
+.reach-check:hover  { background: #e5e8ed; }
+.reach-check:has(input:checked) {
+    background: var(--m3-primary-container);
+    color: var(--m3-on-primary-container);
+}
+.reach-check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--m3-primary);
+}
+
+/* ── Status / error / success ───────────────────────────────────── */
 
 .reach-status {
     min-height: 1.5em;
     font-size: 14px;
-    color: var(--reach-muted);
+    color: var(--m3-on-surface-variant);
     margin: 8px 0 4px;
 }
-.reach-status.is-error { color: var(--reach-error); }
-.reach-status.is-success { color: var(--reach-success); }
+.reach-status.is-error   { color: var(--m3-error); }
+.reach-status.is-success { color: var(--m3-success); }
 
 .reach-error {
-    color: var(--reach-error);
+    color: var(--m3-error);
     font-size: 14px;
 }
+
+/* ── Result list (M3 list-item cards) ───────────────────────────── */
 
 .reach-results {
     list-style: none;
@@ -240,13 +391,22 @@ html, body {
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
 }
+
+/*
+ * .reach-result = M3ListItemCardStyle. Same surface as the page card
+ * but with a tighter margin (the XAML uses Margin 0,0,0,8 vs 0,0,0,12
+ * on the base card) so the result list reads as a dense list rather
+ * than a stack of independent cards.
+ */
 .reach-result {
     padding: 16px;
-    border: 1px solid var(--reach-border);
-    border-radius: var(--reach-radius);
-    background: #fff;
+    border: 0;
+    border-radius: var(--m3-corner-card);
+    background: var(--m3-surface);
+    box-shadow: var(--m3-elev-1);
+    min-height: 64px;
 }
 .reach-result__top {
     display: flex;
@@ -256,23 +416,142 @@ html, body {
     margin-bottom: 8px;
 }
 .reach-result__name { font-weight: 600; font-size: 16px; }
-.reach-result__dist { font-size: 13px; color: var(--reach-muted); }
+.reach-result__dist { font-size: 13px; color: var(--m3-on-surface-variant); }
+
 .reach-result__contact { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+
+/* Contact links — M3 text-button treatment for tappable rows. */
 .reach-result__contact a {
-    color: var(--reach-accent);
+    color: var(--m3-primary);
     text-decoration: none;
-    font-weight: 500;
-    min-height: 36px;
+    font-weight: 600;
+    font-size: 14px;
+    min-height: 40px;
     display: inline-flex;
     align-items: center;
+    padding: 0 12px;
+    margin: 0 -12px;
+    border-radius: var(--m3-corner-text-btn);
+    transition: background-color .15s ease;
 }
-.reach-result__contact a:active { text-decoration: underline; }
+.reach-result__contact a:hover  { background: rgba(31, 111, 235, .08); }
+.reach-result__contact a:active { background: rgba(31, 111, 235, .12); }
+
 .reach-result__accepts {
     font-size: 13px;
-    color: var(--reach-muted);
+    color: var(--m3-on-surface-variant);
     margin-top: 8px;
 }
 
+/*
+ * .reach-result__badge — coarse responsiveness signal.
+ *
+ * Three kinds, all visually quiet: this is a hint to the caller, not
+ * a label on the member. Keep it small, low-contrast, never red.
+ */
+.reach-result__badge {
+    display: inline-block;
+    align-self: flex-start;
+    margin-top: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.6;
+    font-weight: 500;
+    background: var(--m3-surface-variant);
+    color: var(--m3-on-surface-variant);
+}
+.reach-result__badge--good {
+    background: rgba(31, 111, 235, .12);
+    color: var(--m3-primary);
+}
+.reach-result__badge--soft {
+    /* "No recent reply" — neutral, not alarming. */
+    background: var(--m3-surface-variant);
+    color: var(--m3-on-surface-variant);
+}
+.reach-result__badge--warn {
+    /* "Number may be out of date" — amber, not red, because the
+       signal is corroborated-but-still-soft. */
+    background: rgba(255, 176, 32, .15);
+    color: #d18a00;
+}
+
+/*
+ * Outcome buttons — secondary actions tucked under each result.
+ * Visually subordinate to the call/text/email links above.
+ */
+.reach-result__actions {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--m3-outline);
+}
+.reach-result__actions-label {
+    font-size: 12px;
+    color: var(--m3-on-surface-variant);
+    margin-bottom: 6px;
+}
+.reach-result__action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.reach-btn--outcome {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    font-size: 13px;
+    min-height: 0;
+    line-height: 1.3;
+}
+.reach-btn--outcome:disabled {
+    opacity: .55;
+    cursor: default;
+}
+.reach-result__logged {
+    font-size: 13px;
+    color: var(--m3-on-surface-variant);
+    padding: 4px 0;
+}
+.reach-result__logged.is-error {
+    color: #c5311b;
+}
+
+/* ── Larger viewports ───────────────────────────────────────────── */
+
 @media (min-width: 640px) {
     .reach-page { padding-top: 48px; padding-bottom: 48px; }
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --m3-primary:               #a8c7ff;
+        --m3-on-primary:             #0a2a66;
+        --m3-primary-container:      #1a4ba8;
+        --m3-on-primary-container:   #d9e6ff;
+
+        --m3-surface:                #1a1d21;
+        --m3-surface-dim:            #111316;
+        --m3-surface-container:      #25282d;
+        --m3-surface-variant:        #2e3239;
+        --m3-on-surface:             #e3e5ea;
+        --m3-on-surface-variant:     #a8adb6;
+        --m3-outline:                #4a4f57;
+
+        --m3-on-surface-disabled:    #5b6471;
+
+        --m3-elev-1: 0 1px 2px rgba(0, 0, 0, .30),
+                     0 1px 3px rgba(0, 0, 0, .40);
+        --m3-elev-2: 0 2px 4px rgba(0, 0, 0, .40),
+                     0 4px 10px rgba(0, 0, 0, .50);
+    }
+    .reach-btn--primary {
+        color: var(--m3-on-primary);
+    }
+    .reach-btn--primary:hover  { background: #b8d4ff; }
+    .reach-btn--primary:active { background: #c8dcff; }
+    .reach-btn--apple { background: #fff; color: #000; border-color: #fff; }
+    .reach-btn--apple:hover  { background: #e6e6e6; }
+    .reach-btn--apple:active { background: #d6d6d6; }
 }
