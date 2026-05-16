@@ -27,6 +27,12 @@
         "optimize-autoloader": true,
         "sort-packages": true
     },
+    "scripts": {
+        "build": "php build.php build:production",
+        "build:production": "php build.php build:production",
+        "build:dev": "php build.php build:dev",
+        "build:clean": "php build.php clean"
+    },
     "require-dev": {
         "phpstan/phpstan": "^1.10",
         "szepeviktor/phpstan-wordpress": "^1.3",

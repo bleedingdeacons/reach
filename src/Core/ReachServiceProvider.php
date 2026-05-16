@@ -8,7 +8,6 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-use Compass\Resolution\NearestMembersResolver;
 use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\SettingsPage;
@@ -23,6 +22,9 @@ use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
 use Reach\Frontend\PageRouter;
+use Reach\Geocoding\Geocoder;
+use Reach\Geocoding\PostcodesIoGeocoder;
+use Reach\Resolution\NearestMembersResolver;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
@@ -30,14 +32,17 @@ use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
+use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 
 /**
  * Register Reach services into Unity's container.
  *
- * Follows Compass's provider pattern. The three OAuth providers are
- * registered individually and also assembled into a ProviderRegistry
- * so the OAuth controller can look one up by name.
+ * The three OAuth providers are registered individually and also
+ * assembled into a ProviderRegistry so the OAuth controller can look
+ * one up by name. The Geocoder is bound by interface so a test fake
+ * or alternative implementation can be slotted in without touching
+ * the resolver.
  */
 final class ReachServiceProvider
 {
@@ -80,6 +85,16 @@ final class ReachServiceProvider
             return new WpdbCallAttemptRepository($wpdb);
         });
 
+        // Geocoder + nearest-members resolver. The Geocoder interface
+        // binds to the postcodes.io implementation; a test fake or a
+        // future Google fallback can be slotted in without touching
+        // the resolver.
+        $container->register(Geocoder::class, fn() => new PostcodesIoGeocoder());
+        $container->register(NearestMembersResolver::class, fn(ContainerInterface $c) => new NearestMembersResolver(
+            $c->get(MemberRepository::class),
+            $c->get(Geocoder::class),
+        ));
+
         // REST controllers.
         $container->register(OAuthController::class, fn(ContainerInterface $c) => new OAuthController(
             $c->get(ProviderRegistry::class),
@@ -95,6 +110,7 @@ final class ReachServiceProvider
             $c->get(CallAttemptRepository::class),
             $c->get(ResponsivenessScorer::class),
             $c->get(AttemptTokenMinter::class),
+            $c->get(MemberRepository::class),
         ));
 
         $container->register(CallAttemptController::class, fn(ContainerInterface $c) => new CallAttemptController(

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 /**
  * Plugin Name: Reach
- * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple; mobile-first member finder powered by Compass. Requires Unity, Scrutiny, and Compass.
- * Version: 0.1.0
+ * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
+ * Version: 1.0.1
  * Requires at least: 6.1
  * Requires PHP: 8.1
- * Requires Plugins: unity, scrutiny, compass
+ * Requires Plugins: unity, scrutiny
  * GitHub Plugin URI: https://github.com/thebleedingdeacons/reach
  * GitHub Branch: main
  * Author: The Bleeding Deacons
@@ -71,11 +71,16 @@ function reach(): \Psr\Container\ContainerInterface {
     return \Reach\Plugin::getContainer();
 }
 
-// Initialize after Compass is loaded — Reach uses Compass's resolver directly.
-add_action('compass/loaded', function($container) {
+// Initialize after Unity is loaded.
+add_action('unity/loaded', function($container) {
     try {
+        // Scrutiny provides the AuditLogger used by the nearest-members
+        // controller (one entry per exposed member) and the call-attempt
+        // controller (one entry per recorded outcome). Without it, Reach
+        // would silently lose its audit trail — fail loud at init time
+        // instead.
         if (!function_exists('scrutiny')) {
-            throw new \Exception('Scrutiny plugin is required but not active.');
+            throw new \Exception('Scrutiny plugin is required but not active. Please install and activate Scrutiny before using Reach.');
         }
 
         if (!class_exists('Reach\Plugin')) {
@@ -104,19 +109,21 @@ add_action('compass/loaded', function($container) {
     }
 }, 10);
 
-// Show admin notice if Compass is not active
+// Show admin notice if Unity or Scrutiny is not active.
 add_action('admin_notices', function() {
-    if (!did_action('compass/loaded')) {
-        echo '<div class="notice notice-warning is-dismissible"><p><strong>Reach:</strong> Requires the Unity, Scrutiny, and Compass plugins to be active.</p></div>';
+    if (!function_exists('unity') && !did_action('unity/loaded')) {
+        echo '<div class="notice notice-warning is-dismissible"><p><strong>Reach:</strong> Requires the Unity plugin to be installed and activated.</p></div>';
+    } elseif (!function_exists('scrutiny') && function_exists('unity')) {
+        echo '<div class="notice notice-error is-dismissible"><p><strong>Reach:</strong> Requires the Scrutiny plugin to be installed and activated for GDPR audit logging.</p></div>';
     }
 });
 
-// Activation: ensure Compass is present (which in turn requires Unity + Scrutiny)
+// Activation: ensure Unity and Scrutiny are present.
 register_activation_hook(__FILE__, function () {
-    if (!class_exists('Compass\\Plugin')) {
+    if (!function_exists('scrutiny')) {
         deactivate_plugins(plugin_basename(__FILE__));
         wp_die(
-            esc_html__('Reach requires the Unity, Scrutiny, and Compass plugins to be installed and activated.', 'reach'),
+            esc_html__('Reach requires the Unity and Scrutiny plugins to be installed and activated. Scrutiny must be active to ensure GDPR audit logging of personal-data access.', 'reach'),
             esc_html__('Plugin Activation Error', 'reach'),
             ['back_link' => true]
         );
@@ -131,6 +138,17 @@ register_activation_hook(__FILE__, function () {
     // activation including upgrades.
     global $wpdb;
     \Reach\CallAttempts\WpdbCallAttemptRepository::install($wpdb);
+});
+
+// Self-deactivate if Scrutiny gets deactivated while Reach is active —
+// Reach can't honour its audit-logging promise without Scrutiny.
+add_action('admin_init', function() {
+    if (is_plugin_active(plugin_basename(__FILE__)) && !function_exists('scrutiny')) {
+        deactivate_plugins(plugin_basename(__FILE__));
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-error"><p><strong>Reach has been deactivated:</strong> The Scrutiny plugin is required for GDPR audit logging but is not active.</p></div>';
+        });
+    }
 });
 
 register_deactivation_hook(__FILE__, function () {

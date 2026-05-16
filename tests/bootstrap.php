@@ -149,3 +149,130 @@ spl_autoload_register(function ($class) {
         require $file;
     }
 });
+
+// Unity interfaces. The resolver and a few admin classes typehint
+// against Unity\Members\Interfaces\{Member, MemberRepository, ...}, so
+// the test suite needs those interfaces on the classpath.
+//
+// First choice: load them from a sibling Unity checkout. UNITY_PATH
+// overrides the default location.
+//
+// Fallback: define a minimal stub inline so the suite runs out of the
+// box for a contributor who doesn't have Unity checked out next door.
+// The stub mirrors the real Unity interface shape closely enough for
+// the resolver pipeline tests; tests that rely on richer Unity
+// behaviour should set UNITY_PATH.
+$unityPath = getenv('UNITY_PATH') ?: dirname(__DIR__, 2) . '/unity';
+$memberInterface = $unityPath . '/src/Members/Interfaces/Member.php';
+$repoInterface   = $unityPath . '/src/Members/Interfaces/MemberRepository.php';
+if (file_exists($memberInterface) && file_exists($repoInterface)) {
+    require_once $memberInterface;
+    require_once $repoInterface;
+} elseif (!interface_exists(\Unity\Members\Interfaces\Member::class)) {
+    eval(<<<'PHP'
+namespace Unity\Members\Interfaces;
+
+interface Member
+{
+    public function getId(): int;
+    public function getAnonymousName(): string;
+    public function showAnonymousName(): bool;
+    public function showMemberProfile(): bool;
+    public function getAnonymousProfile(): string;
+    public function getIntergroupPosition(): int;
+    public function getIntergroupPositionRotation(): string;
+    public function getHomeGroup(): int;
+    public function isGSR(): bool;
+    public function getMeetingPO(): mixed;
+    public function getPersonalEmail(): string;
+    public function getMobileNumber(): string;
+    public function isTwelfthStepper(): bool;
+    public function getArea(): string;
+    public function getAccepts(): array;
+    public function isGdprAccepted(): bool;
+    public function getGdprAcceptedAt(): string;
+    public function getGdprAcceptanceVersion(): string;
+    public function getGdprAcceptanceMethod(): string;
+    public function getGdprAcceptanceStatement(): string;
+    public function getUpdated(): string;
+}
+
+interface MemberRepository
+{
+    public function findById(int $id): ?Member;
+    public function findByEmail(string $email): ?Member;
+    public function findAll(array $args = []): array;
+    public function count(array $args = []): int;
+    public function create(string $anonymousName): int;
+    public function save(Member $member): bool;
+    public function delete(int $id): bool;
+    public function update(Member $member): bool;
+}
+PHP
+    );
+}
+
+// Minimal WP REST shims. The real classes ship with WordPress; we
+// only need enough surface area to exercise the REST controllers
+// directly from unit tests (parameter access, response construction,
+// status + payload inspection). Guarded with class_exists/
+// function_exists so a richer environment can supply the real thing.
+if (!class_exists('WP_REST_Request')) {
+    class WP_REST_Request
+    {
+        /** @param array<string, mixed> $params */
+        public function __construct(private array $params = []) {}
+        public function get_param(string $key): mixed
+        {
+            return $this->params[$key] ?? null;
+        }
+        public function set_param(string $key, mixed $value): void
+        {
+            $this->params[$key] = $value;
+        }
+    }
+}
+if (!class_exists('WP_REST_Response')) {
+    class WP_REST_Response
+    {
+        public function __construct(
+            private mixed $data = null,
+            private int $status = 200,
+        ) {}
+        public function get_data(): mixed { return $this->data; }
+        public function get_status(): int { return $this->status; }
+        public function set_status(int $status): void { $this->status = $status; }
+    }
+}
+if (!class_exists('WP_REST_Server')) {
+    class WP_REST_Server
+    {
+        public const READABLE = 'GET';
+        public const CREATABLE = 'POST';
+        public const EDITABLE = 'PUT, PATCH';
+        public const DELETABLE = 'DELETE';
+    }
+}
+if (!function_exists('rest_ensure_response')) {
+    function rest_ensure_response($response) {
+        if ($response instanceof \WP_REST_Response || $response instanceof \WP_Error) {
+            return $response;
+        }
+        return new \WP_REST_Response($response, 200);
+    }
+}
+// register_rest_route / add_action are called from controllers'
+// register() bootstrap, which the unit tests do not exercise.
+// Stubs here just keep them callable in case a future test does.
+if (!function_exists('register_rest_route')) {
+    function register_rest_route(string $namespace, string $route, array $args = []): bool { return true; }
+}
+if (!function_exists('add_action')) {
+    function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool { return true; }
+}
+if (!function_exists('is_user_logged_in')) {
+    function is_user_logged_in(): bool { return false; }
+}
+if (!function_exists('current_user_can')) {
+    function current_user_can(string $capability, ...$args): bool { return false; }
+}

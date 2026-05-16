@@ -8,16 +8,17 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-use Compass\Resolution\NearestMembersResolver;
-use Compass\Resolution\ResolutionResult;
-use Compass\Resolution\ScoredMember;
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
 use Reach\Core\Settings;
+use Reach\Resolution\NearestMembersResolver;
+use Reach\Resolution\ResolutionResult;
+use Reach\Resolution\ScoredMember;
 use Reach\Session\CurrentSession;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Scrutiny\Privacy\PersonalDataPolicy;
+use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -28,23 +29,25 @@ use function register_rest_route;
 use function rest_ensure_response;
 
 /**
- * Reach's wrapper around Compass's resolver.
+ * REST controller: nearest 12th-step members for Reach visitors.
  *
- * Why a wrapper rather than calling Compass's own controller?
- * ----------------------------------------------------------
- * Compass's controller authenticates against a logged-in WP user with
- * the scrutiny_view_personal_data capability. Reach users are *not*
- * WP users — they're proof-of-email holders via the Reach session
- * cookie. Going through Compass's HTTP surface would require either
- * provisioning a WP user per email (which we ruled out) or sending
- * the request as a privileged service user (which would lose the
- * "this specific person looked at this record" audit trail).
+ * Authentication & audit
+ * ----------------------
+ * Reach visitors are proof-of-email holders via the Reach session cookie,
+ * not WordPress users. The permission callback below requires a valid
+ * session — nothing more by default. Every result returned is audit-logged
+ * through Scrutiny with the source tag `reach:nearest-members` plus the
+ * requesting visitor's *anonymous name* (resolved from their verified
+ * email via the Unity member repository) in the detail field. The raw
+ * email is never written to the audit row — Scrutiny's contract forbids
+ * raw PII in `detail`, and on installs where every Reach lookup runs
+ * under one shared WP account the anonymous name is the only useful
+ * "who triggered this" signal a regulator can reconstruct from the
+ * audit table.
  *
- * Calling the resolver directly keeps the audit clean: every record
- * exposed via Reach is logged with the source tag
- * `reach:nearest-members` plus the requesting email in the detail
- * field, so a regulator can answer "which Reach user saw this member's
- * mobile, and when" from Scrutiny's audit table.
+ * If the verified email does not match a 12th-stepper member record,
+ * the requester is recorded as `unknown` rather than leaking the
+ * unmatched email into the log.
  *
  * Capability flag
  * ---------------
@@ -52,8 +55,9 @@ use function rest_ensure_response;
  * that want to keep Reach internal-only (employees, intergroup
  * officers) — when on, the email-verified session is necessary but
  * not sufficient, and the user must also be a logged-in WP user with
- * the capability. By default it's off because the whole point of
- * Reach is to give end users a way in without a WP account.
+ * the scrutiny_view_personal_data capability. By default it's off
+ * because the whole point of Reach is to give end users a way in
+ * without a WP account.
  */
 final class NearestMembersController
 {
@@ -76,8 +80,17 @@ final class NearestMembersController
         private readonly CallAttemptRepository $callAttempts,
         private readonly ResponsivenessScorer $scorer,
         private readonly AttemptTokenMinter $attemptTokens,
+        private readonly MemberRepository $members,
     ) {
     }
+
+    /**
+     * Per-request cache for the requester's anonymous name. The audit
+     * step calls {@see requesterAnonymousName()} once per response and
+     * we want exactly one repository hit no matter how many members
+     * the response contains.
+     */
+    private ?string $cachedRequesterName = null;
 
     public function register(): void
     {
@@ -249,10 +262,10 @@ final class NearestMembersController
      */
     private function auditExposure(array $members): void
     {
-        $session = $this->session->get();
-        $detail = $session !== null
-            ? sprintf('reach:nearest-members; viewer=%s/%s', $session->provider, $session->email)
-            : 'reach:nearest-members';
+        $detail = sprintf(
+            'reach:nearest-members; requester=%s',
+            $this->requesterAnonymousName()
+        );
 
         foreach ($members as $scored) {
             $this->auditLogger->logBatch(
@@ -263,5 +276,36 @@ final class NearestMembersController
                 $detail
             );
         }
+    }
+
+    /**
+     * Resolve the current session's verified email to the matching
+     * member's anonymous name.
+     *
+     * Returns `unknown` when no session is present, when no member
+     * record matches the verified email, or when the matched member
+     * is not flagged as a 12th-stepper. The fallback is deliberately
+     * non-PII — a regulator examining the audit row sees only that
+     * "an unrecognised Reach visitor viewed this data", not whose
+     * email it was.
+     */
+    private function requesterAnonymousName(): string
+    {
+        if ($this->cachedRequesterName !== null) {
+            return $this->cachedRequesterName;
+        }
+
+        $session = $this->session->get();
+        if ($session === null || $session->email === '') {
+            return $this->cachedRequesterName = 'unknown';
+        }
+
+        $member = $this->members->findByEmail($session->email);
+        if ($member === null || !$member->isTwelfthStepper()) {
+            return $this->cachedRequesterName = 'unknown';
+        }
+
+        $name = trim($member->getAnonymousName());
+        return $this->cachedRequesterName = ($name !== '' ? $name : 'unknown');
     }
 }

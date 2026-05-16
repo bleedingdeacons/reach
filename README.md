@@ -1,14 +1,16 @@
 # Reach
 
-Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple, and a mobile-first finder UI powered by Compass.
+Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple, and a mobile-first finder UI.
+
+**Version:** 1.0.1
 
 ## Requirements
 
 - WordPress 6.1+
 - PHP 8.1+ with `openssl` and `json`
-- [Unity](https://github.com/thebleedingdeacons/unity), [Scrutiny](https://github.com/thebleedingdeacons/scrutiny), and [Compass](https://github.com/thebleedingdeacons/compass) must be active
+- [Unity](https://github.com/thebleedingdeacons/unity) and [Scrutiny](https://github.com/thebleedingdeacons/scrutiny) must be active
 
-Reach hooks into Compass's `compass/loaded` action and uses Compass's resolver directly. It does not call Compass's REST endpoint; this keeps the audit trail attributable to the specific Reach visitor.
+Reach hooks into Unity on `unity/loaded` and uses Unity's `MemberRepository` to source members. Every member surfaced is audit-logged through Scrutiny with the requesting visitor's verified email attached, so a regulator can answer "which Reach user saw this member's mobile, and when" from Scrutiny's audit table.
 
 ## Pages
 
@@ -67,7 +69,7 @@ No WordPress users are created. There is no server-side session table. The cooki
 | `/reach/v1/oauth/apple`                    | POST   | Verify Apple ID token              |
 | `/reach/v1/oauth/signout`                  | POST   | Clear the session cookie           |
 | `/reach/v1/session`                        | GET    | Returns current session info       |
-| `/reach/v1/nearest-members`                | GET    | Same shape as Compass's endpoint   |
+| `/reach/v1/nearest-members`                | GET    | Nearest 12th-step members by area  |
 | `/reach/v1/call-attempts`                  | POST   | Record an attempt to call a member |
 
 ## Call attempts and responsiveness signal

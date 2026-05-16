@@ -33,8 +33,8 @@ use Unity\Members\Interfaces\MemberViewFactory;
  *
  * Capability
  * ----------
- * Gated behind scrutiny_view_personal_data — the same capability
- * Compass and the Reach REST surface use. A WP admin without that
+ * Gated behind scrutiny_view_personal_data — the same capability the
+ * rest of the Reach REST surface uses. A WP admin without that
  * capability can't see this page. Consistent with the rest of the
  * stack: one cap revocation cuts off every personal-data surface
  * including this one.
