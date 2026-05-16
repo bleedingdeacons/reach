@@ -13,7 +13,8 @@ use Reach\Core\Settings;
 /**
  * Admin settings page for OAuth credentials.
  *
- * A single page under "Settings → Reach" with the three providers
+ * Sits as the "Authentication" submenu under the top-level Reach menu
+ * (registered by CallAttemptsPage). Hosts the three providers
  * (Google, Microsoft, Apple) and the require-Scrutiny-capability
  * toggle. Each provider gets a client ID field and a write-only
  * client secret field: the existing secret is displayed as a fixed-
@@ -53,9 +54,19 @@ final class SettingsPage
 
     public function addMenu(): void
     {
-        add_options_page(
-            'Reach',
-            'Reach',
+        // The top-level "Reach" menu is registered by CallAttemptsPage.
+        // We attach as a submenu so OAuth configuration sits next to
+        // the operational data view rather than under "Settings".
+        //
+        // The capability here (manage_options) is intentionally
+        // *stricter* than the parent menu's capability
+        // (scrutiny_view_personal_data). A user with the parent
+        // capability who lacks manage_options simply won't see this
+        // submenu item — WP handles that automatically.
+        add_submenu_page(
+            CallAttemptsPage::MENU_SLUG,
+            'Authentication',
+            'Authentication',
             self::CAPABILITY,
             self::PAGE_SLUG,
             [$this, 'render']
@@ -214,7 +225,10 @@ final class SettingsPage
 
         $this->settings->setRequireScrutinyCapability(!empty($_POST['require_scrutiny_capability']));
 
-        wp_safe_redirect(add_query_arg(['page' => self::PAGE_SLUG, 'updated' => '1'], admin_url('options-general.php')));
+        // The page moved from "Settings → Reach" (options-general.php)
+        // to "Reach → Authentication" (admin.php) when the top-level
+        // Reach menu was introduced. Redirect target must match.
+        wp_safe_redirect(add_query_arg(['page' => self::PAGE_SLUG, 'updated' => '1'], admin_url('admin.php')));
         exit;
     }
 }

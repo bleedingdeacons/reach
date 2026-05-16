@@ -11,9 +11,9 @@ if (!defined('ABSPATH')) {
 /**
  * Persistence for {@see CallAttempt}.
  *
- * Kept as an interface so the scorer and REST controller depend on an
- * abstraction, and tests can hand in an in-memory implementation
- * without touching $wpdb.
+ * Kept as an interface so the scorer, REST controller, and admin
+ * view depend on an abstraction, and tests can hand in an in-memory
+ * implementation without touching $wpdb.
  */
 interface CallAttemptRepository
 {
@@ -43,4 +43,38 @@ interface CallAttemptRepository
      * @return array<int, CallAttempt>
      */
     public function forMembersSince(array $memberIds, int $sinceSeconds, int $now): array;
+
+    /**
+     * Paginated list with optional filters, newest first.
+     *
+     * @param array{
+     *     member_id?: int,
+     *     viewer_email?: string,
+     *     outcome?: string,
+     *     since?: int,
+     *     until?: int,
+     * } $filters
+     * @return array<int, CallAttempt>
+     */
+    public function list(array $filters, int $limit, int $offset): array;
+
+    /**
+     * Count matching the same filter set as {@see self::list()}. Used
+     * by the admin pager — pulling this from a separate call rather
+     * than asking list() for a total keeps the query path clean.
+     *
+     * @param array{
+     *     member_id?: int,
+     *     viewer_email?: string,
+     *     outcome?: string,
+     *     since?: int,
+     *     until?: int,
+     * } $filters
+     */
+    public function countWhere(array $filters): int;
+
+    /**
+     * Single-row fetch by primary key, for the admin detail view.
+     */
+    public function findById(int $id): ?CallAttempt;
 }

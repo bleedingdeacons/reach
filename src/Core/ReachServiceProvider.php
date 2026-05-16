@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 
 use Compass\Resolution\NearestMembersResolver;
 use Psr\Container\ContainerInterface;
+use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\SettingsPage;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\ProviderRegistry;
@@ -29,6 +30,7 @@ use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
+use Unity\Members\Interfaces\MemberViewFactory;
 
 /**
  * Register Reach services into Unity's container.
@@ -110,6 +112,11 @@ final class ReachServiceProvider
 
         $container->register(SettingsPage::class, fn(ContainerInterface $c) => new SettingsPage(
             $c->get(Settings::class),
+        ));
+
+        $container->register(CallAttemptsPage::class, fn(ContainerInterface $c) => new CallAttemptsPage(
+            $c->get(CallAttemptRepository::class),
+            $c->get(MemberViewFactory::class),
         ));
     }
 }

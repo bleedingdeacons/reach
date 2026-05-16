@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\SettingsPage;
 use Reach\Core\ReachServiceProvider;
 use Reach\Frontend\PageRouter;
@@ -64,6 +65,14 @@ class Plugin
 
         // Admin settings page.
         if (is_admin()) {
+            // Order matters: CallAttemptsPage registers the top-level
+            // "Reach" menu, and SettingsPage attaches as a submenu to
+            // that slug. Both use the same admin_menu hook, so callbacks
+            // fire in registration order — if Settings goes first,
+            // add_submenu_page('reach', ...) runs before the parent
+            // exists and the link silently falls back to a non-routable
+            // URL ("page goes nowhere").
+            self::$container->get(CallAttemptsPage::class)->register();
             self::$container->get(SettingsPage::class)->register();
         }
 

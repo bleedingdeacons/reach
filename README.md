@@ -92,6 +92,19 @@ The distinct-viewer requirement is deliberate: it prevents a single frustrated c
 
 Members do not directly see these badges, but the signal *is* a new kind of data exposure: other Reach users can see that a member hasn't been answering recently. Admins should mention this in their member onboarding so it isn't a surprise. The badges are intentionally coarse — no counts, no dates, no caller identities are surfaced to other users.
 
+### Admin view
+
+The Reach plugin adds a top-level **Reach** menu in WP admin with two pages:
+
+- **Call attempts** (default) — read-only list of every recorded attempt with filters for member ID, viewer email substring, outcome, and date range. Each row shows the member's anonymous name and area resolved live via Unity's `MemberRepository`, with the bare member ID alongside (and an explicit "member not found" note for deleted members). Clicking through to the detail view also shows the caller's free-text note — the one place that note is ever displayed.
+- **Authentication** — the OAuth provider configuration page (previously under *Settings → Reach*). Same `manage_options` gate as before.
+
+The Call attempts page is gated by `scrutiny_view_personal_data`, matching the rest of the personal-data surfaces in the stack. A WP admin without that capability sees the menu but not the Authentication submenu (which still needs `manage_options`).
+
+Member lookup is batched: each page of results triggers exactly one `MemberRepository::findAll(['post__in' => ...])` call so the per-row hydration that follows lands on WP's object cache.
+
+The Call attempts page is deliberately read-only. Edits and deletions would undermine Scrutiny's audit log (which records the attempt as having happened) and create a tempting "tidy up" path that quietly suppresses uncomfortable patterns. If a correction is needed, the caller can log a new attempt with the corrected outcome — the scorer's "reached recently wins" rule will surface the latest reality.
+
 ## Audit logging
 
 Every result returned by `/reach/v1/nearest-members` produces one `logBatch` entry in Scrutiny per member, with the source tag:
