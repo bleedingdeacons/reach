@@ -36,18 +36,22 @@ use function rest_ensure_response;
  * Reach visitors are proof-of-email holders via the Reach session cookie,
  * not WordPress users. The permission callback below requires a valid
  * session — nothing more by default. Every result returned is audit-logged
- * through Scrutiny with the source tag `reach:nearest-members` plus the
- * requesting visitor's *anonymous name* (resolved from their verified
- * email via the Unity member repository) in the detail field. The raw
- * email is never written to the audit row — Scrutiny's contract forbids
- * raw PII in `detail`, and on installs where every Reach lookup runs
- * under one shared WP account the anonymous name is the only useful
+ * through Scrutiny in a structured `caller:<name>#<member id>` detail
+ * format (or `caller:unknown` when the verified email matches no member),
+ * which the Scrutiny admin renders as a linked "Caller: <name>" entry
+ * matching the format used by the call-attempt audit. The raw email is
+ * never written to the audit row — Scrutiny's contract forbids raw PII
+ * in `detail`, and on installs where every Reach lookup runs under one
+ * shared WP account the anonymous name is the only useful
  * "who triggered this" signal a regulator can reconstruct from the
  * audit table.
  *
- * If the verified email does not match a 12th-stepper member record,
- * the requester is recorded as `unknown` rather than leaking the
- * unmatched email into the log.
+ * If the verified email does not match any Unity member record, the
+ * viewer is recorded as `unknown` rather than leaking the unmatched
+ * email into the log. The 12th-stepper flag is deliberately *not* a
+ * gate here, matching CallAttemptController: an intergroup officer or
+ * other non-12th-step member who legitimately reaches this endpoint
+ * still appears under their anonymous name.
  *
  * Capability flag
  * ---------------
@@ -65,11 +69,19 @@ final class NearestMembersController
     private const DEFAULT_LIMIT = 10;
     private const MAX_LIMIT = 25;
 
+    /**
+     * Fields counted as a personal-data view when a member appears in
+     * a results set. `area` (geographic area string) and `accepts`
+     * (gender filter) are deliberately *not* in this list: they are
+     * selection criteria the caller already supplied, not personal
+     * data we expose to them, so logging them under GDPR audit would
+     * misrepresent what the visitor actually saw. Personal email is
+     * also not exposed by Reach — the only contact method surfaced
+     * to a viewer is the mobile number — so it isn't audited here
+     * either.
+     */
     private const AUDITED_FIELDS = [
-        'personal_email',
         'mobile_number',
-        'area',
-        'accepts',
     ];
 
     public function __construct(
@@ -85,12 +97,12 @@ final class NearestMembersController
     }
 
     /**
-     * Per-request cache for the requester's anonymous name. The audit
-     * step calls {@see requesterAnonymousName()} once per response and
+     * Per-request cache for the viewer's audit-detail string. The
+     * audit step calls {@see callerDetail()} once per response and
      * we want exactly one repository hit no matter how many members
      * the response contains.
      */
-    private ?string $cachedRequesterName = null;
+    private ?string $cachedCallerDetail = null;
 
     public function register(): void
     {
@@ -237,7 +249,6 @@ final class NearestMembersController
                     'anonymous_name'  => $m->getAnonymousName(),
                     'area'            => $m->getArea(),
                     'accepts'         => $m->getAccepts(),
-                    'personal_email'  => $m->getPersonalEmail(),
                     'mobile_number'   => $m->getMobileNumber(),
                     'distance_km'     => round($scored->distanceKm, 1),
                     'responsiveness'  => $badges[$id] ?? null,
@@ -262,10 +273,7 @@ final class NearestMembersController
      */
     private function auditExposure(array $members): void
     {
-        $detail = sprintf(
-            'reach:nearest-members; requester=%s',
-            $this->requesterAnonymousName()
-        );
+        $detail = $this->callerDetail();
 
         foreach ($members as $scored) {
             $this->auditLogger->logBatch(
@@ -279,33 +287,51 @@ final class NearestMembersController
     }
 
     /**
-     * Resolve the current session's verified email to the matching
-     * member's anonymous name.
+     * Build the audit-detail string identifying the viewer of this
+     * exposure.
      *
-     * Returns `unknown` when no session is present, when no member
-     * record matches the verified email, or when the matched member
-     * is not flagged as a 12th-stepper. The fallback is deliberately
-     * non-PII — a regulator examining the audit row sees only that
-     * "an unrecognised Reach visitor viewed this data", not whose
-     * email it was.
+     * The viewer is the logged-in Reach user who ran the search
+     * (typically a 12th-stepper, but not necessarily — an intergroup
+     * officer using Reach under the `requireScrutinyCapability` flag,
+     * or any member without the 12th-stepper flag, can also reach
+     * this endpoint). We therefore do not gate on
+     * {@see Member::isTwelfthStepper()}: any member record with a
+     * non-empty anonymous name is named in the audit row. This is the
+     * same policy as
+     * {@see CallAttemptController::callerDetail()}, so a single
+     * person appears under the same identifier across the
+     * "search → call placed" lifecycle.
+     *
+     * Format: `caller:<anonymous name>#<member id>` when the viewer
+     * resolves to a member record, or `caller:unknown` otherwise.
+     * Scrutiny's audit admin parses this shape and renders
+     * "Caller: <name>" with the name linked to that member's edit
+     * page. The raw email is never written — Scrutiny's contract
+     * forbids raw PII in `detail`.
+     *
+     * Cached per-request: the audit step logs one row per result
+     * member and we want exactly one repository hit no matter how
+     * many members the response contains.
      */
-    private function requesterAnonymousName(): string
+    private function callerDetail(): string
     {
-        if ($this->cachedRequesterName !== null) {
-            return $this->cachedRequesterName;
+        if ($this->cachedCallerDetail !== null) {
+            return $this->cachedCallerDetail;
         }
+
+        $caller = 'unknown';
 
         $session = $this->session->get();
-        if ($session === null || $session->email === '') {
-            return $this->cachedRequesterName = 'unknown';
+        if ($session !== null && $session->email !== '') {
+            $member = $this->members->findByEmail($session->email);
+            if ($member !== null) {
+                $name = trim($member->getAnonymousName());
+                if ($name !== '') {
+                    $caller = sprintf('%s#%d', $name, $member->getId());
+                }
+            }
         }
 
-        $member = $this->members->findByEmail($session->email);
-        if ($member === null || !$member->isTwelfthStepper()) {
-            return $this->cachedRequesterName = 'unknown';
-        }
-
-        $name = trim($member->getAnonymousName());
-        return $this->cachedRequesterName = ($name !== '' ? $name : 'unknown');
+        return $this->cachedCallerDetail = sprintf('caller:%s', $caller);
     }
 }

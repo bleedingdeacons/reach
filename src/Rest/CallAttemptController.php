@@ -14,7 +14,9 @@ use Reach\CallAttempts\CallAttemptRepository;
 use Reach\Core\Settings;
 use Reach\Session\CurrentSession;
 use Scrutiny\Audit\Interfaces\AuditLogger;
+use Scrutiny\Privacy\PersonalDataFields;
 use Scrutiny\Privacy\PersonalDataPolicy;
+use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -47,10 +49,15 @@ use function rest_ensure_response;
  *
  * Audit
  * -----
- * One {@see AuditLogger::logBatch} entry per recorded attempt, with
- * the outcome and viewer email in the source detail. The note field
- * is *never* included in the audit trail — operators should not be
- * able to scrape callers' private context out of audit logs.
+ * One {@see AuditLogger::logBatch} entry per recorded attempt, written
+ * with {@see AuditLogger::ACTION_CALL} against the member's
+ * {@see PersonalDataFields::MOBILE_NUMBER} field. The detail field
+ * carries the caller's *anonymous name* — never their email or
+ * provider — so a regulator reading the audit log sees who called
+ * (in 12th-step parlance) without learning the caller's identity.
+ * The free-text note is *never* included in the audit trail —
+ * operators should not be able to scrape callers' private context
+ * out of audit logs.
  */
 final class CallAttemptController
 {
@@ -62,6 +69,7 @@ final class CallAttemptController
         private readonly CurrentSession $session,
         private readonly Settings $settings,
         private readonly AuditLogger $auditLogger,
+        private readonly MemberRepository $members,
     ) {
     }
 
@@ -174,19 +182,21 @@ final class CallAttemptController
             $now,
         );
 
-        // Audit the attempt — outcome and viewer go in the detail
-        // field; note deliberately does NOT (see class docblock).
+        // Audit the attempt as a CALL against the member's mobile
+        // number (the field that was actually used to make contact).
+        // The detail field carries the caller's *anonymous name* and
+        // the call's result in a structured
+        // "caller:<name>#<id>;result:<label>" format so the admin can
+        // render the name as a link to the caller's member record and
+        // surface the outcome alongside it. We deliberately never
+        // include email or auth provider, mirroring the privacy stance
+        // of NearestMembersController.
         $this->auditLogger->logBatch(
-            AuditLogger::ACTION_VIEW, // closest existing action verb
+            AuditLogger::ACTION_CALL,
             AuditLogger::ENTITY_MEMBER,
             $memberId,
-            ['call_attempt'],
-            sprintf(
-                'reach:call-attempt; outcome=%s; viewer=%s/%s',
-                $outcome,
-                $session->provider,
-                $session->email,
-            ),
+            [PersonalDataFields::MOBILE_NUMBER],
+            $this->callerDetail($session->email, $attempt->outcome),
         );
 
         return rest_ensure_response([
@@ -195,5 +205,67 @@ final class CallAttemptController
             'outcome'    => $attempt->outcome,
             'created_at' => $attempt->createdAt,
         ]);
+    }
+
+    /**
+     * Build the audit-detail string identifying the caller and outcome.
+     *
+     * The caller is the Reach visitor logging the result of a phone
+     * call — typically the same person who ran the nearest-members
+     * search. As in
+     * {@see NearestMembersController::callerDetail()}, we do not gate
+     * on {@see Member::isTwelfthStepper()}: any member record with a
+     * non-empty anonymous name is named in the audit row, so the same
+     * person appears under the same identifier across the
+     * "search → call placed" lifecycle.
+     *
+     * Format: `caller:<anonymous name>#<member id>;result:<label>`
+     * when the caller resolves to a member record. The Scrutiny audit
+     * admin parses this shape to render "Caller: <name> Result: <label>"
+     * with the name linked to the caller's member edit page. When the
+     * caller cannot be resolved the prefix becomes `caller:unknown` —
+     * a deliberately non-PII fallback so the audit row never carries
+     * an unjustified identifier — but the result is always included.
+     *
+     * Human-readable outcome labels are baked in here rather than in
+     * Scrutiny's admin so that Scrutiny stays domain-neutral: it only
+     * needs to know how to parse the structure, not what `reached`
+     * means.
+     */
+    private function callerDetail(string $email, string $outcome): string
+    {
+        $caller = 'unknown';
+
+        if ($email !== '') {
+            $member = $this->members->findByEmail($email);
+            if ($member !== null) {
+                $name = trim($member->getAnonymousName());
+                if ($name !== '') {
+                    $caller = sprintf('%s#%d', $name, $member->getId());
+                }
+            }
+        }
+
+        return sprintf(
+            'caller:%s;result:%s',
+            $caller,
+            self::outcomeLabel($outcome),
+        );
+    }
+
+    /**
+     * Map a stored outcome code to the human label used in audit
+     * detail strings. Unknown codes fall back to the raw value so a
+     * future outcome added in code but not here still produces a
+     * readable (if unstyled) audit row.
+     */
+    private static function outcomeLabel(string $outcome): string
+    {
+        return match ($outcome) {
+            CallAttempt::OUTCOME_REACHED      => 'Spoke',
+            CallAttempt::OUTCOME_NO_ANSWER    => 'No Answer',
+            CallAttempt::OUTCOME_WRONG_OR_BAD => 'Wrong/Bad Number',
+            default                           => $outcome,
+        };
     }
 }

@@ -150,12 +150,6 @@
                 sms.textContent = 'Text ' + m.mobile_number;
                 contact.appendChild(sms);
             }
-            if (m.personal_email) {
-                var mail = document.createElement('a');
-                mail.href = 'mailto:' + m.personal_email;
-                mail.textContent = 'Email ' + m.personal_email;
-                contact.appendChild(mail);
-            }
             li.appendChild(contact);
 
             if (m.accepts && m.accepts.length) {

@@ -109,13 +109,21 @@ The Call attempts page is deliberately read-only. Edits and deletions would unde
 
 ## Audit logging
 
-Every result returned by `/reach/v1/nearest-members` produces one `logBatch` entry in Scrutiny per member, with the source tag:
+Every result returned by `/reach/v1/nearest-members` produces one `logBatch` entry in Scrutiny per member (one per audited PII field), with a structured `detail` string identifying the viewer:
 
 ```
-reach:nearest-members; viewer=google/alice@example.com
+caller:Alice K.#42
 ```
 
-So "which Reach visitor saw which member's mobile, and when" is answerable directly from Scrutiny's audit table.
+…or `caller:unknown` when the verified email matches no Unity member record. Call attempts logged via `/reach/v1/call-attempts` use the same prefix plus the outcome label:
+
+```
+caller:Alice K.#42;result:Spoke
+```
+
+Scrutiny's audit admin parses this shape and renders the name as a link to the viewer/caller's member edit page. The raw email is never written to the audit row.
+
+So "which Reach visitor saw which member's mobile, and when, and which attempts they then logged" is answerable directly from Scrutiny's audit table.
 
 ## Optional capability gate
 

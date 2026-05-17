@@ -71,21 +71,24 @@ final class NearestMembersControllerTest extends TestCase
         $this->assertInstanceOf(WP_REST_Response::class, $response);
         $this->assertSame(200, $response->get_status());
 
-        // Two non-requester members in range × four audited fields each
-        // = eight audit-log rows. (The requester themselves is also in
-        // the result set, so that's three members × four fields = 12
-        // when the requester happens to be a 12th-stepper too.)
-        $this->assertCount(12, $audit->entries);
+        // Three members in range (requester is a 12th-stepper in this
+        // fixture and is also in the result set) × one audited field
+        // each (mobile_number) = three audit-log rows. area + accepts
+        // are filter criteria the caller already supplied, and
+        // personal_email is not exposed by Reach at all, so neither
+        // is in the audited-fields list.
+        $this->assertCount(3, $audit->entries);
 
-        // Every row must carry the requester's *anonymous name*, never
-        // their email, and the source tag for grep-ability.
+        // Every row must carry the viewer's *anonymous name*, never
+        // their email, in the structured format the Scrutiny admin
+        // parses into a "Caller: <name>" link.
         foreach ($audit->entries as $entry) {
             $this->assertSame('view', $entry['action']);
             $this->assertSame('member', $entry['entityType']);
             $this->assertSame(
-                'reach:nearest-members; requester=Alice K.',
+                'caller:Alice K.#1',
                 $entry['detail'],
-                'Audit detail must record requester by anonymous name only',
+                'Audit detail must record viewer by anonymous name + id only',
             );
             $this->assertStringNotContainsString(
                 'alice@example.com',
@@ -94,29 +97,31 @@ final class NearestMembersControllerTest extends TestCase
             );
         }
 
-        // Sanity: the four audited fields are covered for each member.
+        // Sanity: every audited row is the mobile_number field, one
+        // per member exposed.
         $perMember = [];
         foreach ($audit->entries as $entry) {
             $perMember[$entry['entityId']][] = $entry['fieldName'];
         }
         foreach ($perMember as $id => $fields) {
-            sort($fields);
             $this->assertSame(
-                ['accepts', 'area', 'mobile_number', 'personal_email'],
+                ['mobile_number'],
                 $fields,
-                "Member #$id should have all four PII fields audited",
+                "Member #$id should have exactly one PII-field audit row",
             );
         }
     }
 
-    public function testNonTwelfthStepperRequesterIsRecordedAsUnknown(): void
+    public function testNonTwelfthStepperViewerIsStillNamed(): void
     {
-        // The verified email matches a member, but they are flagged as
-        // a non-12th-stepper (e.g. an intergroup officer using Reach
-        // internally). The audit row must not leak their anonymous
-        // name as if they were the requester, because the controller
-        // is specifically auditing "which 12th-stepper triggered this
-        // lookup".
+        // The verified email matches a non-12th-step member (e.g. an
+        // intergroup officer using Reach under the
+        // requireScrutinyCapability flag). The audit row should name
+        // them under their anonymous name — there is no 12th-stepper
+        // gate on the viewer-resolution step, mirroring the call-
+        // attempt audit so the same person appears under the same
+        // identifier across the search → call lifecycle. The raw
+        // email still never leaks.
         $officer = $this->stubMember(
             id: 1, name: 'Intergroup Officer', twelfth: false,
             email: 'officer@example.com', area: 'BS1 1AA',
@@ -136,10 +141,9 @@ final class NearestMembersControllerTest extends TestCase
         $this->assertNotEmpty($audit->entries);
         foreach ($audit->entries as $entry) {
             $this->assertSame(
-                'reach:nearest-members; requester=unknown',
+                'caller:Intergroup Officer#1',
                 $entry['detail'],
             );
-            $this->assertStringNotContainsString('Officer', $entry['detail']);
             $this->assertStringNotContainsString('officer@', $entry['detail']);
         }
     }
@@ -164,7 +168,7 @@ final class NearestMembersControllerTest extends TestCase
         $this->assertNotEmpty($audit->entries);
         foreach ($audit->entries as $entry) {
             $this->assertSame(
-                'reach:nearest-members; requester=unknown',
+                'caller:unknown',
                 $entry['detail'],
             );
             $this->assertStringNotContainsString(

@@ -119,6 +119,7 @@ final class ReachServiceProvider
             $c->get(CurrentSession::class),
             $c->get(Settings::class),
             $c->get(AuditLogger::class),
+            $c->get(MemberRepository::class),
         ));
 
         // Frontend + admin.
