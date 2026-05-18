@@ -21,6 +21,11 @@ if (!defined('ABSPATH')) {
  * binds the token to *this* sign-in attempt and prevents replay of a
  * previously issued ID token.
  *
+ * For providers that require PKCE (Facebook), a `code_verifier` is
+ * also stashed alongside the state. It's optional — providers that
+ * don't use PKCE simply leave it null. The verifier never leaves the
+ * server; only its S256 challenge travels through the redirect.
+ *
  * Transients are used (not a custom table) because the state is
  * inherently short-lived — 10 minutes is plenty for a user to bounce
  * through the provider — and WordPress already has a working
@@ -31,20 +36,28 @@ final class StateStore
     private const PREFIX = 'reach_oauth_state_';
     private const TTL_SECONDS = 600; // 10 minutes
 
-    public function issue(string $provider, string $returnTo): array
+    /**
+     * @return array{state: string, nonce: string, code_verifier: ?string}
+     */
+    public function issue(string $provider, string $returnTo, ?string $codeVerifier = null): array
     {
         $state = bin2hex(random_bytes(16));
         $nonce = bin2hex(random_bytes(16));
         set_transient(
             self::PREFIX . $state,
             [
-                'provider'  => $provider,
-                'nonce'     => $nonce,
-                'return_to' => $returnTo,
+                'provider'      => $provider,
+                'nonce'         => $nonce,
+                'return_to'     => $returnTo,
+                'code_verifier' => $codeVerifier,
             ],
             self::TTL_SECONDS
         );
-        return ['state' => $state, 'nonce' => $nonce];
+        return [
+            'state'         => $state,
+            'nonce'         => $nonce,
+            'code_verifier' => $codeVerifier,
+        ];
     }
 
     /**
@@ -52,7 +65,7 @@ final class StateStore
      * transient — single-use semantics, so replaying the callback URL
      * does not work.
      *
-     * @return array{provider: string, nonce: string, return_to: string}|null
+     * @return array{provider: string, nonce: string, return_to: string, code_verifier: ?string}|null
      */
     public function consume(string $state): ?array
     {
@@ -62,10 +75,12 @@ final class StateStore
             return null;
         }
         delete_transient($key);
+        $verifier = $stored['code_verifier'] ?? null;
         return [
-            'provider'  => (string) ($stored['provider'] ?? ''),
-            'nonce'     => (string) ($stored['nonce'] ?? ''),
-            'return_to' => (string) ($stored['return_to'] ?? ''),
+            'provider'      => (string) ($stored['provider'] ?? ''),
+            'nonce'         => (string) ($stored['nonce'] ?? ''),
+            'return_to'     => (string) ($stored['return_to'] ?? ''),
+            'code_verifier' => is_string($verifier) ? $verifier : null,
         ];
     }
 }

@@ -14,12 +14,12 @@ use Reach\Core\Settings;
  * Admin settings page for OAuth credentials.
  *
  * Sits as the "Authentication" submenu under the top-level Reach menu
- * (registered by CallAttemptsPage). Hosts the three providers
- * (Google, Microsoft, Apple) and the require-Scrutiny-capability
- * toggle. Each provider gets a client ID field and a write-only
- * client secret field: the existing secret is displayed as a fixed-
- * width placeholder so an admin can see it's set without it being
- * readable from the form.
+ * (registered by CallAttemptsPage). Hosts the four providers
+ * (Google, Microsoft, Apple, Facebook) and the require-Scrutiny-
+ * capability toggle. Each provider gets a client ID field and a write-
+ * only client secret field: the existing secret is displayed as a
+ * fixed-width placeholder so an admin can see it's set without it
+ * being readable from the form.
  *
  * Secrets are AES-256-GCM encrypted at rest by the Settings class
  * (see Reach\Core\Settings::encrypt) and never come back to the
@@ -38,6 +38,7 @@ final class SettingsPage
         ['name' => 'google',    'label' => 'Google',    'redirect_help' => 'wp-json/reach/v1/oauth/callback'],
         ['name' => 'microsoft', 'label' => 'Microsoft', 'redirect_help' => 'wp-json/reach/v1/oauth/callback'],
         ['name' => 'apple',     'label' => 'Apple',     'redirect_help' => 'reach/signin (page URL, used for popup)'],
+        ['name' => 'facebook',  'label' => 'Facebook',  'redirect_help' => 'wp-json/reach/v1/oauth/callback'],
     ];
 
     public function __construct(
@@ -110,7 +111,7 @@ final class SettingsPage
                 <p>Register these with each provider:</p>
                 <table class="form-table">
                     <tr>
-                        <th>Google / Microsoft callback</th>
+                        <th>Google / Microsoft / Facebook callback</th>
                         <td><code><?php echo esc_html($callbackUrl); ?></code></td>
                     </tr>
                     <tr>

@@ -231,6 +231,7 @@ html, body {
 
 .reach-btn--google     .reach-btn__icon { color: #4285f4; }
 .reach-btn--microsoft  .reach-btn__icon { color: #00a4ef; }
+.reach-btn--facebook   .reach-btn__icon { color: #1877f2; }
 .reach-btn--apple      { background: #000; color: #fff; border-color: #000; }
 .reach-btn--apple:hover  { background: #1a1a1a; }
 .reach-btn--apple:active { background: #2a2a2a; }

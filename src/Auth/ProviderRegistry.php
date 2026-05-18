@@ -13,11 +13,11 @@ use Reach\Auth\Providers\OAuthProvider;
 /**
  * Lookup-by-name for OAuth providers.
  *
- * Bound in the container with all three providers (Google, Microsoft,
- * Apple) preregistered. Splitting this out from the controller means
- * the REST handlers stay focused on HTTP concerns and don't have to
- * know which providers exist; adding a fourth provider is a service-
- * provider edit, not a controller edit.
+ * Bound in the container with all configured providers (currently
+ * Google, Microsoft, Apple, Facebook) preregistered. Splitting this
+ * out from the controller means the REST handlers stay focused on
+ * HTTP concerns and don't have to know which providers exist; adding
+ * another provider is a service-provider edit, not a controller edit.
  */
 final class ProviderRegistry
 {

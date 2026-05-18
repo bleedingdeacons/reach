@@ -9,13 +9,14 @@ if (!defined('ABSPATH')) {
 /**
  * Reach sign-in page.
  *
- * Three buttons — Google, Microsoft, Apple — and nothing else. Google
- * and Microsoft are plain anchor tags pointing at /reach/v1/oauth/start
- * (the REST endpoint issues the redirect to the provider). Apple
- * cannot be a redirect because Apple's server-side flow requires a
- * .p8-signed client secret; instead the page loads Apple's JS SDK,
- * asks Reach for a state+nonce, and calls AppleID.auth.signIn() in
- * the browser. The returned ID token is POSTed back to /oauth/apple.
+ * Four buttons — Google, Microsoft, Facebook, Apple — and nothing
+ * else. Google, Microsoft, and Facebook are plain anchor tags
+ * pointing at /reach/v1/oauth/start (the REST endpoint issues the
+ * redirect to the provider). Apple cannot be a redirect because
+ * Apple's server-side flow requires a .p8-signed client secret;
+ * instead the page loads Apple's JS SDK, asks Reach for a state+nonce,
+ * and calls AppleID.auth.signIn() in the browser. The returned ID
+ * token is POSTed back to /oauth/apple.
  *
  * No tracking, no analytics, no fonts — the page is the smallest
  * possible thing that does the job. A user agent on a flaky mobile
@@ -29,6 +30,7 @@ $reachSettings       = get_option('reach_settings', []);
 $googleConfigured    = !empty($reachSettings['client_id_google']);
 $microsoftConfigured = !empty($reachSettings['client_id_microsoft']);
 $appleConfigured     = !empty($reachSettings['client_id_apple']);
+$facebookConfigured  = !empty($reachSettings['client_id_facebook']);
 $appleClientId       = $reachSettings['client_id_apple'] ?? '';
 
 $signOutUrl    = esc_url(rest_url('reach/v1/oauth/signout'));
@@ -67,6 +69,13 @@ $findPageUrl   = esc_url(home_url('/reach/find'));
                 </a>
             <?php endif; ?>
 
+            <?php if ($facebookConfigured): ?>
+                <a class="reach-btn reach-btn--facebook" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=facebook')); ?>" rel="nofollow">
+                    <span class="reach-btn__icon" aria-hidden="true">f</span>
+                    <span>Continue with Facebook</span>
+                </a>
+            <?php endif; ?>
+
             <?php if ($appleConfigured): ?>
                 <button type="button" class="reach-btn reach-btn--apple" id="reach-apple-btn">
                     <span class="reach-btn__icon" aria-hidden="true">&#xf8ff;</span>
@@ -74,7 +83,7 @@ $findPageUrl   = esc_url(home_url('/reach/find'));
                 </button>
             <?php endif; ?>
 
-            <?php if (!$googleConfigured && !$microsoftConfigured && !$appleConfigured): ?>
+            <?php if (!$googleConfigured && !$microsoftConfigured && !$appleConfigured && !$facebookConfigured): ?>
                 <p class="reach-error">Sign-in providers haven&rsquo;t been configured yet. Please contact the site administrator.</p>
             <?php endif; ?>
         </div>

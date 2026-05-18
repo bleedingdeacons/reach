@@ -53,7 +53,7 @@ final class GoogleProvider implements OAuthProvider
         return true;
     }
 
-    public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri): string
+    public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
     {
         $params = [
             'client_id'     => $this->settings->getClientId(self::PROVIDER_NAME),
@@ -67,48 +67,10 @@ final class GoogleProvider implements OAuthProvider
         return self::AUTH_URL . '?' . http_build_query($params);
     }
 
-//    public function handleCallback(string $code, string $nonce, string $redirectUri): ?VerifiedIdentity
-//    {
-//        $tokens = $this->exchangeCode($code, $redirectUri);
-//        if ($tokens === null || empty($tokens['id_token']) || !is_string($tokens['id_token'])) {
-//            return null;
-//        }
-//
-//        $claims = $this->verifier->verify(
-//            $tokens['id_token'],
-//            self::JWKS_URL,
-//            self::ISSUER,
-//            $this->settings->getClientId(self::PROVIDER_NAME),
-//            $nonce
-//        );
-//        if ($claims === null) {
-//            return null;
-//        }
-//
-//        // The whole point of this flow is a verified email.
-//        if (empty($claims['email']) || !is_string($claims['email'])) {
-//            return null;
-//        }
-//        if (isset($claims['email_verified']) && $claims['email_verified'] !== true) {
-//            return null;
-//        }
-//
-//        return new VerifiedIdentity(
-//            strtolower($claims['email']),
-//            self::PROVIDER_NAME,
-//            (string) ($claims['sub'] ?? ''),
-//        );
-//    }
-
-    public function handleCallback(string $code, string $nonce, string $redirectUri): ?VerifiedIdentity
+    public function handleCallback(string $code, string $nonce, string $redirectUri, ?string $codeVerifier = null): ?VerifiedIdentity
     {
         $tokens = $this->exchangeCode($code, $redirectUri);
-        if ($tokens === null) {
-            error_log('REACH DIAG: token exchange returned null (HTTP or non-2xx)');
-            return null;
-        }
-        if (empty($tokens['id_token']) || !is_string($tokens['id_token'])) {
-            error_log('REACH DIAG: no id_token in token response. Keys: ' . implode(',', array_keys($tokens)));
+        if ($tokens === null || empty($tokens['id_token']) || !is_string($tokens['id_token'])) {
             return null;
         }
 
@@ -120,20 +82,14 @@ final class GoogleProvider implements OAuthProvider
             $nonce
         );
         if ($claims === null) {
-            // Decode the payload manually so we can see what was *in* the token
-            $parts = explode('.', $tokens['id_token']);
-            $payload = isset($parts[1]) ? json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true) : null;
-            error_log('REACH DIAG: JWT verify failed. Expected aud=' . $this->settings->getClientId(self::PROVIDER_NAME) . ', expected iss=' . self::ISSUER . ', expected nonce=' . $nonce);
-            error_log('REACH DIAG: token payload was: ' . print_r($payload, true));
             return null;
         }
 
+        // The whole point of this flow is a verified email.
         if (empty($claims['email']) || !is_string($claims['email'])) {
-            error_log('REACH DIAG: no email in claims: ' . print_r($claims, true));
             return null;
         }
         if (isset($claims['email_verified']) && $claims['email_verified'] !== true) {
-            error_log('REACH DIAG: email_verified was: ' . var_export($claims['email_verified'], true));
             return null;
         }
 
@@ -152,33 +108,6 @@ final class GoogleProvider implements OAuthProvider
     /**
      * @return array<string, mixed>|null
      */
-//    private function exchangeCode(string $code, string $redirectUri): ?array
-//    {
-//        $response = wp_remote_post(self::TOKEN_URL, [
-//            'timeout' => 10,
-//            'headers' => ['Accept' => 'application/json'],
-//            'body'    => [
-//                'code'          => $code,
-//                'client_id'     => $this->settings->getClientId(self::PROVIDER_NAME),
-//                'client_secret' => $this->settings->getClientSecret(self::PROVIDER_NAME),
-//                'redirect_uri'  => $redirectUri,
-//                'grant_type'    => 'authorization_code',
-//            ],
-//        ]);
-//        if (is_wp_error($response)) {
-//            return null;
-//        }
-//        $code = (int) wp_remote_retrieve_response_code($response);
-//        if ($code < 200 || $code >= 300) {
-//            return null;
-//        }
-//        $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
-//        return is_array($decoded) ? $decoded : null;
-//    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
     private function exchangeCode(string $code, string $redirectUri): ?array
     {
         $response = wp_remote_post(self::TOKEN_URL, [
@@ -192,23 +121,14 @@ final class GoogleProvider implements OAuthProvider
                 'grant_type'    => 'authorization_code',
             ],
         ]);
-
         if (is_wp_error($response)) {
-            error_log('REACH DIAG: wp_remote_post WP_Error: ' . $response->get_error_message());
             return null;
         }
-
-        $httpCode = (int) wp_remote_retrieve_response_code($response);
-        $body = (string) wp_remote_retrieve_body($response);
-        error_log('REACH DIAG: token endpoint HTTP ' . $httpCode . ' body: ' . $body);
-        error_log('REACH DIAG: redirect_uri sent: ' . $redirectUri);
-        error_log('REACH DIAG: client_id length: ' . strlen($this->settings->getClientId(self::PROVIDER_NAME)) . ', client_secret length: ' . strlen($this->settings->getClientSecret(self::PROVIDER_NAME)));
-
-        if ($httpCode < 200 || $httpCode >= 300) {
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
             return null;
         }
-
-        $decoded = json_decode($body, true);
+        $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
         return is_array($decoded) ? $decoded : null;
     }
 }

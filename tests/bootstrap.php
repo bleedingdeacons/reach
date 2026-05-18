@@ -23,6 +23,18 @@ if (!defined('COOKIE_DOMAIN')) {
     define('COOKIE_DOMAIN', '');
 }
 
+// wpdb output modes — defined in wp-db.php / wp-includes/class-wpdb.php.
+// WpdbCallAttemptRepository passes these to $wpdb->get_results().
+if (!defined('OBJECT')) {
+    define('OBJECT', 'OBJECT');
+}
+if (!defined('ARRAY_A')) {
+    define('ARRAY_A', 'ARRAY_A');
+}
+if (!defined('ARRAY_N')) {
+    define('ARRAY_N', 'ARRAY_N');
+}
+
 // In-memory transient + options store for tests.
 $GLOBALS['__reach_transients'] = [];
 $GLOBALS['__reach_options'] = [];

@@ -1,6 +1,6 @@
 # Reach
 
-Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple, and a mobile-first finder UI.
+Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, and a mobile-first finder UI.
 
 **Version:** 1.1.0
 
@@ -16,25 +16,44 @@ Reach hooks into Unity on `unity/loaded` and uses Unity's `MemberRepository` to 
 
 | URL              | Purpose                                                                   |
 | ---------------- | ------------------------------------------------------------------------- |
-| `/reach/signin`  | Three OAuth buttons — Google, Microsoft, Apple. No password, no account.  |
+| `/reach/signin`  | OAuth buttons — Google, Microsoft, Facebook, Apple. No password, no account.  |
 | `/reach/find`    | Postcode/area input + gender filter + nearest members list + sign-out.    |
 
 Both pages render outside the WordPress theme — they're standalone mobile views.
 
 ## Sign-in flow
 
-**Google / Microsoft** — server-side OAuth 2.0 authorization-code flow:
+**Google / Microsoft / Facebook** — server-side OAuth 2.0 authorization-code flow:
 
 ```
 /reach/signin
   → click "Continue with Google"
   → GET /reach/v1/oauth/start?provider=google
-    (Reach mints CSRF state + nonce, stores them as a transient, 302 to Google)
-  → Google sign-in
+    (Reach mints CSRF state + nonce + PKCE verifier, stores them as a
+     transient, 302 to the provider)
+  → provider sign-in
   → GET /reach/v1/oauth/callback?code=...&state=...
     (Reach consumes the state, exchanges the code, verifies the ID token,
      sets the signed session cookie, 302 to /reach/find)
 ```
+
+Facebook requires PKCE on the web flow and uses a GET token endpoint;
+both are handled inside `FacebookProvider`. Google and Microsoft don't
+need PKCE but receive a verifier anyway and ignore it — the controller
+mints one for every server-side flow.
+
+**Facebook relay addresses** — if a user declines to share their email
+in Facebook's consent dialog, Facebook hands Reach back an anonymised
+address on `*.facebook.com` (e.g. `hash@privaterelay.facebook.com`).
+Reach can't use those as a contact address — Facebook doesn't forward
+mail behind them — so the OAuth callback parks the proven identity in
+a single-use transient and redirects to `/reach/email`, where the user
+types a real address. On submit, the typed address becomes the session
+email; the original relay is kept on the session as `providerEmail` so
+the audit trail records what Facebook actually sent. Apple's
+`privaterelay.appleid.com` is *not* treated as anonymised: Apple
+genuinely forwards mail through its relay, so those addresses are
+accepted as the contact email.
 
 **Apple** — client-side flow via Apple's JS SDK:
 
@@ -63,10 +82,11 @@ No WordPress users are created. There is no server-side session table. The cooki
 
 | Endpoint                                   | Method | Purpose                            |
 | ------------------------------------------ | ------ | ---------------------------------- |
-| `/reach/v1/oauth/start?provider=...`       | GET    | Start Google or Microsoft flow     |
+| `/reach/v1/oauth/start?provider=...`       | GET    | Start Google/Microsoft/Facebook flow |
 | `/reach/v1/oauth/callback`                 | GET    | OAuth callback target              |
 | `/reach/v1/oauth/apple/start`              | GET    | Issue state+nonce for Apple SDK    |
 | `/reach/v1/oauth/apple`                    | POST   | Verify Apple ID token              |
+| `/reach/v1/oauth/complete-email`           | POST   | Submit a typed email after a Facebook relay sign-in |
 | `/reach/v1/oauth/signout`                  | POST   | Clear the session cookie           |
 | `/reach/v1/session`                        | GET    | Returns current session info       |
 | `/reach/v1/nearest-members`                | GET    | Nearest 12th-step members by area  |
@@ -135,7 +155,7 @@ Settings → Reach. Client IDs are stored as plain options; client secrets are A
 
 Redirect URIs to register with each provider:
 
-- Google / Microsoft: `https://your-site.example/wp-json/reach/v1/oauth/callback`
+- Google / Microsoft / Facebook: `https://your-site.example/wp-json/reach/v1/oauth/callback`
 - Apple: `https://your-site.example/reach/signin` (used as the popup origin)
 
 ## License

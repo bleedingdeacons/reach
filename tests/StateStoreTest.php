@@ -62,4 +62,29 @@ final class StateStoreTest extends TestCase
             $seen[] = $tokens['state'];
         }
     }
+
+    public function testCodeVerifierRoundTripsWhenProvided(): void
+    {
+        $store = new StateStore();
+        $verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+        $tokens = $store->issue('facebook', '/reach/find', $verifier);
+
+        $this->assertSame($verifier, $tokens['code_verifier']);
+
+        $consumed = $store->consume($tokens['state']);
+        $this->assertNotNull($consumed);
+        $this->assertSame($verifier, $consumed['code_verifier']);
+    }
+
+    public function testCodeVerifierDefaultsToNullForNonPkceProviders(): void
+    {
+        $store = new StateStore();
+        $tokens = $store->issue('google', '/reach/find');
+
+        $this->assertNull($tokens['code_verifier']);
+
+        $consumed = $store->consume($tokens['state']);
+        $this->assertNotNull($consumed);
+        $this->assertNull($consumed['code_verifier']);
+    }
 }
