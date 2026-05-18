@@ -199,6 +199,7 @@ interface Member
     public function getPersonalEmail(): string;
     public function getMobileNumber(): string;
     public function isTwelfthStepper(): bool;
+    public function isTelephoneResponder(): bool;
     public function getArea(): string;
     public function getAccepts(): array;
     public function isGdprAccepted(): bool;

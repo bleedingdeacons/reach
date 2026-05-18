@@ -149,6 +149,7 @@ final class NearestMembersResolverTest extends TestCase
             public function getPersonalEmail(): string { return ''; }
             public function getMobileNumber(): string { return ''; }
             public function isTwelfthStepper(): bool { return $this->twelfth; }
+            public function isTelephoneResponder(): bool { return false; }
             public function getArea(): string { return $this->area; }
             public function getAccepts(): array { return $this->accepts; }
             public function isGdprAccepted(): bool { return true; }

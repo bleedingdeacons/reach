@@ -15,6 +15,7 @@ use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
+use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -61,6 +62,7 @@ final class OAuthController
         private readonly StateStore $stateStore,
         private readonly SessionCookie $sessionCookie,
         private readonly PendingIdentityStore $pendingIdentities,
+        private readonly MemberRepository $members,
     ) {
     }
 
@@ -217,6 +219,10 @@ final class OAuthController
             return $this->redirect($this->emailPageUrl($token));
         }
 
+        if (($denied = $this->assertMemberAllowed($identity)) !== null) {
+            return $denied;
+        }
+
         $this->issueSessionFor($identity);
         return $this->redirect($returnTo);
     }
@@ -258,6 +264,10 @@ final class OAuthController
             return new WP_REST_Response(['redirect' => $this->emailPageUrl($token)], 200);
         }
 
+        if (($denied = $this->assertMemberAllowed($identity)) !== null) {
+            return $denied;
+        }
+
         $this->issueSessionFor($identity);
         return new WP_REST_Response(['redirect' => $this->findPageUrl()], 200);
     }
@@ -294,6 +304,11 @@ final class OAuthController
             $original->sub,
             $original->providerEmail,
         );
+
+        if (($denied = $this->assertMemberAllowed($promoted)) !== null) {
+            return $denied;
+        }
+
         $this->issueSessionFor($promoted);
 
         $returnTo = $pending['return_to'] !== '' ? $pending['return_to'] : $this->findPageUrl();
@@ -318,6 +333,34 @@ final class OAuthController
             $identity->providerEmail,
         );
         $this->sessionCookie->issue($session);
+    }
+
+    /**
+     * Gate sign-in on the member's role.
+     *
+     * Reach is for members who handle outreach calls — either as 12th-
+     * step volunteers or as telephone responders on the helpline. A
+     * verified identity whose email doesn't match any member, or
+     * matches a member with neither role, is rejected at the sign-in
+     * boundary so the session cookie is never minted. This keeps the
+     * downstream code (NearestMembersController, CallAttemptController)
+     * able to assume any authenticated session belongs to someone
+     * entitled to use Reach.
+     *
+     * Returns null when sign-in may proceed, or a WP_Error suitable for
+     * returning from the calling REST callback otherwise.
+     */
+    private function assertMemberAllowed(VerifiedIdentity $identity): ?WP_Error
+    {
+        $member = $this->members->findByEmail($identity->email);
+        if ($member === null || (!$member->isTwelfthStepper() && !$member->isTelephoneResponder())) {
+            return new WP_Error(
+                'reach_not_eligible',
+                'This account is not registered to use Reach. Please contact your intergroup if you believe this is in error.',
+                ['status' => 403]
+            );
+        }
+        return null;
     }
 
     /**

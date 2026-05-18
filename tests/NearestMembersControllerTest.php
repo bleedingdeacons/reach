@@ -305,6 +305,7 @@ final class NearestMembersControllerTest extends TestCase
             public function getPersonalEmail(): string { return $this->email; }
             public function getMobileNumber(): string { return '+44 7700 900000'; }
             public function isTwelfthStepper(): bool { return $this->twelfth; }
+            public function isTelephoneResponder(): bool { return false; }
             public function getArea(): string { return $this->area; }
             public function getAccepts(): array { return ['phone']; }
             public function isGdprAccepted(): bool { return true; }

@@ -109,6 +109,7 @@ final class ReachServiceProvider
             $c->get(StateStore::class),
             $c->get(SessionCookie::class),
             $c->get(PendingIdentityStore::class),
+            $c->get(MemberRepository::class),
         ));
 
         $container->register(NearestMembersController::class, fn(ContainerInterface $c) => new NearestMembersController(
