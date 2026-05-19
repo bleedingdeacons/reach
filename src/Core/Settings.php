@@ -11,11 +11,10 @@ if (!defined('ABSPATH')) {
 /**
  * Settings store for Reach.
  *
- * Public fields (client IDs, the require-capability toggle) live in a
- * single wp_option as plain JSON. Secrets (OAuth client secrets) are
- * AES-256-GCM encrypted before being written, keyed by a hash of
- * WordPress's AUTH_KEY salt, so a database dump alone never yields
- * usable credentials.
+ * Public fields (client IDs) live in a single wp_option as plain
+ * JSON. Secrets (OAuth client secrets) are AES-256-GCM encrypted
+ * before being written, keyed by a hash of WordPress's AUTH_KEY
+ * salt, so a database dump alone never yields usable credentials.
  *
  * Two reads, two writes — public values and secret values are kept in
  * separate option rows so we can render the admin form without
@@ -68,28 +67,6 @@ final class Settings
             $all[$key] = $this->encrypt($value);
         }
         update_option(self::OPTION_SECRETS, $all, false);
-    }
-
-    /**
-     * Whether the nearest-members endpoint should also require the
-     * scrutiny_view_personal_data capability. Default false — Reach
-     * exists precisely to give email-verified end users a way to find
-     * a 12th-stepper without needing a WP account.
-     */
-    public function requireScrutinyCapability(): bool
-    {
-        $all = get_option(self::OPTION_PUBLIC, []);
-        return is_array($all) && !empty($all['require_scrutiny_capability']);
-    }
-
-    public function setRequireScrutinyCapability(bool $value): void
-    {
-        $all = get_option(self::OPTION_PUBLIC, []);
-        if (!is_array($all)) {
-            $all = [];
-        }
-        $all['require_scrutiny_capability'] = $value;
-        update_option(self::OPTION_PUBLIC, $all, false);
     }
 
     /**

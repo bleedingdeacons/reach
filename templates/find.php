@@ -21,9 +21,8 @@ if (!defined('ABSPATH')) {
  *
  * `nonce` is the standard WP REST nonce — although Reach sessions
  * authenticate the request, sending the nonce too makes the request
- * survive any future capability-check overlay (e.g. when an admin
- * has set Settings::requireScrutinyCapability to true and the user
- * also happens to be logged in to WP).
+ * survive any future capability-check overlay that might require a
+ * logged-in WP user in addition to the email-verified session.
  */
 
 /** @var \Reach\Session\Session|null $session */

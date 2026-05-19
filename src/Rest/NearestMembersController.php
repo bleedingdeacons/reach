@@ -11,13 +11,11 @@ if (!defined('ABSPATH')) {
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
-use Reach\Core\Settings;
 use Reach\Resolution\NearestMembersResolver;
 use Reach\Resolution\ResolutionResult;
 use Reach\Resolution\ScoredMember;
 use Reach\Session\CurrentSession;
 use Scrutiny\Audit\Interfaces\AuditLogger;
-use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -52,16 +50,6 @@ use function rest_ensure_response;
  * gate here, matching CallAttemptController: an intergroup officer or
  * other non-12th-step member who legitimately reaches this endpoint
  * still appears under their anonymous name.
- *
- * Capability flag
- * ---------------
- * The Settings::requireScrutinyCapability toggle exists for installs
- * that want to keep Reach internal-only (employees, intergroup
- * officers) — when on, the email-verified session is necessary but
- * not sufficient, and the user must also be a logged-in WP user with
- * the scrutiny_view_personal_data capability. By default it's off
- * because the whole point of Reach is to give end users a way in
- * without a WP account.
  */
 final class NearestMembersController
 {
@@ -88,7 +76,6 @@ final class NearestMembersController
         private readonly NearestMembersResolver $resolver,
         private readonly AuditLogger $auditLogger,
         private readonly CurrentSession $session,
-        private readonly Settings $settings,
         private readonly CallAttemptRepository $callAttempts,
         private readonly ResponsivenessScorer $scorer,
         private readonly AttemptTokenMinter $attemptTokens,
@@ -170,16 +157,6 @@ final class NearestMembersController
                 'Sign in to use Reach.',
                 ['status' => 401]
             );
-        }
-
-        if ($this->settings->requireScrutinyCapability()) {
-            if (!is_user_logged_in() || !current_user_can(PersonalDataPolicy::VIEW_CAPABILITY)) {
-                return new WP_Error(
-                    'reach_forbidden',
-                    'You do not have permission to view member contact details.',
-                    ['status' => 403]
-                );
-            }
         }
 
         return true;
@@ -292,9 +269,8 @@ final class NearestMembersController
      *
      * The viewer is the logged-in Reach user who ran the search
      * (typically a 12th-stepper, but not necessarily — an intergroup
-     * officer using Reach under the `requireScrutinyCapability` flag,
-     * or any member without the 12th-stepper flag, can also reach
-     * this endpoint). We therefore do not gate on
+     * officer, or any member without the 12th-stepper flag, can also
+     * reach this endpoint). We therefore do not gate on
      * {@see Member::isTwelfthStepper()}: any member record with a
      * non-empty anonymous name is named in the audit row. This is the
      * same policy as

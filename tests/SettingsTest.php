@@ -74,12 +74,4 @@ final class SettingsTest extends TestCase
             $GLOBALS['__reach_options'][Settings::OPTION_SECRETS] ?? []
         );
     }
-
-    public function testRequireCapabilityToggleDefaultsOff(): void
-    {
-        $settings = new Settings();
-        $this->assertFalse($settings->requireScrutinyCapability());
-        $settings->setRequireScrutinyCapability(true);
-        $this->assertTrue($settings->requireScrutinyCapability());
-    }
 }

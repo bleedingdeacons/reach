@@ -11,11 +11,9 @@ if (!defined('ABSPATH')) {
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\CallAttemptRepository;
-use Reach\Core\Settings;
 use Reach\Session\CurrentSession;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Scrutiny\Privacy\PersonalDataFields;
-use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -42,10 +40,9 @@ use function rest_ensure_response;
  * Authn / authz
  * -------------
  * Same as the nearest-members controller: a valid Reach session is
- * required, and the optional Scrutiny capability gate applies. On top
- * of that, the attempt_token must verify against (viewer email,
- * member id) — i.e. the caller must have actually been shown this
- * member in a recent result set.
+ * required. On top of that, the attempt_token must verify against
+ * (viewer email, member id) — i.e. the caller must have actually
+ * been shown this member in a recent result set.
  *
  * Audit
  * -----
@@ -67,7 +64,6 @@ final class CallAttemptController
         private readonly CallAttemptRepository $repository,
         private readonly AttemptTokenMinter $tokens,
         private readonly CurrentSession $session,
-        private readonly Settings $settings,
         private readonly AuditLogger $auditLogger,
         private readonly MemberRepository $members,
     ) {
@@ -130,15 +126,6 @@ final class CallAttemptController
             );
         }
 
-        if ($this->settings->requireScrutinyCapability()) {
-            if (!is_user_logged_in() || !current_user_can(PersonalDataPolicy::VIEW_CAPABILITY)) {
-                return new WP_Error(
-                    'reach_forbidden',
-                    'You do not have permission to record member contact attempts.',
-                    ['status' => 403]
-                );
-            }
-        }
         return true;
     }
 

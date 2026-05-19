@@ -9,7 +9,6 @@ use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\ResponsivenessScorer;
-use Reach\Core\Settings;
 use Reach\Geocoding\Coordinates;
 use Reach\Geocoding\Geocoder;
 use Reach\Resolution\NearestMembersResolver;
@@ -37,7 +36,7 @@ use WP_REST_Response;
  *  - unresolvable location: resolver short-circuits, no audit rows written
  *
  * Dependencies are constructed for real where they are cheap and final
- * (Settings, AttemptTokenMinter, ResponsivenessScorer, NearestMembersResolver),
+ * (AttemptTokenMinter, ResponsivenessScorer, NearestMembersResolver),
  * faked where they are interfaces (AuditLogger, CallAttemptRepository,
  * Geocoder, MemberRepository), and injected via reflection where the
  * class is final and the constructor would otherwise require setting
@@ -115,8 +114,7 @@ final class NearestMembersControllerTest extends TestCase
     public function testNonTwelfthStepperViewerIsStillNamed(): void
     {
         // The verified email matches a non-12th-step member (e.g. an
-        // intergroup officer using Reach under the
-        // requireScrutinyCapability flag). The audit row should name
+        // intergroup officer using Reach). The audit row should name
         // them under their anonymous name — there is no 12th-stepper
         // gate on the viewer-resolution step, mirroring the call-
         // attempt audit so the same person appears under the same
@@ -230,7 +228,6 @@ final class NearestMembersControllerTest extends TestCase
             new NearestMembersResolver($repo, $geo),
             $audit,
             $this->sessionWithEmail($sessionEmail),
-            new Settings(),
             new NoopCallAttemptRepository(),
             new ResponsivenessScorer(),
             new AttemptTokenMinter(),

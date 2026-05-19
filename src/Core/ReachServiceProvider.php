@@ -116,7 +116,6 @@ final class ReachServiceProvider
             $c->get(NearestMembersResolver::class),
             $c->get(AuditLogger::class),
             $c->get(CurrentSession::class),
-            $c->get(Settings::class),
             $c->get(CallAttemptRepository::class),
             $c->get(ResponsivenessScorer::class),
             $c->get(AttemptTokenMinter::class),
@@ -127,7 +126,6 @@ final class ReachServiceProvider
             $c->get(CallAttemptRepository::class),
             $c->get(AttemptTokenMinter::class),
             $c->get(CurrentSession::class),
-            $c->get(Settings::class),
             $c->get(AuditLogger::class),
             $c->get(MemberRepository::class),
         ));

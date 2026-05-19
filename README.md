@@ -145,10 +145,6 @@ Scrutiny's audit admin parses this shape and renders the name as a link to the v
 
 So "which Reach visitor saw which member's mobile, and when, and which attempts they then logged" is answerable directly from Scrutiny's audit table.
 
-## Optional capability gate
-
-By default, an email-verified session is sufficient — that's the whole point of Reach. The **Settings → Reach** admin page has a toggle that also requires the visitor to be a logged-in WordPress user with `scrutiny_view_personal_data`. Useful for internal-only deployments where Reach is for officers, not general public.
-
 ## OAuth credentials
 
 Settings → Reach. Client IDs are stored as plain options; client secrets are AES-256-GCM encrypted at rest, keyed by `wp_salt('auth')`. Empty submission of a secret field leaves the existing value untouched; an explicit checkbox is needed to remove a stored secret.

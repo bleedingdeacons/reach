@@ -108,17 +108,91 @@ final class SettingsPage
                 <?php wp_nonce_field('reach_save_settings'); ?>
 
                 <h2>Redirect URIs</h2>
-                <p>Register these with each provider:</p>
+                <p>Register these with each provider. The domain matches your WordPress Site Address &mdash; change it under <em>Settings &rarr; General</em> if it&rsquo;s wrong.</p>
                 <table class="form-table">
                     <tr>
                         <th>Google / Microsoft / Facebook callback</th>
-                        <td><code><?php echo esc_html($callbackUrl); ?></code></td>
+                        <td>
+                            <code class="reach-copyable" id="reach-callback-url"><?php echo esc_html($callbackUrl); ?></code>
+                            <button type="button"
+                                    class="button button-secondary reach-copy-btn"
+                                    data-clipboard-target="reach-callback-url">Copy</button>
+                        </td>
                     </tr>
                     <tr>
                         <th>Apple redirect (popup)</th>
-                        <td><code><?php echo esc_html($appleRedirectUrl); ?></code></td>
+                        <td>
+                            <code class="reach-copyable" id="reach-apple-url"><?php echo esc_html($appleRedirectUrl); ?></code>
+                            <button type="button"
+                                    class="button button-secondary reach-copy-btn"
+                                    data-clipboard-target="reach-apple-url">Copy</button>
+                        </td>
                     </tr>
                 </table>
+
+                <style>
+                    .reach-copyable {
+                        display: inline-block;
+                        padding: 4px 8px;
+                        background: #f0f0f1;
+                        border: 1px solid #c3c4c7;
+                        border-radius: 3px;
+                        margin-right: 6px;
+                        user-select: all;
+                    }
+                    .reach-copy-btn[data-copied="1"] {
+                        color: #00713c;
+                        border-color: #00713c;
+                    }
+                </style>
+                <script>
+                    (function () {
+                        document.querySelectorAll('.reach-copy-btn').forEach(function (btn) {
+                            btn.addEventListener('click', function () {
+                                var targetId = btn.getAttribute('data-clipboard-target');
+                                var target = document.getElementById(targetId);
+                                if (!target) {
+                                    return;
+                                }
+                                var text = target.textContent.trim();
+                                var done = function () {
+                                    var original = btn.textContent;
+                                    btn.textContent = 'Copied';
+                                    btn.setAttribute('data-copied', '1');
+                                    setTimeout(function () {
+                                        btn.textContent = original;
+                                        btn.removeAttribute('data-copied');
+                                    }, 1500);
+                                };
+                                if (navigator.clipboard && window.isSecureContext) {
+                                    navigator.clipboard.writeText(text).then(done, function () {
+                                        fallbackCopy(text, done);
+                                    });
+                                } else {
+                                    fallbackCopy(text, done);
+                                }
+                            });
+                        });
+
+                        function fallbackCopy(text, done) {
+                            var ta = document.createElement('textarea');
+                            ta.value = text;
+                            ta.setAttribute('readonly', '');
+                            ta.style.position = 'absolute';
+                            ta.style.left = '-9999px';
+                            document.body.appendChild(ta);
+                            ta.select();
+                            try {
+                                document.execCommand('copy');
+                                done();
+                            } catch (e) {
+                                // Last resort: leave the value selected so the
+                                // admin can Ctrl/Cmd-C manually.
+                            }
+                            document.body.removeChild(ta);
+                        }
+                    })();
+                </script>
 
                 <?php foreach (self::PROVIDERS as $provider): ?>
                     <h2><?php echo esc_html($provider['label']); ?></h2>
@@ -161,23 +235,6 @@ final class SettingsPage
                         <?php endif; ?>
                     </table>
                 <?php endforeach; ?>
-
-                <h2>Access</h2>
-                <table class="form-table">
-                    <tr>
-                        <th>Require Scrutiny capability</th>
-                        <td>
-                            <label>
-                                <input type="checkbox"
-                                       name="require_scrutiny_capability"
-                                       value="1"
-                                       <?php checked($this->settings->requireScrutinyCapability()); ?>>
-                                Also require visitors to be logged-in WP users with <code>scrutiny_view_personal_data</code>.
-                            </label>
-                            <p class="description">Off by default. Turn on if Reach should be limited to staff/officers in addition to email verification.</p>
-                        </td>
-                    </tr>
-                </table>
 
                 <?php submit_button(); ?>
             </form>
@@ -223,8 +280,6 @@ final class SettingsPage
             }
             // Empty + no remove flag → leave existing secret untouched.
         }
-
-        $this->settings->setRequireScrutinyCapability(!empty($_POST['require_scrutiny_capability']));
 
         // The page moved from "Settings → Reach" (options-general.php)
         // to "Reach → Authentication" (admin.php) when the top-level
