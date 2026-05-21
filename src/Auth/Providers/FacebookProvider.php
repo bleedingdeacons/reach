@@ -27,9 +27,12 @@ use Reach\Core\Settings;
  *     We still send the client secret too (Facebook is a confidential
  *     client from our side); PKCE is layered on top.
  *
- *   - Facebook's token endpoint is a GET (not a POST), with
- *     parameters in the query string. We honour that here rather than
- *     trying to coerce it into a POST.
+ *   - Facebook's token endpoint historically accepted both GET and
+ *     POST; we use POST so the client secret travels in the request
+ *     body rather than the URL query string. Secrets in URLs leak
+ *     into outbound proxy logs, server access logs, and tracing
+ *     systems — POST avoids all of that with no behavioural change
+ *     from Facebook's side.
  *
  *   - The authorise endpoint lives under `/v21.0/dialog/oauth` on
  *     www.facebook.com; the token endpoint under `/v21.0/oauth/...`
@@ -136,24 +139,30 @@ final class FacebookProvider implements OAuthProvider
     }
 
     /**
-     * Facebook's token endpoint is a GET, with parameters in the query
-     * string. WordPress's HTTP helper handles that fine via wp_remote_get.
+     * Exchange the authorisation code for tokens.
+     *
+     * Uses POST with the credentials in the request body — Facebook
+     * accepts both GET and POST on this endpoint, but POST keeps the
+     * client secret out of URLs (and therefore out of any logging or
+     * tracing layer that records request lines).
      *
      * @return array<string, mixed>|null
      */
     private function exchangeCode(string $code, string $redirectUri, string $codeVerifier): ?array
     {
-        $url = self::TOKEN_URL . '?' . http_build_query([
-            'client_id'     => $this->settings->getClientId(self::PROVIDER_NAME),
-            'client_secret' => $this->settings->getClientSecret(self::PROVIDER_NAME),
-            'redirect_uri'  => $redirectUri,
-            'code'          => $code,
-            'code_verifier' => $codeVerifier,
-        ]);
-
-        $response = wp_remote_get($url, [
+        $response = wp_remote_post(self::TOKEN_URL, [
             'timeout' => 10,
-            'headers' => ['Accept' => 'application/json'],
+            'headers' => [
+                'Accept'       => 'application/json',
+                'Content-Type' => 'application/x-www-form-urlencoded',
+            ],
+            'body' => [
+                'client_id'     => $this->settings->getClientId(self::PROVIDER_NAME),
+                'client_secret' => $this->settings->getClientSecret(self::PROVIDER_NAME),
+                'redirect_uri'  => $redirectUri,
+                'code'          => $code,
+                'code_verifier' => $codeVerifier,
+            ],
         ]);
         if (is_wp_error($response)) {
             return null;
