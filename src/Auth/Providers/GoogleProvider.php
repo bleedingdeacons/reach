@@ -28,6 +28,12 @@ use Reach\Core\Settings;
  * Google can return an unverified email in edge cases (e.g.
  * institutional accounts), and an unverified email defeats the
  * point of the whole exercise.
+ *
+ * The verified-email check defaults to *reject* when the claim is
+ * absent rather than treating absence as "probably fine". OIDC
+ * requires the claim, but a misconfigured or future provider could
+ * omit it; failing closed costs us nothing on the happy path and
+ * removes a category of "what if" worry.
  */
 final class GoogleProvider implements OAuthProvider
 {
@@ -89,7 +95,11 @@ final class GoogleProvider implements OAuthProvider
         if (empty($claims['email']) || !is_string($claims['email'])) {
             return null;
         }
-        if (isset($claims['email_verified']) && $claims['email_verified'] !== true) {
+        // Reject when the claim is missing as well as when it's false.
+        // OIDC requires `email_verified`; a token without it is
+        // either non-compliant or doctored, and either way we don't
+        // want to trust the address.
+        if (($claims['email_verified'] ?? null) !== true) {
             return null;
         }
 
@@ -124,8 +134,8 @@ final class GoogleProvider implements OAuthProvider
         if (is_wp_error($response)) {
             return null;
         }
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
+        $httpCode = (int) wp_remote_retrieve_response_code($response);
+        if ($httpCode < 200 || $httpCode >= 300) {
             return null;
         }
         $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
