@@ -45,7 +45,9 @@ use Reach\Core\Settings;
  * not a Facebook profile we have nowhere to store.
  *
  * Facebook does set `email_verified` on the ID token, and we enforce
- * it — an unverified email here defeats the entire purpose.
+ * it strictly — both an explicit `false` and an absent claim cause
+ * sign-in to fail. Treating "missing" as "verified" would defeat the
+ * whole purpose of the flow.
  */
 final class FacebookProvider implements OAuthProvider
 {
@@ -120,9 +122,11 @@ final class FacebookProvider implements OAuthProvider
         if (empty($claims['email']) || !is_string($claims['email'])) {
             return null;
         }
-        // Facebook does populate email_verified on the ID token; if it
-        // says anything other than true, refuse the sign-in.
-        if (isset($claims['email_verified']) && $claims['email_verified'] !== true) {
+        // Reject when the claim is missing as well as when it's false.
+        // OIDC requires `email_verified`; a token without it is either
+        // non-compliant or doctored, and either way we don't want to
+        // trust the address.
+        if (($claims['email_verified'] ?? null) !== true) {
             return null;
         }
 
