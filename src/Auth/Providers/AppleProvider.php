@@ -31,6 +31,12 @@ use Reach\Core\Settings;
  * on subsequent ones. That's not a problem for Reach: a session lasts
  * 12 hours and is re-issued from scratch each time, so the first-
  * sign-in token (which carries the email) is the only one we ever see.
+ *
+ * Apple returns `email_verified` as either the boolean `true` or the
+ * string `"true"` depending on which leg of the API you're hitting,
+ * so the check below accepts both. As with the other providers, an
+ * absent claim is treated as not-verified rather than assumed-fine —
+ * failing closed here has no cost on the happy path.
  */
 final class AppleProvider implements OAuthProvider
 {
@@ -82,7 +88,10 @@ final class AppleProvider implements OAuthProvider
         }
         // Apple sets email_verified to true for emails it has verified
         // (which is every email it issues, including private relay).
-        if (isset($claims['email_verified']) && $claims['email_verified'] !== true && $claims['email_verified'] !== 'true') {
+        // The claim may be a bool or a string depending on the token
+        // surface; an absent claim is rejected.
+        $verified = $claims['email_verified'] ?? null;
+        if ($verified !== true && $verified !== 'true') {
             return null;
         }
 
