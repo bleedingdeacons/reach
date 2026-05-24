@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Auth\Base64Url;
+
 use function wp_salt;
 
 /**
@@ -42,6 +44,8 @@ use function wp_salt;
  */
 final class AttemptTokenMinter
 {
+    use Base64Url;
+
     public const TTL_SECONDS = 43200; // 12 hours
 
     /**
@@ -54,7 +58,7 @@ final class AttemptTokenMinter
             'm' => $memberId,
             't' => $now,
         ];
-        $payloadB64 = $this->b64url((string) json_encode($payload));
+        $payloadB64 = $this->base64UrlEncode((string) json_encode($payload));
         $sig = $this->sign($payloadB64);
         return $payloadB64 . '.' . $sig;
     }
@@ -83,7 +87,7 @@ final class AttemptTokenMinter
             return false;
         }
 
-        $json = $this->b64urlDecode($payloadB64);
+        $json = $this->base64UrlDecodeOrNull($payloadB64);
         if ($json === null) {
             return false;
         }
@@ -112,21 +116,6 @@ final class AttemptTokenMinter
 
     private function sign(string $payloadB64): string
     {
-        return $this->b64url(hash_hmac('sha256', $payloadB64, wp_salt('auth'), true));
-    }
-
-    private function b64url(string $raw): string
-    {
-        return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
-    }
-
-    private function b64urlDecode(string $s): ?string
-    {
-        $pad = strlen($s) % 4;
-        if ($pad) {
-            $s .= str_repeat('=', 4 - $pad);
-        }
-        $decoded = base64_decode(strtr($s, '-_', '+/'), true);
-        return $decoded === false ? null : $decoded;
+        return $this->base64UrlEncode(hash_hmac('sha256', $payloadB64, wp_salt('auth'), true));
     }
 }

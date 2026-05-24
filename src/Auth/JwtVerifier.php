@@ -33,6 +33,12 @@ if (!defined('ABSPATH')) {
  * key rotation within a working day and long enough to keep latency
  * off every sign-in.
  *
+ * Both `exp` and `iat` are *required*: a token without an expiry
+ * would otherwise verify forever, and a token without an issued-at
+ * timestamp can't be sanity-checked against clock skew. OIDC requires
+ * both for ID tokens, so the only tokens this would reject are ones
+ * that wouldn't be RFC-compliant anyway.
+ *
  * The verifier does *not* fetch JWKS via web_fetch or any third-party
  * library — wp_remote_get is enough and keeps the dependency surface
  * to zero, matching the rest of the stack.
@@ -40,6 +46,7 @@ if (!defined('ABSPATH')) {
 final class JwtVerifier
 {
     use \Reach\Logger\HasLogger;
+    use Base64Url;
 
     protected static function logChannel(): string
     {
@@ -120,10 +127,21 @@ final class JwtVerifier
         // Claim checks.
         $now = time();
 
-        if (isset($payload['exp']) && $now > ((int) $payload['exp'] + self::CLOCK_SKEW_SECONDS)) {
+        // Both exp and iat are mandatory. OIDC requires them on ID
+        // tokens; a token without exp would otherwise verify forever,
+        // and a missing iat can't be skew-checked against the future.
+        if (!isset($payload['exp']) || !is_numeric($payload['exp'])) {
+            self::logWarning('JWT: missing or non-numeric exp claim');
             return null;
         }
-        if (isset($payload['iat']) && ((int) $payload['iat'] - self::CLOCK_SKEW_SECONDS) > $now) {
+        if (!isset($payload['iat']) || !is_numeric($payload['iat'])) {
+            self::logWarning('JWT: missing or non-numeric iat claim');
+            return null;
+        }
+        if ($now > ((int) $payload['exp'] + self::CLOCK_SKEW_SECONDS)) {
+            return null;
+        }
+        if (((int) $payload['iat'] - self::CLOCK_SKEW_SECONDS) > $now) {
             return null;
         }
         if (($payload['iss'] ?? null) !== $expectedIssuer) {
@@ -263,15 +281,5 @@ final class JwtVerifier
             $length >>= 8;
         }
         return chr(0x80 | strlen($bytes)) . $bytes;
-    }
-
-    private function base64UrlDecode(string $data): string
-    {
-        $pad = strlen($data) % 4;
-        if ($pad > 0) {
-            $data .= str_repeat('=', 4 - $pad);
-        }
-        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-        return $decoded === false ? '' : $decoded;
     }
 }

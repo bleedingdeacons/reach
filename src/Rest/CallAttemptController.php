@@ -60,6 +60,11 @@ final class CallAttemptController
 {
     public const NAMESPACE = 'reach/v1';
 
+    /** Hard cap on note length, in bytes, to keep one row from
+     *  ballooning the table on misbehaving clients. The cut is
+     *  multibyte-aware so we never split a UTF-8 codepoint mid-byte. */
+    private const NOTE_MAX_BYTES = 1000;
+
     public function __construct(
         private readonly CallAttemptRepository $repository,
         private readonly AttemptTokenMinter $tokens,
@@ -152,13 +157,7 @@ final class CallAttemptController
             );
         }
 
-        // Cap the note at a sensible size so a misbehaving client can't
-        // fill the table with megabytes of text per row.
-        if ($note === '') {
-            $note = null;
-        } elseif (strlen($note) > 1000) {
-            $note = substr($note, 0, 1000);
-        }
+        $note = $this->capNote($note);
 
         $attempt = $this->repository->record(
             $memberId,
@@ -192,6 +191,26 @@ final class CallAttemptController
             'outcome'    => $attempt->outcome,
             'created_at' => $attempt->createdAt,
         ]);
+    }
+
+    /**
+     * Cap the note at NOTE_MAX_BYTES, returning null for the empty
+     * case so the DB stores NULL rather than ''.
+     *
+     * `mb_strcut` is used instead of `substr` so the cut never splits
+     * a multibyte UTF-8 sequence mid-byte. `substr` would happily slice
+     * a 3-byte emoji at byte 999 of 1000, producing an invalid string
+     * that subsequent JSON or DB layers could choke on.
+     */
+    private function capNote(string $note): ?string
+    {
+        if ($note === '') {
+            return null;
+        }
+        if (strlen($note) > self::NOTE_MAX_BYTES) {
+            $note = mb_strcut($note, 0, self::NOTE_MAX_BYTES, 'UTF-8');
+        }
+        return $note;
     }
 
     /**

@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Auth\Base64Url;
+
 /**
  * HMAC-signed session cookie.
  *
@@ -31,6 +33,8 @@ if (!defined('ABSPATH')) {
  */
 final class SessionCookie
 {
+    use Base64Url;
+
     public const COOKIE_NAME = 'reach_session';
 
     /** Sessions expire after 12 hours; 12th-step calls are made on the day, not days later. */
@@ -142,20 +146,5 @@ final class SessionCookie
         // (e.g. when handling the OAuth callback and immediately
         // redirecting through code that reads the session).
         $_COOKIE[self::COOKIE_NAME] = $value;
-    }
-
-    private function base64UrlEncode(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-    }
-
-    private function base64UrlDecode(string $data): string
-    {
-        $pad = strlen($data) % 4;
-        if ($pad > 0) {
-            $data .= str_repeat('=', 4 - $pad);
-        }
-        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-        return $decoded === false ? '' : $decoded;
     }
 }

@@ -62,7 +62,7 @@ $nonce = wp_create_nonce('wp_rest');
                    required>
 
             <fieldset class="reach-fieldset">
-                <legend class="reach-label">They accepts</legend>
+                <legend class="reach-label">They accept</legend>
                 <label class="reach-check"><input type="checkbox" name="accepts" value="accepts-male" checked> Male</label>
                 <label class="reach-check"><input type="checkbox" name="accepts" value="accepts-female" checked> Female</label>
                 <label class="reach-check"><input type="checkbox" name="accepts" value="accepts-non-binary" checked> Non-Binary</label>

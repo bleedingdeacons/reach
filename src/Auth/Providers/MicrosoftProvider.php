@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Auth\Base64Url;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Core\Settings;
@@ -28,6 +29,8 @@ use Reach\Core\Settings;
  */
 final class MicrosoftProvider implements OAuthProvider
 {
+    use Base64Url;
+
     public const PROVIDER_NAME = 'microsoft';
     private const AUTH_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
     private const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
@@ -79,7 +82,9 @@ final class MicrosoftProvider implements OAuthProvider
 
         // Microsoft accounts: prefer `email`; fall back to `preferred_username`
         // which on personal MSAs *is* the email. Verify it looks like an email
-        // before using it.
+        // before using it. Microsoft doesn't issue an email_verified claim —
+        // the issuer is itself the verification (you can only sign in as an
+        // address you control), so we don't enforce one here.
         $email = '';
         if (!empty($claims['email']) && is_string($claims['email'])) {
             $email = $claims['email'];
@@ -120,14 +125,24 @@ final class MicrosoftProvider implements OAuthProvider
             return null;
         }
         $rawPayload = $this->base64UrlDecode($parts[1]);
+        if ($rawPayload === '') {
+            return null;
+        }
         $preview = json_decode($rawPayload, true);
         if (!is_array($preview) || !isset($preview['iss']) || !is_string($preview['iss'])) {
             return null;
         }
         $issuer = $preview['iss'];
 
-        // The expected issuer pattern for Microsoft Entra v2.0.
-        if (!preg_match('#^https://login\\.microsoftonline\\.com/[0-9a-f\\-]+/v2\\.0$#', $issuer)) {
+        // The expected issuer pattern for Microsoft Entra v2.0. The
+        // tenant is an 8-4-4-4-12 GUID in lower-case hex — the loose
+        // `[0-9a-f\-]+` from older versions also accepted strings like
+        // "------" which obviously aren't tenants. Match the actual
+        // shape Microsoft documents.
+        if (!preg_match(
+            '#^https://login\.microsoftonline\.com/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/v2\.0$#',
+            $issuer
+        )) {
             return null;
         }
 
@@ -160,21 +175,11 @@ final class MicrosoftProvider implements OAuthProvider
         if (is_wp_error($response)) {
             return null;
         }
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
+        $httpCode = (int) wp_remote_retrieve_response_code($response);
+        if ($httpCode < 200 || $httpCode >= 300) {
             return null;
         }
         $decoded = json_decode((string) wp_remote_retrieve_body($response), true);
         return is_array($decoded) ? $decoded : null;
-    }
-
-    private function base64UrlDecode(string $data): string
-    {
-        $pad = strlen($data) % 4;
-        if ($pad > 0) {
-            $data .= str_repeat('=', 4 - $pad);
-        }
-        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-        return $decoded === false ? '' : $decoded;
     }
 }
