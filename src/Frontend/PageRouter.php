@@ -13,11 +13,16 @@ use Reach\Session\CurrentSession;
 /**
  * Wire the Reach front-end pages into WordPress.
  *
- * Two routes — `/reach/signin` and `/reach/find` — are added via the
- * rewrite API and dispatched through a `template_redirect` handler.
- * The handler short-circuits WordPress's normal template hierarchy
- * (the page hasn't got a real WP_Post behind it) and renders one of
- * the PHP templates in templates/ directly.
+ * Three routes are added via the rewrite API and dispatched through a
+ * `template_redirect` handler:
+ *
+ *   - `/reach/` (the bare entry point) renders nothing — it just
+ *     redirects to the right place based on sign-in status: signed-in
+ *     visitors go to `/reach/find`, everyone else to `/reach/signin`.
+ *   - `/reach/signin` and `/reach/find` render their templates. The
+ *     handler short-circuits WordPress's normal template hierarchy
+ *     (the page hasn't got a real WP_Post behind it) and renders one
+ *     of the PHP templates in templates/ directly.
  *
  * The find page is session-gated: anyone hitting it without a valid
  * Reach session cookie is bounced to the sign-in page. The reverse
@@ -47,6 +52,9 @@ final class PageRouter
 
     public static function addRewriteRules(): void
     {
+        // Bare entry point. Anchored to end so it never shadows the
+        // /reach/signin and /reach/find rules above it.
+        add_rewrite_rule('^reach/?$',        'index.php?' . self::QUERY_VAR . '=index',  'top');
         add_rewrite_rule('^reach/signin/?$', 'index.php?' . self::QUERY_VAR . '=signin', 'top');
         add_rewrite_rule('^reach/find/?$',   'index.php?' . self::QUERY_VAR . '=find',   'top');
     }
@@ -64,8 +72,17 @@ final class PageRouter
     public function renderPage(): void
     {
         $page = get_query_var(self::QUERY_VAR);
-        if ($page !== 'signin' && $page !== 'find') {
+        if ($page !== 'signin' && $page !== 'find' && $page !== 'index') {
             return;
+        }
+
+        // Bare /reach/ — no template of its own. Send the visitor to
+        // the right page based on whether they already hold a valid
+        // Reach session: signed in → the finder, otherwise → sign-in.
+        if ($page === 'index') {
+            nocache_headers();
+            wp_safe_redirect(home_url(self::landingPath($this->session->isAuthenticated())));
+            exit;
         }
 
         // Tell WP this isn't a 404 — we're handling the request ourselves.
@@ -88,5 +105,15 @@ final class PageRouter
         $session = $this->session->get(); // available inside template
         require $template;
         exit;
+    }
+
+    /**
+     * The path the bare /reach/ entry point should land on, given
+     * whether the visitor is signed in. Pure so the routing decision
+     * can be tested without driving the full redirect/exit path.
+     */
+    public static function landingPath(bool $isAuthenticated): string
+    {
+        return $isAuthenticated ? '/reach/find' : '/reach/signin';
     }
 }
