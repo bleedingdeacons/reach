@@ -12,7 +12,6 @@ use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\SettingsPage;
 use Reach\Auth\JwtVerifier;
-use Reach\Auth\PendingIdentityStore;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\Providers\AppleProvider;
 use Reach\Auth\Providers\FacebookProvider;
@@ -55,7 +54,6 @@ final class ReachServiceProvider
         $container->register(SessionCookie::class, fn() => new SessionCookie());
         $container->register(CurrentSession::class, fn(ContainerInterface $c) => new CurrentSession($c->get(SessionCookie::class)));
         $container->register(StateStore::class, fn() => new StateStore());
-        $container->register(PendingIdentityStore::class, fn() => new PendingIdentityStore());
         $container->register(JwtVerifier::class, fn() => new JwtVerifier());
 
         // Providers.
@@ -108,7 +106,6 @@ final class ReachServiceProvider
             $c->get(ProviderRegistry::class),
             $c->get(StateStore::class),
             $c->get(SessionCookie::class),
-            $c->get(PendingIdentityStore::class),
             $c->get(MemberRepository::class),
         ));
 

@@ -139,18 +139,22 @@ final class FacebookProviderTest extends TestCase
         ]);
 
         $capturedUrl = null;
-        $this->stubHttp($idToken, $capturedUrl);
+        $capturedBody = null;
+        $this->stubHttp($idToken, $capturedUrl, $capturedBody);
 
         $provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz');
 
-        $this->assertNotNull($capturedUrl);
-        $query = [];
-        parse_str((string) parse_url($capturedUrl, PHP_URL_QUERY), $query);
-        $this->assertSame('verifier-xyz', $query['code_verifier'] ?? null);
-        $this->assertSame('the-code', $query['code'] ?? null);
-        $this->assertSame('https://example.test/cb', $query['redirect_uri'] ?? null);
-        $this->assertSame($this->clientId, $query['client_id'] ?? null);
-        $this->assertSame($this->clientSecret, $query['client_secret'] ?? null);
+        // Facebook's token exchange is a POST with the parameters in
+        // the request body (application/x-www-form-urlencoded), not on
+        // the query string. code_verifier in particular must travel in
+        // the body — that's what satisfies the PKCE challenge raised on
+        // the authorise leg.
+        $this->assertNotNull($capturedBody);
+        $this->assertSame('verifier-xyz', $capturedBody['code_verifier'] ?? null);
+        $this->assertSame('the-code', $capturedBody['code'] ?? null);
+        $this->assertSame('https://example.test/cb', $capturedBody['redirect_uri'] ?? null);
+        $this->assertSame($this->clientId, $capturedBody['client_id'] ?? null);
+        $this->assertSame($this->clientSecret, $capturedBody['client_secret'] ?? null);
     }
 
     public function testHandleCallbackWithoutVerifierFails(): void
@@ -272,18 +276,22 @@ final class FacebookProviderTest extends TestCase
      *   - the JWKS at Facebook's well-known JWKS URL,
      *   - a token response containing $idToken at the token URL.
      *
-     * $capturedUrl is a by-reference slot that records the token URL
+     * $capturedUrl and $capturedBody are by-reference slots recording
+     * the token URL and the POST body (the wp_remote_post `body` array)
      * we were called with, for tests that need to assert what we sent.
+     *
+     * @param array<string, mixed>|null $capturedBody
      */
-    private function stubHttp(string $idToken, ?string &$capturedUrl = null): void
+    private function stubHttp(string $idToken, ?string &$capturedUrl = null, ?array &$capturedBody = null): void
     {
         $jwks = $this->jwks;
-        $GLOBALS['__reach_http_stub'] = static function (string $url, array $args = []) use ($jwks, $idToken, &$capturedUrl) {
+        $GLOBALS['__reach_http_stub'] = static function (string $url, array $args = []) use ($jwks, $idToken, &$capturedUrl, &$capturedBody) {
             if (str_starts_with($url, 'https://www.facebook.com/.well-known/oauth/openid/jwks/')) {
                 return ['response' => ['code' => 200], 'body' => $jwks];
             }
             if (str_starts_with($url, 'https://graph.facebook.com/') && strpos($url, '/oauth/access_token') !== false) {
                 $capturedUrl = $url;
+                $capturedBody = is_array($args['body'] ?? null) ? $args['body'] : null;
                 return [
                     'response' => ['code' => 200],
                     'body'     => json_encode([

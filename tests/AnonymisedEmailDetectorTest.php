@@ -9,13 +9,13 @@ use Reach\Auth\AnonymisedEmailDetector;
 
 /**
  * The detector's job is binary — relay or not — but the consequences
- * of getting it wrong are asymmetric. A false positive sends a user
- * with a real address through an unnecessary extra page (mildly
- * annoying); a false negative lets a Facebook relay address through
- * as an authorisation email (defeats the point of the flow). The
- * tests lean accordingly: explicit truth on every shape of Facebook
- * relay we've seen, explicit falsehood on a handful of real-world
- * lookalikes that must keep working.
+ * of getting it wrong are asymmetric. A false positive refuses access
+ * to a user who actually has a real address (it's read as anonymised
+ * and sign-in is denied); a false negative lets a Facebook relay
+ * address through as an authorisation email (defeats the point). Both
+ * are bad, so the tests lean hard on accuracy: explicit truth on every
+ * shape of Facebook relay we've seen, explicit falsehood on a handful
+ * of real-world lookalikes that must keep working.
  */
 final class AnonymisedEmailDetectorTest extends TestCase
 {

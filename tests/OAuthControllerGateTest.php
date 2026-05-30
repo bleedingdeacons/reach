@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Reach\Auth\PendingIdentityStore;
 use Reach\Auth\ProviderRegistry;
+use Reach\Auth\Providers\OAuthProvider;
 use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Rest\OAuthController;
@@ -15,51 +15,56 @@ use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
-use WP_REST_Response;
 
 /**
- * Tests for the sign-in eligibility gate introduced on OAuthController.
+ * Tests for the sign-in eligibility gate and the anonymised-email
+ * refusal on OAuthController.
  *
- * Sign-in must only mint a session for members whose Unity record has
- * either {@see Member::isTwelfthStepper()} or
- * {@see Member::isTelephoneResponder()} set. Anyone else — including
- * verified OAuth identities that don't match a Reach-using member at
- * all — is rejected at the controller boundary so downstream code can
- * assume an authenticated session always belongs to an eligible member.
+ * Two behaviours are covered:
  *
- * The gate is exercised through `completeEmail`, the typed-email
- * completion endpoint. That path is the smallest slice that covers the
- * helper end-to-end: it doesn't need a ProviderRegistry, a StateStore,
- * or any JWT/OAuth round-trip — just a parked pending identity and a
- * MemberRepository. The same helper guards the `callback` and `apple`
- * entry points, so this coverage is representative of all three.
+ *  1. Sign-in must only mint a session for members whose Unity record
+ *     has either {@see Member::isTwelfthStepper()} or
+ *     {@see Member::isTelephoneResponder()} set. Anyone else —
+ *     including verified OAuth identities that don't match a
+ *     Reach-using member at all — is rejected at the controller
+ *     boundary so downstream code can assume an authenticated session
+ *     always belongs to an eligible member. The gate lives in the
+ *     private `assertMemberAllowed` helper, exercised here directly
+ *     via reflection; the same helper guards both the `callback` and
+ *     `apple` entry points, so this coverage is representative of both.
+ *
+ *  2. When a provider proves an identity but only hands back an
+ *     anonymised relay address Reach can't use as a contact email
+ *     (e.g. a Facebook `*.facebook.com` relay), sign-in is refused
+ *     with a `reach_email_required` error rather than a session being
+ *     issued. This is driven end-to-end through `callback()` with a
+ *     stub provider so the detector + controller wiring is covered as
+ *     a unit.
  */
 final class OAuthControllerGateTest extends TestCase
 {
     protected function setUp(): void
     {
-        // Each test gets a fresh transient store so pending-identity
+        // Each test gets a fresh transient/option store so OAuth state
         // tokens issued here don't leak between tests.
         $GLOBALS['__reach_transients'] = [];
         $GLOBALS['__reach_options']    = [];
     }
 
-    public function testCompleteEmailRejectsWhenNoMemberMatchesTheTypedAddress(): void
+    // --- eligibility gate -------------------------------------------------
+
+    public function testGateRejectsWhenNoMemberMatchesTheEmail(): void
     {
         $controller = $this->controllerWith(members: []);
-        $token = $this->parkPendingIdentity($controller, 'nobody@example.com');
 
-        $response = $controller->completeEmail(new WP_REST_Request([
-            'pending' => $token,
-            'email'   => 'nobody@example.com',
-        ]));
+        $result = $this->invokeGate($controller, $this->identity('nobody@example.com'));
 
-        $this->assertInstanceOf(WP_Error::class, $response);
-        $this->assertSame('reach_not_eligible', $response->get_error_code());
-        $this->assertSame(403, $response->data['status'] ?? null);
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_not_eligible', $result->get_error_code());
+        $this->assertSame(403, $result->data['status'] ?? null);
     }
 
-    public function testCompleteEmailRejectsMemberWithNeitherRole(): void
+    public function testGateRejectsMemberWithNeitherRole(): void
     {
         // A member exists for this email but has neither isTwelfthStepper
         // nor isTelephoneResponder set — e.g. a regular member who has
@@ -67,34 +72,24 @@ final class OAuthControllerGateTest extends TestCase
         $member = $this->stubMember('regular@example.com', twelfth: false, responder: false);
 
         $controller = $this->controllerWith(members: [$member]);
-        $token = $this->parkPendingIdentity($controller, 'regular@example.com');
 
-        $response = $controller->completeEmail(new WP_REST_Request([
-            'pending' => $token,
-            'email'   => 'regular@example.com',
-        ]));
+        $result = $this->invokeGate($controller, $this->identity('regular@example.com'));
 
-        $this->assertInstanceOf(WP_Error::class, $response);
-        $this->assertSame('reach_not_eligible', $response->get_error_code());
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_not_eligible', $result->get_error_code());
     }
 
-    public function testCompleteEmailAcceptsTwelfthStepperMember(): void
+    public function testGateAcceptsTwelfthStepperMember(): void
     {
         $member = $this->stubMember('twelfth@example.com', twelfth: true, responder: false);
 
         $controller = $this->controllerWith(members: [$member]);
-        $token = $this->parkPendingIdentity($controller, 'twelfth@example.com');
 
-        $response = $controller->completeEmail(new WP_REST_Request([
-            'pending' => $token,
-            'email'   => 'twelfth@example.com',
-        ]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $response);
-        $this->assertSame(200, $response->get_status());
+        // null return from the gate == "sign-in may proceed".
+        $this->assertNull($this->invokeGate($controller, $this->identity('twelfth@example.com')));
     }
 
-    public function testCompleteEmailAcceptsTelephoneResponderMember(): void
+    public function testGateAcceptsTelephoneResponderMember(): void
     {
         // The whole reason this gate exists: a responder is not
         // necessarily a 12th-stepper, but must still be allowed to sign
@@ -103,75 +98,118 @@ final class OAuthControllerGateTest extends TestCase
         $member = $this->stubMember('responder@example.com', twelfth: false, responder: true);
 
         $controller = $this->controllerWith(members: [$member]);
-        $token = $this->parkPendingIdentity($controller, 'responder@example.com');
 
-        $response = $controller->completeEmail(new WP_REST_Request([
-            'pending' => $token,
-            'email'   => 'responder@example.com',
-        ]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $response);
-        $this->assertSame(200, $response->get_status());
+        $this->assertNull($this->invokeGate($controller, $this->identity('responder@example.com')));
     }
 
-    public function testCompleteEmailLooksUpMemberByTheTypedEmailNotTheRelay(): void
+    // --- anonymised-email refusal ----------------------------------------
+
+    public function testCallbackRefusesAnonymisedRelayAddressWithEmailRequired(): void
     {
-        // The pending identity was parked against a Facebook relay
-        // address; the user types their real address into the form.
-        // The gate must check the real address against the member
-        // table, not the relay. If it checked the relay it would
-        // wrongly reject every Facebook sign-in.
-        $member = $this->stubMember('real@example.com', twelfth: true, responder: false);
+        // Facebook proved who the user is but only gave back a relay
+        // address on *.facebook.com. There is no contactable email, so
+        // the callback must refuse rather than mint a session — and it
+        // must refuse before the eligibility gate even runs (we never
+        // got a real address to look a member up by).
+        $relay = 'abc123hash@privaterelay.facebook.com';
+        $provider = new GateStubProvider($this->identity($relay, 'facebook'));
 
-        $controller = $this->controllerWith(members: [$member]);
-        $token = $this->parkPendingIdentity($controller, 'abc123@privaterelay.appleid.com');
+        // A member *does* exist on the relay address; this proves the
+        // refusal is driven by anonymisation, not by member eligibility.
+        $member = $this->stubMember($relay, twelfth: true, responder: false);
+        $controller = $this->controllerWith(members: [$member], provider: $provider);
 
-        $response = $controller->completeEmail(new WP_REST_Request([
-            'pending' => $token,
-            'email'   => 'real@example.com',
+        [$state] = $this->seedState($controller, 'facebook');
+
+        $result = $controller->callback(new WP_REST_Request([
+            'state' => $state,
+            'code'  => 'auth-code-xyz',
         ]));
 
-        $this->assertInstanceOf(WP_REST_Response::class, $response);
-        $this->assertSame(200, $response->get_status());
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_email_required', $result->get_error_code());
+        $this->assertSame(403, $result->data['status'] ?? null);
+    }
+
+    public function testCallbackAcceptsRealAddressThenRunsEligibilityGate(): void
+    {
+        // A real (non-relay) address from the provider must NOT trip the
+        // email-required refusal — it should fall through to the
+        // eligibility gate. Here the address matches no member, so the
+        // gate rejects it with reach_not_eligible. Seeing that code
+        // (rather than reach_email_required) confirms a real address
+        // sailed past the anonymisation check.
+        $provider = new GateStubProvider($this->identity('real-but-unknown@example.com', 'facebook'));
+        $controller = $this->controllerWith(members: [], provider: $provider);
+
+        [$state] = $this->seedState($controller, 'facebook');
+
+        $result = $controller->callback(new WP_REST_Request([
+            'state' => $state,
+            'code'  => 'auth-code-xyz',
+        ]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_not_eligible', $result->get_error_code());
+    }
+
+    // --- helpers ----------------------------------------------------------
+
+    /**
+     * Call the private eligibility gate and return its result
+     * (null == allowed, WP_Error == denied).
+     */
+    private function invokeGate(OAuthController $controller, VerifiedIdentity $identity): ?WP_Error
+    {
+        $ref = new \ReflectionMethod($controller, 'assertMemberAllowed');
+        $ref->setAccessible(true);
+        /** @var WP_Error|null $result */
+        $result = $ref->invoke($controller, $identity);
+        return $result;
+    }
+
+    /**
+     * Issue a real OAuth state token for $provider through the
+     * controller's own StateStore, so callback() can consume it back
+     * out the other side. Returns [state, nonce].
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function seedState(OAuthController $controller, string $provider): array
+    {
+        $ref = new \ReflectionProperty($controller, 'stateStore');
+        $ref->setAccessible(true);
+        /** @var StateStore $store */
+        $store = $ref->getValue($controller);
+        $tokens = $store->issue($provider, 'https://example.test/reach/find');
+        return [$tokens['state'], $tokens['nonce']];
+    }
+
+    private function identity(string $email, string $provider = 'facebook'): VerifiedIdentity
+    {
+        return new VerifiedIdentity(
+            email: $email,
+            provider: $provider,
+            sub: 'oauth-sub-42',
+            providerEmail: $email,
+        );
     }
 
     /**
      * @param array<int, Member> $members
      */
-    private function controllerWith(array $members): OAuthController
+    private function controllerWith(array $members, ?OAuthProvider $provider = null): OAuthController
     {
+        $registry = new ProviderRegistry();
+        if ($provider !== null) {
+            $registry->register($provider);
+        }
+
         return new OAuthController(
-            new ProviderRegistry(),
+            $registry,
             new StateStore(),
             new SessionCookie(),
-            new PendingIdentityStore(),
             new GateTestMemberRepository($members),
-        );
-    }
-
-    /**
-     * Park a pending identity through the real PendingIdentityStore so
-     * the controller can consume it back out the other side. Returns
-     * the opaque token to pass into completeEmail().
-     */
-    private function parkPendingIdentity(OAuthController $controller, string $email): string
-    {
-        // Re-use the store the controller is using via its private
-        // property. Cleaner than re-wiring constructor args.
-        $ref = new \ReflectionClass($controller);
-        $prop = $ref->getProperty('pendingIdentities');
-        $prop->setAccessible(true);
-        /** @var PendingIdentityStore $store */
-        $store = $prop->getValue($controller);
-
-        return $store->issue(
-            new VerifiedIdentity(
-                email: $email,
-                provider: 'facebook',
-                sub: 'oauth-sub-42',
-                providerEmail: $email,
-            ),
-            'https://example.test/reach/find'
         );
     }
 
@@ -206,6 +244,31 @@ final class OAuthControllerGateTest extends TestCase
             public function getGdprAcceptanceStatement(): string { return ''; }
             public function getUpdated(): string { return ''; }
         };
+    }
+}
+
+/**
+ * Minimal server-side OAuthProvider that yields a fixed identity from
+ * handleCallback(), so the controller's callback() path can be driven
+ * without a real OAuth round-trip.
+ */
+final class GateStubProvider implements OAuthProvider
+{
+    public function __construct(private VerifiedIdentity $identity) {}
+
+    public function name(): string { return $this->identity->provider; }
+    public function isServerSide(): bool { return true; }
+    public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
+    {
+        return 'https://provider.example/authorize';
+    }
+    public function handleCallback(string $code, string $nonce, string $redirectUri, ?string $codeVerifier = null): ?VerifiedIdentity
+    {
+        return $this->identity;
+    }
+    public function verifyIdToken(string $idToken, string $nonce): ?VerifiedIdentity
+    {
+        return null;
     }
 }
 

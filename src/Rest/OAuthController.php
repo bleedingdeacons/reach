@@ -9,7 +9,6 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Auth\AnonymisedEmailDetector;
-use Reach\Auth\PendingIdentityStore;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
@@ -41,14 +40,15 @@ use function register_rest_route;
  *        Body: { id_token, state, code? }
  *        Apple's client-side flow lands here from the in-page JS.
  *
- *   POST /reach/v1/oauth/complete-email
- *        Body: { pending, email }
- *        Lands here from the /reach/email form, which is shown only
- *        when a provider returned an anonymised relay address (e.g.
- *        Facebook). Issues the real session with the typed email.
- *
  *   POST /reach/v1/oauth/signout
  *        Clears the session cookie.
+ *
+ * If a provider proves an identity but only hands back an anonymised
+ * relay address it can't be reached on (e.g. a Facebook
+ * `*.facebook.com` relay when the user declines to share their real
+ * email), sign-in is refused: Reach needs a real, contactable email
+ * to verify the user, so the callback returns an error rather than
+ * issuing a session.
  *
  * All routes are public — they *are* the authentication surface.
  * The state cookie + provider signature checks are what protect them.
@@ -61,7 +61,6 @@ final class OAuthController
         private readonly ProviderRegistry $providers,
         private readonly StateStore $stateStore,
         private readonly SessionCookie $sessionCookie,
-        private readonly PendingIdentityStore $pendingIdentities,
         private readonly MemberRepository $members,
     ) {
     }
@@ -130,20 +129,6 @@ final class OAuthController
 
         register_rest_route(
             self::NAMESPACE,
-            '/oauth/complete-email',
-            [
-                'methods'             => WP_REST_Server::CREATABLE,
-                'callback'            => [$this, 'completeEmail'],
-                'permission_callback' => '__return_true',
-                'args'                => [
-                    'pending' => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field'],
-                    'email'   => ['type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_email'],
-                ],
-            ]
-        );
-
-        register_rest_route(
-            self::NAMESPACE,
             '/oauth/signout',
             [
                 'methods'             => WP_REST_Server::CREATABLE,
@@ -198,25 +183,14 @@ final class OAuthController
 
         $returnTo = $stored['return_to'] !== '' ? $stored['return_to'] : $this->findPageUrl();
 
-        // If the provider gave us a relay address we don't trust as a
-        // contact address, divert to the typed-email form rather than
-        // issue a session against it. Today this only fires for
-        // Facebook; the AnonymisedEmailDetector is the single source
-        // of truth on what counts.
+        // If the provider proved who the user is but only gave us a
+        // relay address we can't treat as a contact email, refuse
+        // sign-in: Reach needs a real, reachable email to verify the
+        // user. Today this only fires for Facebook; the
+        // AnonymisedEmailDetector is the single source of truth on
+        // what counts as anonymised.
         if (AnonymisedEmailDetector::isAnonymised($identity->email)) {
-            $token = $this->pendingIdentities->issue(
-                new VerifiedIdentity(
-                    $identity->email,
-                    $identity->provider,
-                    $identity->sub,
-                    // Preserve the original relay as providerEmail; if
-                    // the identity already had one set, the provider
-                    // explicitly told us so and we keep that.
-                    $identity->providerEmail ?? $identity->email,
-                ),
-                $returnTo
-            );
-            return $this->redirect($this->emailPageUrl($token));
+            return $this->emailRequiredError();
         }
 
         if (($denied = $this->assertMemberAllowed($identity)) !== null) {
@@ -250,18 +224,10 @@ final class OAuthController
         // Apple's privaterelay is treated as a real contact address
         // (Apple forwards it), so this branch is currently dormant for
         // Apple. Wired through anyway in case the detector's policy
-        // ever broadens.
+        // ever broadens: an anonymised address means we have no
+        // reachable email, so sign-in is refused.
         if (AnonymisedEmailDetector::isAnonymised($identity->email)) {
-            $token = $this->pendingIdentities->issue(
-                new VerifiedIdentity(
-                    $identity->email,
-                    $identity->provider,
-                    $identity->sub,
-                    $identity->providerEmail ?? $identity->email,
-                ),
-                $this->findPageUrl()
-            );
-            return new WP_REST_Response(['redirect' => $this->emailPageUrl($token)], 200);
+            return $this->emailRequiredError();
         }
 
         if (($denied = $this->assertMemberAllowed($identity)) !== null) {
@@ -273,53 +239,28 @@ final class OAuthController
     }
 
     /**
-     * Land here from the /reach/email form. Consume the pending-
-     * identity token, validate the typed address, and only then mint
-     * the real session.
+     * Refuse sign-in when the provider only gave us an anonymised
+     * relay address. Reach verifies people by a real, reachable email,
+     * so without one there's nothing to verify and access is denied.
      *
-     * The typed email cannot itself be a relay address — that would
-     * defeat the whole point of asking.
+     * Returned from both entry points (the server-side callback and
+     * the Apple POST) so the message stays consistent. 403 mirrors the
+     * eligibility gate: the identity was proven, the request is just
+     * not allowed to proceed.
      */
-    public function completeEmail(WP_REST_Request $request): WP_REST_Response|WP_Error
+    private function emailRequiredError(): WP_Error
     {
-        $token = (string) $request->get_param('pending');
-        $typed = trim((string) $request->get_param('email'));
-
-        $pending = $this->pendingIdentities->consume($token);
-        if ($pending === null) {
-            return new WP_Error('reach_invalid_pending', 'This sign-in attempt has expired. Please start again.', ['status' => 400]);
-        }
-
-        if ($typed === '' || !is_email($typed)) {
-            return new WP_Error('reach_invalid_email', 'Please enter a valid email address.', ['status' => 400]);
-        }
-        if (AnonymisedEmailDetector::isAnonymised($typed)) {
-            return new WP_Error('reach_relay_email', 'Please enter your real email address, not a relay one.', ['status' => 400]);
-        }
-
-        $original = $pending['identity'];
-        $promoted = new VerifiedIdentity(
-            strtolower($typed),
-            $original->provider,
-            $original->sub,
-            $original->providerEmail,
+        return new WP_Error(
+            'reach_email_required',
+            'An email address is required for access. The provider you signed in with didn\'t share a usable email address, so we can\'t verify you. Please sign in again and choose to share your email, or use a different provider.',
+            ['status' => 403]
         );
-
-        if (($denied = $this->assertMemberAllowed($promoted)) !== null) {
-            return $denied;
-        }
-
-        $this->issueSessionFor($promoted);
-
-        $returnTo = $pending['return_to'] !== '' ? $pending['return_to'] : $this->findPageUrl();
-        return new WP_REST_Response(['redirect' => $returnTo], 200);
     }
 
     /**
      * Mint and write the signed session cookie for an identity.
      * Centralised so the cookie shape stays consistent across the
-     * three entry points (server-side callback, Apple POST, typed-
-     * email completion).
+     * two entry points (server-side callback and Apple POST).
      */
     private function issueSessionFor(VerifiedIdentity $identity): void
     {
@@ -389,17 +330,6 @@ final class OAuthController
     private function findPageUrl(): string
     {
         return home_url('/reach/find');
-    }
-
-    /**
-     * URL of the typed-email completion page, with the pending-
-     * identity token attached as a query string. The token is opaque
-     * to the page — the form posts it back to /oauth/complete-email
-     * and the controller is the only thing that can decode it.
-     */
-    private function emailPageUrl(string $pendingToken): string
-    {
-        return add_query_arg('pending', $pendingToken, home_url('/reach/email'));
     }
 
     private function redirect(string $url): WP_REST_Response

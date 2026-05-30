@@ -87,6 +87,26 @@ if (!function_exists('is_email')) {
 if (!function_exists('is_ssl')) {
     function is_ssl(): bool { return false; }
 }
+// URL helpers. The OAuth controller builds its provider callback URL
+// via rest_url() and its page URLs via home_url(); the controller
+// tests that drive callback() need these callable. Shapes mirror
+// WordPress closely enough for assertions on the resulting strings.
+if (!function_exists('rest_url')) {
+    function rest_url(string $path = ''): string {
+        return 'https://example.test/wp-json/' . ltrim($path, '/');
+    }
+}
+if (!function_exists('home_url')) {
+    function home_url(string $path = ''): string {
+        return 'https://example.test/' . ltrim($path, '/');
+    }
+}
+if (!function_exists('add_query_arg')) {
+    function add_query_arg(string $key, string $value, string $url): string {
+        $sep = str_contains($url, '?') ? '&' : '?';
+        return $url . $sep . rawurlencode($key) . '=' . rawurlencode($value);
+    }
+}
 if (!function_exists('headers_sent')) {
     // Provided by PHP — but stub if needed for environments without it.
 }

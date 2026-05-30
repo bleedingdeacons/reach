@@ -2,7 +2,7 @@
 
 Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, and a mobile-first finder UI.
 
-**Version:** 1.1.2
+**Version:** 1.1.3
 
 ## Requirements
 
@@ -46,14 +46,13 @@ mints one for every server-side flow.
 in Facebook's consent dialog, Facebook hands Reach back an anonymised
 address on `*.facebook.com` (e.g. `hash@privaterelay.facebook.com`).
 Reach can't use those as a contact address — Facebook doesn't forward
-mail behind them — so the OAuth callback parks the proven identity in
-a single-use transient and redirects to `/reach/email`, where the user
-types a real address. On submit, the typed address becomes the session
-email; the original relay is kept on the session as `providerEmail` so
-the audit trail records what Facebook actually sent. Apple's
-`privaterelay.appleid.com` is *not* treated as anonymised: Apple
-genuinely forwards mail through its relay, so those addresses are
-accepted as the contact email.
+mail behind them — and a contactable email is required to verify a
+user, so the OAuth callback refuses sign-in: it returns a
+`reach_email_required` error rather than issuing a session. The user
+needs to sign in again and share their email, or use a different
+provider. Apple's `privaterelay.appleid.com` is *not* treated as
+anonymised: Apple genuinely forwards mail through its relay, so those
+addresses are accepted as the contact email.
 
 **Apple** — client-side flow via Apple's JS SDK:
 
@@ -86,7 +85,6 @@ No WordPress users are created. There is no server-side session table. The cooki
 | `/reach/v1/oauth/callback`                 | GET    | OAuth callback target              |
 | `/reach/v1/oauth/apple/start`              | GET    | Issue state+nonce for Apple SDK    |
 | `/reach/v1/oauth/apple`                    | POST   | Verify Apple ID token              |
-| `/reach/v1/oauth/complete-email`           | POST   | Submit a typed email after a Facebook relay sign-in |
 | `/reach/v1/oauth/signout`                  | POST   | Clear the session cookie           |
 | `/reach/v1/session`                        | GET    | Returns current session info       |
 | `/reach/v1/nearest-members`                | GET    | Nearest 12th-step members by area  |
