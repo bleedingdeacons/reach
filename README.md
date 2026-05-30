@@ -47,12 +47,24 @@ in Facebook's consent dialog, Facebook hands Reach back an anonymised
 address on `*.facebook.com` (e.g. `hash@privaterelay.facebook.com`).
 Reach can't use those as a contact address — Facebook doesn't forward
 mail behind them — and a contactable email is required to verify a
-user, so the OAuth callback refuses sign-in: it returns a
-`reach_email_required` error rather than issuing a session. The user
-needs to sign in again and share their email, or use a different
-provider. Apple's `privaterelay.appleid.com` is *not* treated as
-anonymised: Apple genuinely forwards mail through its relay, so those
-addresses are accepted as the contact email.
+user, so the OAuth callback refuses sign-in rather than issuing a
+session. The user needs to sign in again and share their email, or use
+a different provider. Apple's `privaterelay.appleid.com` is *not*
+treated as anonymised: Apple genuinely forwards mail through its relay,
+so those addresses are accepted as the contact email.
+
+**Sign-in refusals are friendly pages, not JSON.** When the server-side
+callback can prove who someone is but can't let them in — an
+unregistered member (`not_eligible`), an unusable relay address
+(`email_required`), or a failed/expired attempt (`signin_failed`) — it
+redirects the browser back to `/reach/signin?reach_error=<code>`
+instead of returning a raw `WP_Error`. The sign-in template maps each
+code to a styled notice (the M3 error-container banner) so the user
+gets a readable message and the sign-in buttons to try again. The
+client-side Apple flow does the same: on a refused verification its JS
+reloads the sign-in page with the matching `reach_error` code. Unknown
+codes fall back to a generic message, so a bare JSON error is never
+shown.
 
 **Apple** — client-side flow via Apple's JS SDK:
 

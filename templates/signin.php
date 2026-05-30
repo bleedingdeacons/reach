@@ -37,6 +37,36 @@ $signOutUrl    = esc_url(rest_url('reach/v1/oauth/signout'));
 $appleStartUrl = esc_url(rest_url('reach/v1/oauth/apple/start'));
 $appleVerifyUrl = esc_url(rest_url('reach/v1/oauth/apple'));
 $findPageUrl   = esc_url(home_url('/reach/find'));
+
+// Friendly sign-in notices. When the OAuth callback can prove who you
+// are but can't let you in, it bounces back here with
+// ?reach_error=<code> rather than dumping a raw JSON error in the
+// browser. Map known codes to a human message; anything unrecognised
+// falls back to a generic line so the user never sees a bare code.
+$reachNotice = null;
+$reachErrorCode = isset($_GET['reach_error'])
+    ? sanitize_key((string) wp_unslash($_GET['reach_error']))
+    : '';
+if ($reachErrorCode !== '') {
+    $reachNotices = [
+        'not_eligible' => [
+            'title' => 'This account isn’t registered for Reach',
+            'body'  => 'We confirmed your email, but it isn’t on the Reach list. If you think this is a mistake, please contact your intergroup and ask them to add you.',
+        ],
+        'email_required' => [
+            'title' => 'An email address is required',
+            'body'  => 'The provider you signed in with didn’t share an email we can reach you on. Please sign in again and choose to share your email, or try a different provider.',
+        ],
+        'signin_failed' => [
+            'title' => 'Sign-in didn’t complete',
+            'body'  => 'Something went wrong while signing you in. Please try again.',
+        ],
+    ];
+    $reachNotice = $reachNotices[$reachErrorCode] ?? [
+        'title' => 'We couldn’t sign you in',
+        'body'  => 'Please try again, or use a different provider.',
+    ];
+}
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
 <head>
@@ -53,6 +83,13 @@ $findPageUrl   = esc_url(home_url('/reach/find'));
     <main class="reach-card">
         <h1 class="reach-title">Find a 12th-step member</h1>
         <p class="reach-subtitle">Sign in to confirm your email. We only use it to verify you&rsquo;re a person.</p>
+
+        <?php if ($reachNotice !== null): ?>
+            <div class="reach-notice" role="alert">
+                <p class="reach-notice__title"><?php echo esc_html($reachNotice['title']); ?></p>
+                <p class="reach-notice__body"><?php echo esc_html($reachNotice['body']); ?></p>
+            </div>
+        <?php endif; ?>
 
         <div class="reach-buttons">
             <?php if ($googleConfigured): ?>
@@ -97,6 +134,7 @@ $findPageUrl   = esc_url(home_url('/reach/find'));
         var startUrl = <?php echo wp_json_encode($appleStartUrl); ?>;
         var verifyUrl = <?php echo wp_json_encode($appleVerifyUrl); ?>;
         var findUrl = <?php echo wp_json_encode($findPageUrl); ?>;
+        var signinUrl = <?php echo wp_json_encode(esc_url(home_url('/reach/signin'))); ?>;
         var clientId = <?php echo wp_json_encode($appleClientId); ?>;
         var btn = document.getElementById('reach-apple-btn');
         if (!btn) return;
@@ -130,11 +168,19 @@ $findPageUrl   = esc_url(home_url('/reach/find'));
                     });
                 })
                 .then(function (r) {
-                    if (!r.ok) throw new Error('Verify failed: ' + r.status);
-                    return r.json();
-                })
-                .then(function (data) {
-                    window.location = data.redirect || findUrl;
+                    if (r.ok) {
+                        return r.json().then(function (data) {
+                            window.location = data.redirect || findUrl;
+                        });
+                    }
+                    // Verification was refused (e.g. not a registered
+                    // member). Reload the sign-in page with the matching
+                    // notice so Apple users see the same friendly message
+                    // the redirect providers get, rather than nothing.
+                    return r.json().then(function (data) {
+                        var code = (data && data.code) ? String(data.code).replace(/^reach_/, '') : 'signin_failed';
+                        window.location = signinUrl + '?reach_error=' + encodeURIComponent(code);
+                    });
                 })
                 .catch(function (err) {
                     console.error('Apple sign-in failed', err);

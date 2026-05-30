@@ -41,6 +41,8 @@
     --m3-outline:           #c4c8d0;
 
     --m3-error:             #b3261e;
+    --m3-error-container:    #f9dedc;     /* soft error tint for notices */
+    --m3-on-error-container: #410e0b;     /* readable text on that tint  */
     --m3-success:           #1f7a3a;
 
     /* Disabled-state foreground (M3: on-surface @ 38%) — solid hex
@@ -382,6 +384,33 @@ html, body {
 .reach-error {
     color: var(--m3-error);
     font-size: 14px;
+}
+
+/*
+ * .reach-notice = M3 error-container banner. Shown at the top of the
+ * sign-in card when the OAuth callback bounced the user back here with
+ * ?reach_error=… (not a registered member, no usable email, etc.).
+ * Same corner radius as the card so it reads as part of the surface,
+ * with the soft error tint to signal "something to read" without the
+ * alarm of a full-strength error colour.
+ */
+.reach-notice {
+    background: var(--m3-error-container);
+    color: var(--m3-on-error-container);
+    border-radius: var(--m3-corner-card);
+    padding: 16px;
+    margin: 0 0 24px;
+}
+.reach-notice__title {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.reach-notice__body {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.43;
 }
 
 /* ── Result list (M3 list-item cards) ───────────────────────────── */

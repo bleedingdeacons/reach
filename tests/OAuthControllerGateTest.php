@@ -15,6 +15,7 @@ use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
+use WP_REST_Response;
 
 /**
  * Tests for the sign-in eligibility gate and the anonymised-email
@@ -111,6 +112,10 @@ final class OAuthControllerGateTest extends TestCase
         // the callback must refuse rather than mint a session — and it
         // must refuse before the eligibility gate even runs (we never
         // got a real address to look a member up by).
+        //
+        // The refusal is a friendly redirect back to the sign-in page
+        // carrying ?reach_error=email_required (the template renders a
+        // styled notice), NOT a raw WP_Error/JSON page.
         $relay = 'abc123hash@privaterelay.facebook.com';
         $provider = new GateStubProvider($this->identity($relay, 'facebook'));
 
@@ -126,9 +131,11 @@ final class OAuthControllerGateTest extends TestCase
             'code'  => 'auth-code-xyz',
         ]));
 
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_email_required', $result->get_error_code());
-        $this->assertSame(403, $result->data['status'] ?? null);
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertSame(302, $result->get_status());
+        $location = $result->get_headers()['Location'] ?? '';
+        $this->assertStringContainsString('/reach/signin', $location);
+        $this->assertStringContainsString('reach_error=email_required', $location);
     }
 
     public function testCallbackAcceptsRealAddressThenRunsEligibilityGate(): void
@@ -136,9 +143,10 @@ final class OAuthControllerGateTest extends TestCase
         // A real (non-relay) address from the provider must NOT trip the
         // email-required refusal — it should fall through to the
         // eligibility gate. Here the address matches no member, so the
-        // gate rejects it with reach_not_eligible. Seeing that code
-        // (rather than reach_email_required) confirms a real address
-        // sailed past the anonymisation check.
+        // gate rejects it and the user is redirected back to sign-in
+        // with ?reach_error=not_eligible. Seeing that code (rather than
+        // email_required) confirms a real address sailed past the
+        // anonymisation check and into the gate.
         $provider = new GateStubProvider($this->identity('real-but-unknown@example.com', 'facebook'));
         $controller = $this->controllerWith(members: [], provider: $provider);
 
@@ -149,8 +157,11 @@ final class OAuthControllerGateTest extends TestCase
             'code'  => 'auth-code-xyz',
         ]));
 
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_not_eligible', $result->get_error_code());
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertSame(302, $result->get_status());
+        $location = $result->get_headers()['Location'] ?? '';
+        $this->assertStringContainsString('/reach/signin', $location);
+        $this->assertStringContainsString('reach_error=not_eligible', $location);
     }
 
     // --- helpers ----------------------------------------------------------

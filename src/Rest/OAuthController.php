@@ -168,17 +168,23 @@ final class OAuthController
 
         $stored = $this->stateStore->consume($state);
         if ($stored === null) {
-            return new WP_Error('reach_invalid_state', 'Invalid or expired sign-in attempt.', ['status' => 400]);
+            // Stale link, back-button, or an expired attempt — common
+            // enough that a raw JSON error would be a poor experience.
+            // Send them back to sign-in with a "try again" notice.
+            return $this->denyRedirect('signin_failed');
         }
 
         $provider = $this->providers->get($stored['provider']);
         if ($provider === null || !$provider->isServerSide()) {
+            // Abnormal: provider names are fixed in the sign-in links,
+            // so this only happens on tampering/misconfig. Keep it a
+            // hard error rather than a friendly page.
             return new WP_Error('reach_unknown_provider', 'Unknown provider.', ['status' => 400]);
         }
 
         $identity = $provider->handleCallback($code, $stored['nonce'], $this->callbackUrl(), $stored['code_verifier']);
         if ($identity === null) {
-            return new WP_Error('reach_signin_failed', 'Sign-in failed. Please try again.', ['status' => 401]);
+            return $this->denyRedirect('signin_failed');
         }
 
         $returnTo = $stored['return_to'] !== '' ? $stored['return_to'] : $this->findPageUrl();
@@ -190,11 +196,11 @@ final class OAuthController
         // AnonymisedEmailDetector is the single source of truth on
         // what counts as anonymised.
         if (AnonymisedEmailDetector::isAnonymised($identity->email)) {
-            return $this->emailRequiredError();
+            return $this->denyRedirect('email_required');
         }
 
         if (($denied = $this->assertMemberAllowed($identity)) !== null) {
-            return $denied;
+            return $this->denyRedirect($this->errorSlug($denied));
         }
 
         $this->issueSessionFor($identity);
@@ -330,6 +336,36 @@ final class OAuthController
     private function findPageUrl(): string
     {
         return home_url('/reach/find');
+    }
+
+    /**
+     * Bounce the browser back to the sign-in page carrying a
+     * `reach_error` code the template turns into a friendly,
+     * styled notice. Used for the server-side (redirect) flow, where
+     * returning a WP_Error would otherwise render as a raw JSON page
+     * in the browser.
+     */
+    private function denyRedirect(string $code): WP_REST_Response
+    {
+        return $this->redirect($this->signinErrorUrl($code));
+    }
+
+    private function signinErrorUrl(string $code): string
+    {
+        return add_query_arg('reach_error', $code, home_url('/reach/signin'));
+    }
+
+    /**
+     * Reduce a WP_Error code to the short slug the sign-in template
+     * keys its notices on, e.g. `reach_not_eligible` → `not_eligible`.
+     * Unknown slugs fall back to the template's generic message.
+     */
+    private function errorSlug(WP_Error $error): string
+    {
+        $code = $error->get_error_code();
+        return is_string($code) && str_starts_with($code, 'reach_')
+            ? substr($code, strlen('reach_'))
+            : 'signin_failed';
     }
 
     private function redirect(string $url): WP_REST_Response
