@@ -50,7 +50,7 @@ $reachErrorCode = isset($_GET['reach_error'])
 if ($reachErrorCode !== '') {
     $reachNotices = [
         'not_eligible' => [
-            'title' => 'This account isn’t registered for Reach',
+            'title' => 'This email isn’t registered as a telephone responder.',
             'body'  => 'We confirmed your email, but it isn’t on the telephone responder list. Please contact BADI Support.',
         ],
         'email_required' => [
@@ -64,7 +64,7 @@ if ($reachErrorCode !== '') {
     ];
     $reachNotice = $reachNotices[$reachErrorCode] ?? [
         'title' => 'We couldn’t sign you in',
-        'body'  => 'Please try again, or use a different provider.',
+        'body'  => 'Please try again, or use a different account if possible.',
     ];
 }
 ?><!DOCTYPE html>
@@ -95,28 +95,28 @@ if ($reachErrorCode !== '') {
             <?php if ($googleConfigured): ?>
                 <a class="reach-btn reach-btn--google" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=google')); ?>" rel="nofollow">
                     <span class="reach-btn__icon" aria-hidden="true">G</span>
-                    <span>Continue with Google</span>
+                    <span>Login using Google</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($microsoftConfigured): ?>
                 <a class="reach-btn reach-btn--microsoft" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=microsoft')); ?>" rel="nofollow">
                     <span class="reach-btn__icon" aria-hidden="true">&#x2756;</span>
-                    <span>Continue with Microsoft</span>
+                    <span>Login using Microsoft</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($facebookConfigured): ?>
                 <a class="reach-btn reach-btn--facebook" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=facebook')); ?>" rel="nofollow">
                     <span class="reach-btn__icon" aria-hidden="true">f</span>
-                    <span>Continue with Facebook</span>
+                    <span>Login using Facebook</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($appleConfigured): ?>
                 <button type="button" class="reach-btn reach-btn--apple" id="reach-apple-btn">
                     <span class="reach-btn__icon" aria-hidden="true">&#xf8ff;</span>
-                    <span>Continue with Apple</span>
+                    <span>Login using Apple</span>
                 </button>
             <?php endif; ?>
 
