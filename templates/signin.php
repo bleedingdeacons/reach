@@ -82,7 +82,7 @@ if ($reachErrorCode !== '') {
 <body class="reach-page reach-signin">
     <main class="reach-card">
         <h1 class="reach-title">Reach</h1>
-        <p class="reach-subtitle">Sign in to confirm your email. We only use it to verify you&rsquo;re a person.</p>
+        <p class="reach-subtitle">Sign in to confirm your email. We only use it to verify you&rsquo;re a telephone responder.</p>
 
         <?php if ($reachNotice !== null): ?>
             <div class="reach-notice" role="alert">
@@ -95,28 +95,28 @@ if ($reachErrorCode !== '') {
             <?php if ($googleConfigured): ?>
                 <a class="reach-btn reach-btn--google" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=google')); ?>" rel="nofollow">
                     <span class="reach-btn__icon" aria-hidden="true">G</span>
-                    <span>Login using Google</span>
+                    <span>Sign using Google</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($microsoftConfigured): ?>
                 <a class="reach-btn reach-btn--microsoft" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=microsoft')); ?>" rel="nofollow">
                     <span class="reach-btn__icon" aria-hidden="true">&#x2756;</span>
-                    <span>Login using Microsoft</span>
+                    <span>Sign using Microsoft</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($facebookConfigured): ?>
                 <a class="reach-btn reach-btn--facebook" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=facebook')); ?>" rel="nofollow">
                     <span class="reach-btn__icon" aria-hidden="true">f</span>
-                    <span>Login using Facebook</span>
+                    <span>Sign using Facebook</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($appleConfigured): ?>
                 <button type="button" class="reach-btn reach-btn--apple" id="reach-apple-btn">
                     <span class="reach-btn__icon" aria-hidden="true">&#xf8ff;</span>
-                    <span>Login using Apple</span>
+                    <span>Sign using Apple</span>
                 </button>
             <?php endif; ?>
 
