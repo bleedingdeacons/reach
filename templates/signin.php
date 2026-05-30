@@ -51,7 +51,7 @@ if ($reachErrorCode !== '') {
     $reachNotices = [
         'not_eligible' => [
             'title' => 'This account isn’t registered for Reach',
-            'body'  => 'We confirmed your email, but it isn’t on the Reach list. If you think this is a mistake, please contact your intergroup and ask them to add you.',
+            'body'  => 'We confirmed your email, but it isn’t on the telephone responder list. Please contact BADI Support.',
         ],
         'email_required' => [
             'title' => 'An email address is required',
@@ -81,7 +81,7 @@ if ($reachErrorCode !== '') {
 </head>
 <body class="reach-page reach-signin">
     <main class="reach-card">
-        <h1 class="reach-title">Find a 12th-step member</h1>
+        <h1 class="reach-title">Reach</h1>
         <p class="reach-subtitle">Sign in to confirm your email. We only use it to verify you&rsquo;re a person.</p>
 
         <?php if ($reachNotice !== null): ?>
@@ -121,11 +121,11 @@ if ($reachErrorCode !== '') {
             <?php endif; ?>
 
             <?php if (!$googleConfigured && !$microsoftConfigured && !$appleConfigured && !$facebookConfigured): ?>
-                <p class="reach-error">Sign-in providers haven&rsquo;t been configured yet. Please contact the site administrator.</p>
+                <p class="reach-error">Sign-in providers haven&rsquo;t been configured yet.</p>
             <?php endif; ?>
         </div>
 
-        <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email so we can connect you with a 12th-step member.</p>
+        <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email so you can connect you with a 12th Stepper.</p>
     </main>
 
     <?php if ($appleConfigured): ?>
