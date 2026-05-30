@@ -125,7 +125,7 @@ if ($reachErrorCode !== '') {
             <?php endif; ?>
         </div>
 
-        <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email so you can connect you with a 12th Stepper.</p>
+        <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email so you can connect with a 12th Stepper.</p>
     </main>
 
     <?php if ($appleConfigured): ?>
