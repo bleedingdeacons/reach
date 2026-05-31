@@ -182,8 +182,8 @@ final class CallAttemptsPage
                 <thead>
                     <tr>
                         <th scope="col" style="width: 130px;">When</th>
-                        <th scope="col" style="width: 240px;">12th Stepper</th>
                         <th scope="col" style="width: 240px;">Responder</th>
+                        <th scope="col" style="width: 240px;">12th Stepper</th>
                         <th scope="col" style="width: 160px;">Outcome</th>
                     </tr>
                 </thead>
@@ -196,8 +196,8 @@ final class CallAttemptsPage
                         <?php $memberView = $resolved[$row->memberId] ?? null; ?>
                         <tr>
                             <td style="white-space: nowrap;"><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
-                            <td><?php echo $this->memberCell($memberView); ?></td>
                             <td><?php echo $this->responderCell($row->viewerEmail); ?></td>
+                            <td><?php echo $this->memberCell($memberView); ?></td>
                             <td><?php echo esc_html($this->outcomeLabel($row->outcome)); ?></td>
                         </tr>
                     <?php endforeach; endif; ?>
@@ -207,53 +207,126 @@ final class CallAttemptsPage
             <?php $this->renderPager($page, $totalPages, $total, $filters); ?>
         </div>
         <script>
-            // In-page filter for the 12th-Stepper column. Lives client-
-            // side because the call_attempts table has no name to filter
-            // on — only member_id — and the existing pattern of pulling
-            // every member through the repository to resolve a name is
-            // too heavy for an interactive filter. Filtering the already-
-            // rendered page is good enough: admins scanning recent
-            // activity already see the page they care about, and the
-            // other filters (outcome / date / responder) still narrow
-            // the server-side set first.
+            // Autocomplete + in-page filters for the 12th-Stepper and
+            // Responder columns.
+            //
+            // Both inputs feed an HTML5 <datalist> populated from the
+            // cells already rendered on this page. Suggestions therefore
+            // reflect what's currently visible, not the full underlying
+            // dataset — fine for a "narrow down what I'm looking at"
+            // workflow and keeps everything client-side (no REST
+            // round-trip for suggestions).
+            //
+            // Both filters work the same way: the value travels through
+            // the URL on Filter-button submit, the server echoes it
+            // back into the input on reload, and this script hides
+            // non-matching rows once, on load. Neither name is
+            // forwarded to the repository — the call_attempts table
+            // has no anonymous-name column to filter on. Typing does
+            // nothing until you submit; submitting reloads and the
+            // filters are reapplied.
+            //
+            // The two filters compose: when both are set, a row is
+            // shown only if its 12th-Stepper cell *and* its Responder
+            // cell each contain the corresponding query string.
             (function () {
-                var input = document.getElementById('reach-member-filter');
-                if (!input) {
+                var memberInput    = document.getElementById('reach-member-filter');
+                var responderInput = document.getElementById('reach-responder-filter');
+                if (!memberInput && !responderInput) {
                     return;
                 }
-                // Pre-read the 12th-Stepper cell text for each row so
-                // we don't touch the DOM on every keystroke. The
-                // "no call attempts" placeholder row has a single
-                // colspan cell and is skipped — leaving it visible is
-                // correct: when nothing matched server-side, that
-                // message should keep showing regardless of what's
-                // typed locally.
+
+                // Index the rendered rows once. The "no call attempts"
+                // placeholder row has a single colspan cell and gets
+                // skipped — leaving it visible is correct: when nothing
+                // matched server-side, that message should keep showing
+                // regardless of the in-page filter.
                 var entries = [];
-                var rows = document.querySelectorAll('.wp-list-table tbody tr');
-                rows.forEach(function (row) {
-                    var cell = row.children[1];
-                    if (cell) {
-                        entries.push({ row: row, text: (cell.textContent || '').toLowerCase() });
+                var memberValues = new Set();
+                var responderValues = new Set();
+                document.querySelectorAll('.wp-list-table tbody tr').forEach(function (row) {
+                    var responderCell = row.children[1];
+                    var memberCell    = row.children[2];
+                    if (!memberCell || !responderCell) {
+                        return;
+                    }
+                    var memberText    = (memberCell.textContent || '').trim();
+                    var responderText = (responderCell.textContent || '').trim();
+                    entries.push({
+                        row: row,
+                        memberText:    memberText.toLowerCase(),
+                        responderText: responderText.toLowerCase(),
+                    });
+                    if (memberText) {
+                        memberValues.add(memberText);
+                    }
+                    if (responderText) {
+                        responderValues.add(responderText);
                     }
                 });
-                input.addEventListener('input', function () {
-                    var q = input.value.trim().toLowerCase();
-                    entries.forEach(function (entry) {
-                        var match = q === '' || entry.text.indexOf(q) !== -1;
-                        entry.row.style.display = match ? '' : 'none';
+
+                // Populate the two datalists. The browser handles the
+                // suggestion UI natively — we just need to hand it the
+                // candidate values.
+                function fillDatalist(id, values) {
+                    var list = document.getElementById(id);
+                    if (!list) {
+                        return;
+                    }
+                    values.forEach(function (value) {
+                        var opt = document.createElement('option');
+                        opt.value = value;
+                        list.appendChild(opt);
+                    });
+                }
+                fillDatalist('reach-member-suggestions', memberValues);
+                fillDatalist('reach-responder-suggestions', responderValues);
+
+                // Suppress Enter on both name-filter inputs. Hitting
+                // Enter inside any form input would otherwise submit
+                // the form (and reload the page); the Filter button is
+                // the only trigger so a stray Enter while typing or
+                // picking an autocomplete suggestion doesn't fire off
+                // an unintended request.
+                [memberInput, responderInput].forEach(function (el) {
+                    if (!el) {
+                        return;
+                    }
+                    el.addEventListener('keydown', function (event) {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                        }
                     });
                 });
-                // Enter inside any input within a form triggers a submit
-                // by default. This input doesn't contribute a value to
-                // the server-side filter (no name attribute) so a
-                // submit on Enter would just reload the page, dropping
-                // whatever the user typed. Swallow Enter here so it
-                // stays a pure in-page filter.
-                input.addEventListener('keydown', function (event) {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
+
+                // Apply both filters together, against whatever values
+                // the server echoed into the inputs. The "N attempts
+                // match." line is server-rendered against the total
+                // across all pages; when either in-page filter is
+                // active, that number stops matching what the admin
+                // actually sees, so we rewrite it to a page-local count.
+                var memberQ    = (memberInput    ? memberInput.value    : '').trim().toLowerCase();
+                var responderQ = (responderInput ? responderInput.value : '').trim().toLowerCase();
+                if (memberQ === '' && responderQ === '') {
+                    return;
+                }
+                var visible = 0;
+                entries.forEach(function (entry) {
+                    var matchMember    = memberQ    === '' || entry.memberText.indexOf(memberQ)       !== -1;
+                    var matchResponder = responderQ === '' || entry.responderText.indexOf(responderQ) !== -1;
+                    var match = matchMember && matchResponder;
+                    entry.row.style.display = match ? '' : 'none';
+                    if (match) {
+                        visible++;
                     }
                 });
+                var countEl = document.getElementById('reach-attempt-count');
+                if (countEl) {
+                    var verb = visible === 1 ? 'matches' : 'match';
+                    countEl.textContent =
+                        visible + ' of ' + entries.length +
+                        ' on this page ' + verb + '.';
+                }
             })();
         </script>
         <?php
@@ -340,12 +413,20 @@ final class CallAttemptsPage
      * rather than erroring, because filter forms on admin lists are
      * conventionally forgiving.
      *
-     * @return array{member_id: int, viewer_email: string, outcome: string, since: string, until: string}
+     * The `member` and `responder` filters are free-text strings used
+     * for the in-page autocomplete — they travel through the URL so a
+     * Filter-button submit persists across the reload, but neither is
+     * forwarded to the repository (which has no name-aware predicate;
+     * it only knows about member ids and stored emails). See
+     * {@see toRepoFilters()}.
+     *
+     * @return array{member_id: int, member: string, responder: string, outcome: string, since: string, until: string}
      */
     private function readFilters(): array
     {
         $memberId    = isset($_GET['member_id']) ? max(0, (int) $_GET['member_id']) : 0;
-        $viewerEmail = isset($_GET['viewer_email']) ? sanitize_text_field((string) $_GET['viewer_email']) : '';
+        $member      = isset($_GET['member']) ? sanitize_text_field((string) $_GET['member']) : '';
+        $responder   = isset($_GET['responder']) ? sanitize_text_field((string) $_GET['responder']) : '';
         $outcome     = isset($_GET['outcome']) ? sanitize_text_field((string) $_GET['outcome']) : '';
         if ($outcome !== '' && !CallAttempt::isValidOutcome($outcome)) {
             $outcome = '';
@@ -356,11 +437,12 @@ final class CallAttemptsPage
         $until = isset($_GET['until']) ? sanitize_text_field((string) $_GET['until']) : '';
 
         return [
-            'member_id'    => $memberId,
-            'viewer_email' => $viewerEmail,
-            'outcome'      => $outcome,
-            'since'        => $since,
-            'until'        => $until,
+            'member_id' => $memberId,
+            'member'    => $member,
+            'responder' => $responder,
+            'outcome'   => $outcome,
+            'since'     => $since,
+            'until'     => $until,
         ];
     }
 
@@ -378,9 +460,10 @@ final class CallAttemptsPage
         if ((int) ($filters['member_id'] ?? 0) > 0) {
             $out['member_id'] = (int) $filters['member_id'];
         }
-        if (!empty($filters['viewer_email'])) {
-            $out['viewer_email'] = (string) $filters['viewer_email'];
-        }
+        // 'member' and 'responder' deliberately omitted — both are
+        // name-based and applied client-side after render (see the
+        // inline script at the foot of the list view). The repository
+        // has no name predicate to send them to.
         if (!empty($filters['outcome'])) {
             $out['outcome'] = (string) $filters['outcome'];
         }
@@ -411,16 +494,30 @@ final class CallAttemptsPage
 
             <p style="display: flex; flex-wrap: wrap; gap: 8px; align-items: end;">
                 <label>
-                    Member<br>
-                    <input type="search" id="reach-member-filter" size="24"
+                    Responder<br>
+                    <input type="search" id="reach-responder-filter"
+                           name="responder" size="24"
+                           list="reach-responder-suggestions"
+                           value="<?php echo esc_attr((string) $filters['responder']); ?>"
                            placeholder="filter by name…">
                 </label>
 
                 <label>
-                    Responder<br>
-                    <input type="search" name="viewer_email" size="24"
-                           value="<?php echo esc_attr((string) $filters['viewer_email']); ?>">
+                    12th Stepper<br>
+                    <input type="search" id="reach-member-filter"
+                           name="member" size="24"
+                           list="reach-member-suggestions"
+                           value="<?php echo esc_attr((string) $filters['member']); ?>"
+                           placeholder="filter by name…">
                 </label>
+
+                <!-- Autocomplete sources for the two name inputs. Both
+                     are populated by inline JS at the bottom of the
+                     page from the 12th-Stepper and Responder cells of
+                     the current page — so suggestions reflect what's
+                     visible, not the full underlying dataset. -->
+                <datalist id="reach-member-suggestions"></datalist>
+                <datalist id="reach-responder-suggestions"></datalist>
 
                 <label>
                     Outcome<br>
@@ -453,7 +550,7 @@ final class CallAttemptsPage
                 </span>
             </p>
 
-            <p class="description">
+            <p class="description" id="reach-attempt-count">
                 <?php echo (int) $total; ?>
                 attempt<?php echo $total === 1 ? '' : 's'; ?> match<?php echo $total === 1 ? 'es' : ''; ?>.
             </p>
@@ -501,7 +598,7 @@ final class CallAttemptsPage
     private function listUrl(array $filters = []): string
     {
         $args = ['page' => self::MENU_SLUG];
-        foreach (['member_id', 'viewer_email', 'outcome', 'since', 'until'] as $k) {
+        foreach (['member_id', 'member', 'responder', 'outcome', 'since', 'until'] as $k) {
             if (!empty($filters[$k])) {
                 $args[$k] = $filters[$k];
             }
