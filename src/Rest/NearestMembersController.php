@@ -55,7 +55,24 @@ final class NearestMembersController
 {
     public const NAMESPACE = 'reach/v1';
     private const DEFAULT_LIMIT = 10;
-    private const MAX_LIMIT = 25;
+
+    /**
+     * Upper bound on how many members one response may carry. The find
+     * page asks for the full set inside its distance cap (so the
+     * client-side distance buttons have every in-range member to
+     * narrow from), which is why this is comfortably above the
+     * default: a single intergroup rarely has this many 12th-steppers
+     * within 20km, but the ceiling stops a pathological area string
+     * from returning an unbounded list.
+     */
+    private const MAX_LIMIT = 50;
+
+    /**
+     * Hard ceiling on the max-distance cutoff a caller may request, in
+     * kilometres. The find page only ever asks for 20; this guards the
+     * endpoint against an arbitrarily large cap being passed directly.
+     */
+    private const MAX_DISTANCE_KM = 100.0;
 
     /**
      * Fields counted as a personal-data view when a member appears in
@@ -131,6 +148,23 @@ final class NearestMembersController
                         'default'           => self::DEFAULT_LIMIT,
                         'sanitize_callback' => 'absint',
                     ],
+                    'max_km' => [
+                        'type'              => 'number',
+                        'required'          => false,
+                        'default'           => null,
+                        'sanitize_callback' => static function ($v) {
+                            if ($v === null || $v === '') {
+                                return null;
+                            }
+                            return (float) $v;
+                        },
+                        'validate_callback' => static function ($v) {
+                            if ($v === null || $v === '') {
+                                return true;
+                            }
+                            return is_numeric($v) && (float) $v > 0;
+                        },
+                    ],
                 ],
             ]
         );
@@ -168,7 +202,17 @@ final class NearestMembersController
         $accepts  = (array) $request->get_param('accepts');
         $limit    = min(self::MAX_LIMIT, max(1, (int) $request->get_param('limit')));
 
-        $result = $this->resolver->resolve($location, $accepts, $limit);
+        $maxKmParam = $request->get_param('max_km');
+        $maxKm = ($maxKmParam === null || $maxKmParam === '')
+            ? null
+            : min(self::MAX_DISTANCE_KM, max(0.0, (float) $maxKmParam));
+
+        // The find page surfaces nearby members who fall outside the
+        // caller's gender preference as well as those who match it,
+        // ordered by distance then preference, so include-non-preferred
+        // is on. The non-matching members are tagged (not preferred) in
+        // the projected response rather than dropped.
+        $result = $this->resolver->resolve($location, $accepts, $limit, $maxKm, true);
 
         if (!$result->resolved) {
             return new WP_Error(
@@ -226,6 +270,7 @@ final class NearestMembersController
                     'anonymous_name'  => $m->getAnonymousName(),
                     'area'            => $m->getArea(),
                     'accepts'         => $m->getAccepts(),
+                    'preferred'       => $scored->preferred,
                     'mobile_number'   => $m->getMobileNumber(),
                     'distance_km'     => round($scored->distanceKm, 1),
                     'responsiveness'  => $badges[$id] ?? null,

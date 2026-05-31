@@ -105,17 +105,19 @@ html, body {
     padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
 }
 
-/* ── Header ─────────────────────────────────────────────────────── */
+/* ── Footer (signed-in email + sign-out, pinned to card bottom) ──── */
 
-.reach-header {
+.reach-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
+    margin-top: auto;            /* pin to the bottom of the flex card */
+    padding-top: 16px;
+    border-top: 1px solid var(--m3-outline);
     font-size: 14px;
     color: var(--m3-on-surface-variant);
 }
-.reach-header__who {
+.reach-footer__who {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -152,6 +154,14 @@ html, body {
     max-width: 480px;
     margin: 0 auto;
     flex: 1 0 auto;
+}
+
+/* Find page: lay the card out as a column so the footer (the moved
+   reach-footer — signed-in email + sign-out) sits at the bottom even
+   when the results list is short. */
+.reach-find .reach-card {
+    display: flex;
+    flex-direction: column;
 }
 
 .reach-title {
@@ -546,6 +556,84 @@ html, body {
     color: #c5311b;
 }
 
+/*
+ * Distance filter — a horizontal row of max-distance buttons directly
+ * under the search button (1 / 5 / 10 / 20 km). The active step is
+ * filled like a tonal M3 button; the rest are quiet outlines. Each
+ * button carries a small tally of how many results fall inside it.
+ */
+.reach-distance {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+.reach-distance__label {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--m3-on-surface-variant);
+}
+.reach-distance__buttons {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    flex: 1 1 auto;
+}
+.reach-btn--distance {
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 40px;
+    padding: 6px 8px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    border-radius: var(--m3-corner-text-btn);
+    border: 1px solid var(--m3-outline);
+    background: var(--m3-surface);
+    color: var(--m3-on-surface);
+}
+.reach-btn--distance:hover  { background: rgba(31, 111, 235, .04); }
+.reach-btn--distance:active { background: rgba(31, 111, 235, .10); }
+.reach-btn--distance.is-active {
+    background: var(--m3-primary-container);
+    border-color: var(--m3-primary-container);
+    color: var(--m3-on-primary-container);
+}
+.reach-btn--distance:disabled {
+    background: var(--m3-surface-variant);
+    border-color: var(--m3-surface-variant);
+    color: var(--m3-on-surface-disabled);
+    cursor: default;
+}
+.reach-distance__count {
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    line-height: 16px;
+    text-align: center;
+    background: rgba(0, 0, 0, .06);
+    color: inherit;
+}
+.reach-btn--distance.is-active .reach-distance__count {
+    background: rgba(255, 255, 255, .35);
+}
+
+/*
+ * Fallback result — a member returned because they're nearby, even
+ * though they fall outside the selected gender preference. Marked with
+ * a quiet left rule so the eye can skip past them to the preferred
+ * matches without hiding them.
+ */
+.reach-result--fallback {
+    border-left: 3px solid var(--m3-outline);
+}
+
 /* ── Larger viewports ───────────────────────────────────────────── */
 
 @media (min-width: 640px) {
@@ -584,4 +672,5 @@ html, body {
     .reach-btn--apple { background: #fff; color: #000; border-color: #fff; }
     .reach-btn--apple:hover  { background: #e6e6e6; }
     .reach-btn--apple:active { background: #d6d6d6; }
+    .reach-distance__count { background: rgba(255, 255, 255, .10); }
 }

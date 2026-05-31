@@ -42,16 +42,11 @@ $nonce = wp_create_nonce('wp_rest');
     <link rel="stylesheet" href="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/css/reach.css'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>">
 </head>
 <body class="reach-page reach-find">
-    <header class="reach-header">
-        <div class="reach-header__who"><?php echo esc_html($email); ?></div>
-        <button type="button" class="reach-signout" id="reach-signout">Sign out</button>
-    </header>
-
     <main class="reach-card">
-        <h1 class="reach-title">Find nearest member</h1>
+        <h1 class="reach-title">Find Nearest 12th Stepper</h1>
 
         <form id="reach-form" class="reach-form" novalidate>
-            <label class="reach-label" for="reach-location">Your location</label>
+            <label class="reach-label" for="reach-location">Callers Location</label>
             <input type="text"
                    id="reach-location"
                    name="location"
@@ -62,7 +57,7 @@ $nonce = wp_create_nonce('wp_rest');
                    required>
 
             <fieldset class="reach-fieldset">
-                <legend class="reach-label">They accept</legend>
+                <legend class="reach-label">Preferred 12th Stepper</legend>
                 <label class="reach-check"><input type="checkbox" name="accepts" value="accepts-male" checked> Male</label>
                 <label class="reach-check"><input type="checkbox" name="accepts" value="accepts-female" checked> Female</label>
                 <label class="reach-check"><input type="checkbox" name="accepts" value="accepts-non-binary" checked> Non-Binary</label>
@@ -74,8 +69,15 @@ $nonce = wp_create_nonce('wp_rest');
             </button>
         </form>
 
+        <div id="reach-distance" class="reach-distance" role="group" aria-label="Maximum distance" hidden></div>
+
         <div id="reach-status" class="reach-status" role="status" aria-live="polite"></div>
         <ol id="reach-results" class="reach-results"></ol>
+
+        <footer class="reach-footer">
+            <div class="reach-footer__who"><?php echo esc_html($email); ?></div>
+            <button type="button" class="reach-signout" id="reach-signout">Sign out</button>
+        </footer>
     </main>
 
     <script>

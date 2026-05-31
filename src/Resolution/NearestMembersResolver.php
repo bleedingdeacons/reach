@@ -22,11 +22,16 @@ use Unity\Members\Interfaces\MemberRepository;
  *
  *   1. Pull every member through the repository's findAll().
  *   2. Drop anyone who isn't a 12th-stepper.
- *   3. Drop anyone whose accepts list doesn't intersect the requested filter.
+ *   3. Decide whether each member is "preferred" — i.e. the genders they
+ *      accept 12th-step calls from intersect the requested filter.
+ *      In the default mode a non-preferred member is dropped here; in
+ *      include-non-preferred mode they are kept and tagged instead, so
+ *      they can still be offered as a nearby fallback.
  *   4. Drop anyone whose area can't be geocoded (no coordinates → no distance
  *      → no useful place in a "nearest" answer).
- *   5. Sort by distance ascending.
- *   6. Take the first $limit.
+ *   5. Apply the optional max-distance cutoff.
+ *   6. Sort by distance ascending, then preferred-first as a tie-break.
+ *   7. Take the first $limit.
  *
  * Filtering in PHP (rather than via a meta_query) is intentional. The
  * twelfth-stepper boolean and accepts list are ACF-backed, the working
@@ -60,6 +65,14 @@ final class NearestMembersResolver
      * @param int    $limit         Maximum number of members to return. Clamped to >= 1.
      * @param float|null $maxKm     Optional hard cutoff: drop anyone further than this
      *                              from the origin. Null means no cap.
+     * @param bool   $includeNonPreferred  When false (default) a member whose accepts
+     *                              list doesn't intersect the filter is dropped — the
+     *                              historical "filter" behaviour. When true those
+     *                              members are kept (subject to the same location and
+     *                              distance rules) and tagged as not preferred, so the
+     *                              caller can surface nearby fallbacks. Has no visible
+     *                              effect when $accepts is empty: every member is
+     *                              preferred under an empty filter.
      *
      * @return ResolutionResult
      */
@@ -68,6 +81,7 @@ final class NearestMembersResolver
         array $accepts,
         int $limit,
         ?float $maxKm = null,
+        bool $includeNonPreferred = false,
     ): ResolutionResult {
         $limit = max(1, $limit);
 
@@ -87,7 +101,11 @@ final class NearestMembersResolver
             if (!$member->isTwelfthStepper()) {
                 continue;
             }
-            if (!$this->genderMatches($member->getAccepts(), $wantedGenders)) {
+
+            $preferred = $this->genderMatches($member->getAccepts(), $wantedGenders);
+            if (!$preferred && !$includeNonPreferred) {
+                // Default mode: a member who doesn't accept any of the
+                // requested genders is filtered out entirely.
                 continue;
             }
 
@@ -110,12 +128,17 @@ final class NearestMembersResolver
                 continue;
             }
 
-            $candidates[] = new ScoredMember($member, $memberCoords, $distance);
+            $candidates[] = new ScoredMember($member, $memberCoords, $distance, $preferred);
         }
 
+        // Distance ascending is the primary key; preferred-first breaks
+        // ties so that, all else equal, a member who accepts the
+        // requested genders is offered ahead of a fallback who doesn't.
         usort(
             $candidates,
-            static fn(ScoredMember $a, ScoredMember $b) => $a->distanceKm <=> $b->distanceKm
+            static function (ScoredMember $a, ScoredMember $b): int {
+                return [$a->distanceKm, $b->preferred] <=> [$b->distanceKm, $a->preferred];
+            }
         );
 
         $top = array_slice($candidates, 0, $limit);
