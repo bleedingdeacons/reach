@@ -178,13 +178,13 @@ final class CallAttemptsPage
 
             <?php $this->renderFilters($filters, $total); ?>
 
-            <table class="wp-list-table widefat fixed striped">
+            <table class="wp-list-table widefat fixed striped" style="width: auto;">
                 <thead>
                     <tr>
                         <th scope="col" style="width: 130px;">When</th>
-                        <th scope="col" style="width: 16%;">12th Stepper</th>
-                        <th scope="col" style="width: 16%;">Responder</th>
-                        <th scope="col" style="width: 75px;">Outcome</th>
+                        <th scope="col" style="width: 240px;">12th Stepper</th>
+                        <th scope="col" style="width: 240px;">Responder</th>
+                        <th scope="col" style="width: 160px;">Outcome</th>
                     </tr>
                 </thead>
                 <tbody>
