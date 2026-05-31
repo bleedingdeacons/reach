@@ -2,7 +2,7 @@
 
 Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, and a mobile-first finder UI.
 
-**Version:** 1.1.8
+**Version:** 1.1.9
 
 ## Requirements
 
