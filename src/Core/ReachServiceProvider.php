@@ -139,6 +139,7 @@ final class ReachServiceProvider
         $container->register(CallAttemptsPage::class, fn(ContainerInterface $c) => new CallAttemptsPage(
             $c->get(CallAttemptRepository::class),
             $c->get(MemberViewFactory::class),
+            $c->get(MemberRepository::class),
         ));
     }
 }

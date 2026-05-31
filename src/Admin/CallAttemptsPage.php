@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\CallAttemptRepository;
 use Scrutiny\Privacy\PersonalDataPolicy;
+use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberView;
 use Unity\Members\Interfaces\MemberViewFactory;
 
@@ -81,8 +82,20 @@ final class CallAttemptsPage
     public function __construct(
         private readonly CallAttemptRepository $repository,
         private readonly MemberViewFactory $memberViews,
+        private readonly MemberRepository $members,
     ) {
     }
+
+    /**
+     * Per-request memo for responder lookups by email. A paginated
+     * list often shows multiple attempts by the same responder, so
+     * caching the rendered cell (name + edit link, or fallback email)
+     * avoids redundant MemberRepository::findByEmail() calls within
+     * a single render. Values are pre-escaped HTML.
+     *
+     * @var array<string, string>
+     */
+    private array $responderCellMemo = [];
 
     public function register(): void
     {
@@ -169,31 +182,23 @@ final class CallAttemptsPage
                 <thead>
                     <tr>
                         <th scope="col" style="width: 160px;">When</th>
-                        <th scope="col">Member</th>
-                        <th scope="col">Home group</th>
-                        <th scope="col">Viewer</th>
-                        <th scope="col" style="width: 110px;">Provider</th>
+                        <th scope="col">12th Stepper</th>
+                        <th scope="col">Responder</th>
                         <th scope="col" style="width: 160px;">Outcome</th>
-                        <th scope="col" style="width: 90px;"></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ($rows === []): ?>
                         <tr>
-                            <td colspan="7">No call attempts match these filters.</td>
+                            <td colspan="4">No call attempts match these filters.</td>
                         </tr>
                     <?php else: foreach ($rows as $row): ?>
                         <?php $memberView = $resolved[$row->memberId] ?? null; ?>
                         <tr>
                             <td><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
-                            <td><?php echo $this->memberCell($row->memberId, $memberView); ?></td>
-                            <td><?php echo $this->homeGroupCell($memberView); ?></td>
-                            <td><?php echo esc_html($row->viewerEmail); ?></td>
-                            <td><?php echo esc_html($row->viewerProvider); ?></td>
+                            <td><?php echo $this->memberCell($memberView); ?></td>
+                            <td><?php echo $this->responderCell($row->viewerEmail); ?></td>
                             <td><?php echo esc_html($this->outcomeLabel($row->outcome)); ?></td>
-                            <td>
-                                <a href="<?php echo esc_url($this->detailUrl($row->id)); ?>">View</a>
-                            </td>
                         </tr>
                     <?php endforeach; endif; ?>
                 </tbody>
@@ -201,6 +206,45 @@ final class CallAttemptsPage
 
             <?php $this->renderPager($page, $totalPages, $total, $filters); ?>
         </div>
+        <script>
+            // In-page filter for the 12th-Stepper column. Lives client-
+            // side because the call_attempts table has no name to filter
+            // on — only member_id — and the existing pattern of pulling
+            // every member through the repository to resolve a name is
+            // too heavy for an interactive filter. Filtering the already-
+            // rendered page is good enough: admins scanning recent
+            // activity already see the page they care about, and the
+            // other filters (outcome / date / responder) still narrow
+            // the server-side set first.
+            (function () {
+                var input = document.getElementById('reach-member-filter');
+                if (!input) {
+                    return;
+                }
+                // Pre-read the 12th-Stepper cell text for each row so
+                // we don't touch the DOM on every keystroke. The
+                // "no call attempts" placeholder row has a single
+                // colspan cell and is skipped — leaving it visible is
+                // correct: when nothing matched server-side, that
+                // message should keep showing regardless of what's
+                // typed locally.
+                var entries = [];
+                var rows = document.querySelectorAll('.wp-list-table tbody tr');
+                rows.forEach(function (row) {
+                    var cell = row.children[1];
+                    if (cell) {
+                        entries.push({ row: row, text: (cell.textContent || '').toLowerCase() });
+                    }
+                });
+                input.addEventListener('input', function () {
+                    var q = input.value.trim().toLowerCase();
+                    entries.forEach(function (entry) {
+                        var match = q === '' || entry.text.indexOf(q) !== -1;
+                        entry.row.style.display = match ? '' : 'none';
+                    });
+                });
+            })();
+        </script>
         <?php
     }
 
@@ -247,20 +291,12 @@ final class CallAttemptsPage
                             <td><?php echo esc_html($this->formatTime($attempt->createdAt)); ?></td>
                         </tr>
                         <tr>
-                            <th scope="row">Member</th>
-                            <td><?php echo $this->memberCell($attempt->memberId, $member); ?></td>
+                            <th scope="row">12th Stepper</th>
+                            <td><?php echo $this->memberCell($member); ?></td>
                         </tr>
                         <tr>
-                            <th scope="row">Home group</th>
-                            <td><?php echo $this->homeGroupCell($member); ?></td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Viewer</th>
-                            <td><?php echo esc_html($attempt->viewerEmail); ?></td>
-                        </tr>
-                        <tr>
-                            <th scope="row">Provider</th>
-                            <td><?php echo esc_html($attempt->viewerProvider); ?></td>
+                            <th scope="row">Responder</th>
+                            <td><?php echo $this->responderCell($attempt->viewerEmail); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Outcome</th>
@@ -364,13 +400,13 @@ final class CallAttemptsPage
 
             <p style="display: flex; flex-wrap: wrap; gap: 8px; align-items: end;">
                 <label>
-                    Member ID<br>
-                    <input type="number" name="member_id" min="1"
-                           value="<?php echo esc_attr((string) ($filters['member_id'] ?: '')); ?>">
+                    Member<br>
+                    <input type="search" id="reach-member-filter" size="24"
+                           placeholder="filter by name…">
                 </label>
 
                 <label>
-                    Viewer email contains<br>
+                    Responder<br>
                     <input type="search" name="viewer_email" size="24"
                            value="<?php echo esc_attr((string) $filters['viewer_email']); ?>">
                 </label>
@@ -503,63 +539,92 @@ final class CallAttemptsPage
     }
 
     /**
-     * Render the "Member" cell. Returns pre-escaped HTML so it can be
-     * echoed without further wrapping.
+     * Render the "Responder" cell as pre-escaped HTML.
      *
-     * A resolved member shows "Anonymous Name · Area · #id". When the
-     * member is missing (deleted or otherwise unreadable), we still
-     * show the bare id so admins can correlate the audit log — but
-     * mark it explicitly rather than silently rendering "#0" or an
-     * empty cell.
+     * Responders are themselves members (they're the ones flagged as
+     * telephone responders / 12th-steppers in Unity), so the same
+     * MemberRepository that powers the rest of Reach is the right
+     * lookup. When the lookup resolves, we render the member's
+     * anonymous name as a link to their edit screen — consistent with
+     * how the 12th-stepper cell is rendered, and so admins can jump
+     * straight from the audit trail to the responder's record.
+     *
+     * Falls back to the raw (escaped) email when no matching member
+     * exists — a responder whose record has since been removed, or an
+     * attempt pre-dating their joining the responder roster. This
+     * keeps the audit trail readable rather than silently blanking
+     * the column.
+     *
+     * Memoised per-request to avoid repeated lookups on paginated
+     * lists where the same responder appears on multiple rows.
      */
-    private function memberCell(int $memberId, ?MemberView $member): string
+    private function responderCell(string $email): string
+    {
+        if ($email === '') {
+            return '';
+        }
+        if (isset($this->responderCellMemo[$email])) {
+            return $this->responderCellMemo[$email];
+        }
+
+        $member = $this->members->findByEmail($email);
+        if ($member === null) {
+            return $this->responderCellMemo[$email] = esc_html($email);
+        }
+
+        $name  = trim($member->getAnonymousName());
+        $label = esc_html($name !== '' ? $name : $email);
+
+        $editUrl = get_edit_post_link($member->getId());
+        if (is_string($editUrl) && $editUrl !== '') {
+            $label = '<a href="' . esc_url($editUrl) . '">' . $label . '</a>';
+        }
+
+        return $this->responderCellMemo[$email] = $label;
+    }
+
+    /**
+     * Render the "12th Stepper" cell. Returns pre-escaped HTML so it
+     * can be echoed without further wrapping.
+     *
+     * A resolved member shows "Anonymous Name · Area", with the name
+     * linked to the member's edit screen so admins can jump straight
+     * from the audit trail to the record. When the member is missing
+     * (deleted or otherwise unreadable), we mark the cell explicitly
+     * rather than rendering an empty one — admins still need to spot
+     * orphaned attempts even though the id no longer appears in the
+     * UI. If the current user can't edit the member (capability
+     * mismatch), we render the name as plain text rather than a
+     * broken link.
+     */
+    private function memberCell(?MemberView $member): string
     {
         if ($member === null) {
-            return sprintf(
-                '#%d <em>(member not found)</em>',
-                $memberId,
-            );
+            return '<em>(member not found)</em>';
         }
         $name = trim($member->getAnonymousName());
         $area = trim($member->getArea());
 
-        $parts = [];
-        if ($name !== '') {
-            $parts[] = esc_html($name);
+        if ($name === '' && $area === '') {
+            return '<em>(no name)</em>';
         }
-        if ($area !== '') {
+
+        // Link the primary label (name when present, otherwise area)
+        // to the member's edit screen. Only the primary label is
+        // linked — area-as-secondary stays plain so the cell reads
+        // as "name · area" rather than two adjacent links.
+        $primary     = $name !== '' ? $name : $area;
+        $primaryHtml = esc_html($primary);
+        $editUrl     = get_edit_post_link($member->getId());
+        if (is_string($editUrl) && $editUrl !== '') {
+            $primaryHtml = '<a href="' . esc_url($editUrl) . '">' . $primaryHtml . '</a>';
+        }
+
+        $parts = [$primaryHtml];
+        if ($name !== '' && $area !== '') {
             $parts[] = esc_html($area);
         }
-        $parts[] = '<span class="reach-member-id">#' . (int) $memberId . '</span>';
-
         return implode(' &middot; ', $parts);
-    }
-
-    /**
-     * Render the "Home group" cell.
-     *
-     * Uses the MemberView's flat home-group accessors (group id + name
-     * + hasHomeGroup flag) rather than going through a separate
-     * GroupRepository lookup — the view already carries everything we
-     * need to render the cell, and going via the repository would add
-     * per-row queries to a table that's deliberately batch-resolved.
-     *
-     * Returns three states:
-     *   - the group name (escaped) when the member resolved and has one,
-     *   - an em-dash when the member resolved but has no home group,
-     *   - empty when the member itself couldn't be resolved (the
-     *     adjacent Member cell already flags "(member not found)";
-     *     duplicating that here would be noise).
-     */
-    private function homeGroupCell(?MemberView $member): string
-    {
-        if ($member === null) {
-            return '';
-        }
-        if (!$member->hasHomeGroup()) {
-            return '&mdash;';
-        }
-        return esc_html($member->getHomeGroupName());
     }
 
     private function outcomeLabel(string $outcome): string
