@@ -285,13 +285,36 @@
             var contact = document.createElement('div');
             contact.className = 'reach-result__contact';
             if (m.mobile_number) {
+                // Clicking call/text after the user has already logged
+                // an outcome for this member implies a *new* attempt is
+                // about to happen — clear the previous "Logged: …"
+                // confirmation so the outcome buttons reappear and the
+                // next result can be recorded. If no outcome is logged
+                // yet (initial state), this is a no-op and the buttons
+                // are already on screen.
+                //
+                // The re-render is deferred to a microtask via
+                // setTimeout(_, 0) so the browser's native handling of
+                // the tel:/sms: link runs first — mutating the list
+                // mid-click could otherwise yank the anchor out from
+                // under the navigation on some browsers.
+                var reopenFeedback = function () {
+                    if (!loggedOutcomes[m.id]) {
+                        return;
+                    }
+                    delete loggedOutcomes[m.id];
+                    setTimeout(renderList, 0);
+                };
+
                 var tel = document.createElement('a');
                 tel.href = 'tel:' + m.mobile_number.replace(/\s+/g, '');
                 tel.textContent = 'Call ' + m.mobile_number;
+                tel.addEventListener('click', reopenFeedback);
                 contact.appendChild(tel);
                 var sms = document.createElement('a');
                 sms.href = 'sms:' + m.mobile_number.replace(/\s+/g, '');
                 sms.textContent = 'Text ' + m.mobile_number;
+                sms.addEventListener('click', reopenFeedback);
                 contact.appendChild(sms);
             }
             li.appendChild(contact);
