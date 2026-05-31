@@ -243,6 +243,17 @@ final class CallAttemptsPage
                         entry.row.style.display = match ? '' : 'none';
                     });
                 });
+                // Enter inside any input within a form triggers a submit
+                // by default. This input doesn't contribute a value to
+                // the server-side filter (no name attribute) so a
+                // submit on Enter would just reload the page, dropping
+                // whatever the user typed. Swallow Enter here so it
+                // stays a pure in-page filter.
+                input.addEventListener('keydown', function (event) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                    }
+                });
             })();
         </script>
         <?php
