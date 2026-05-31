@@ -181,10 +181,10 @@ final class CallAttemptsPage
             <table class="wp-list-table widefat fixed striped">
                 <thead>
                     <tr>
-                        <th scope="col" style="width: 160px;">When</th>
-                        <th scope="col">12th Stepper</th>
-                        <th scope="col">Responder</th>
-                        <th scope="col" style="width: 160px;">Outcome</th>
+                        <th scope="col" style="width: 140px;">When</th>
+                        <th scope="col" style="width: 32%;">12th Stepper</th>
+                        <th scope="col" style="width: 32%;">Responder</th>
+                        <th scope="col" style="width: 150px;">Outcome</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -195,7 +195,7 @@ final class CallAttemptsPage
                     <?php else: foreach ($rows as $row): ?>
                         <?php $memberView = $resolved[$row->memberId] ?? null; ?>
                         <tr>
-                            <td><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
+                            <td style="white-space: nowrap;"><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
                             <td><?php echo $this->memberCell($memberView); ?></td>
                             <td><?php echo $this->responderCell($row->viewerEmail); ?></td>
                             <td><?php echo esc_html($this->outcomeLabel($row->outcome)); ?></td>
