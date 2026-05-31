@@ -181,7 +181,7 @@ final class CallAttemptsPage
             <table class="wp-list-table widefat fixed striped">
                 <thead>
                     <tr>
-                        <th scope="col" style="width: 140px;">When</th>
+                        <th scope="col" style="width: 130px;">When</th>
                         <th scope="col" style="width: 16%;">12th Stepper</th>
                         <th scope="col" style="width: 16%;">Responder</th>
                         <th scope="col" style="width: 75px;">Outcome</th>
