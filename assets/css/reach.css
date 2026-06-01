@@ -575,12 +575,20 @@ html, body {
 }
 .reach-distance__buttons {
     display: flex;
-    flex-wrap: nowrap;
+    /* `wrap` lets the buttons drop to a second row when there isn't
+       horizontal room for all four. The 50% basis on each button below
+       forces exactly two per row at that point; the 640px breakpoint
+       further down restores a single row on roomier viewports. */
+    flex-wrap: wrap;
     gap: 6px;
     flex: 1 1 auto;
 }
 .reach-btn--distance {
-    flex: 1 1 0;
+    /* Basis is 50% of container minus half the 6px column gap, so two
+       buttons + one gap = 100%. On viewports ≥640px the rule in the
+       media query block reverts this to a 0 basis so all four share a
+       single row equally. */
+    flex: 1 1 calc(50% - 3px);
     min-width: 0;
     display: inline-flex;
     align-items: center;
@@ -638,6 +646,9 @@ html, body {
 
 @media (min-width: 640px) {
     .reach-page { padding-top: 48px; padding-bottom: 48px; }
+    /* Roomier viewports: revert to a 0 basis so all four buttons sit
+       on one row, growing equally to share the available width. */
+    .reach-btn--distance { flex: 1 1 0; }
 }
 
 /* ── Dark theme ─────────────────────────────────────────────────── */

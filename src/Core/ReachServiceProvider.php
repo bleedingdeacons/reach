@@ -94,8 +94,13 @@ final class ReachServiceProvider
         // Geocoder + nearest-members resolver. The Geocoder interface
         // binds to the postcodes.io implementation; a test fake or a
         // future Google fallback can be slotted in without touching
-        // the resolver.
-        $container->register(Geocoder::class, fn() => new PostcodesIoGeocoder());
+        // the resolver. The configured place bias (a postcode or area
+        // name) is read from Settings here and passed in; the geocoder
+        // resolves it lazily on first place-name lookup so admins
+        // without a bias configured pay no startup cost.
+        $container->register(Geocoder::class, fn(ContainerInterface $c) => new PostcodesIoGeocoder(
+            $c->get(Settings::class)->getPlaceBias(),
+        ));
         $container->register(NearestMembersResolver::class, fn(ContainerInterface $c) => new NearestMembersResolver(
             $c->get(MemberRepository::class),
             $c->get(Geocoder::class),

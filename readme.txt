@@ -3,8 +3,8 @@ Contributors: thebleedingdeacons
 Requires at least: 6.1
 Tested up to: 6.7
 Requires PHP: 8.1
-Stable tag: 1.2.9
-Build date: 2026/05/31
+Stable tag: 1.3.0
+Build date: 2026/06/01
 License: MIT (Modified)
 
 Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple, plus a mobile-first finder UI. Requires Unity and Scrutiny.
@@ -16,6 +16,11 @@ Reach provides two pages — a sign-in page that verifies the visitor's email vi
 Every member surfaced is audit-logged through Scrutiny with the requesting visitor's verified email attached.
 
 == Changelog ==
+
+= 1.3.0 =
+* Add a "Default search area" setting that disambiguates ambiguous UK place names toward your intergroup's region. With a bias configured (e.g. "BS5"), a search for "Kingswood" returns Bristol's Kingswood rather than whichever Kingswood postcodes.io happens to rank first.
+* Member area fields may now contain multiple pipe-separated entries (e.g. "Kingswood|BS15|Hanham"). Each entry is geocoded; the member is attributed to whichever entry is closest to the caller. A single bad entry within the list no longer disqualifies the member.
+* Admin: the "Authentication" submenu is renamed "Settings" and now hosts both the find-page configuration and the OAuth provider credentials.
 
 = 0.1.0 =
 * Initial release.

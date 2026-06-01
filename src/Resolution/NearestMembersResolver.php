@@ -114,15 +114,20 @@ final class NearestMembersResolver
                 continue;
             }
 
-            $memberCoords = $this->geocoder->geocode($area);
-            if ($memberCoords === null) {
+            // A member's area field may carry multiple pipe-separated
+            // entries (e.g. "Kingswood|BS15|Hanham") for members who
+            // cover several neighbourhoods. We geocode each part and
+            // attribute the member to whichever entry is closest to the
+            // caller's origin — that's the most charitable read of
+            // "nearest" when a single member spans an area.
+            $resolved = $this->resolveMemberArea($area, $origin);
+            if ($resolved === null) {
                 self::logDebug('Resolver: member area not geocodable', [
                     'member_id' => $member->getId(),
                 ]);
                 continue;
             }
-
-            $distance = Haversine::kilometres($origin, $memberCoords);
+            [$memberCoords, $distance] = $resolved;
 
             if ($maxKm !== null && $distance > $maxKm) {
                 continue;
@@ -191,5 +196,49 @@ final class NearestMembersResolver
             }
         }
         return false;
+    }
+
+    /**
+     * Geocode a member's area field — which may be a single area or
+     * several pipe-separated entries — and return the coordinates plus
+     * distance for the entry closest to the caller's origin.
+     *
+     * Returns null if no entry could be geocoded. Empty parts (from
+     * stray separators like "Kingswood||BS15") are skipped silently;
+     * a single bad entry within a list does not disqualify the member.
+     *
+     * @return array{0: Coordinates, 1: float}|null
+     */
+    private function resolveMemberArea(string $area, Coordinates $origin): ?array
+    {
+        // Single-area is the common case; avoid the explode/loop cost
+        // and keep behaviour identical to the pre-pipe-separation code.
+        if (!str_contains($area, '|')) {
+            $coords = $this->geocoder->geocode($area);
+            if ($coords === null) {
+                return null;
+            }
+            return [$coords, Haversine::kilometres($origin, $coords)];
+        }
+
+        $best = null;
+        $bestDistance = INF;
+        foreach (explode('|', $area) as $part) {
+            $part = trim($part);
+            if ($part === '') {
+                continue;
+            }
+            $coords = $this->geocoder->geocode($part);
+            if ($coords === null) {
+                continue;
+            }
+            $distance = Haversine::kilometres($origin, $coords);
+            if ($distance < $bestDistance) {
+                $bestDistance = $distance;
+                $best = $coords;
+            }
+        }
+
+        return $best === null ? null : [$best, $bestDistance];
     }
 }

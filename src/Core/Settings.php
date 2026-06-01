@@ -34,6 +34,45 @@ final class Settings
         return is_array($all) && isset($all[$key]) && is_string($all[$key]) ? $all[$key] : '';
     }
 
+    /**
+     * Free-text area used to disambiguate place-name lookups on the
+     * find page. Stored as plain text — it's a piece of public config,
+     * not a secret.
+     *
+     * When non-empty, the geocoder treats this string as the centre of
+     * the operating region. Place-name lookups (e.g. "Kingswood", which
+     * matches several UK localities) are re-ranked so the result
+     * geographically closest to this centre wins. Postcode and outcode
+     * lookups are unaffected — they're already unambiguous.
+     *
+     * Prefer a postcode or outcode here (e.g. "BS5", "BS1 4ST") because
+     * the bias is itself geocoded on first use, and a postcode resolves
+     * to a single centroid without ambiguity. A bare place name will
+     * work but inherits whatever postcodes.io ranks first for it.
+     */
+    public function getPlaceBias(): string
+    {
+        $all = get_option(self::OPTION_PUBLIC, []);
+        return is_array($all) && isset($all['place_bias']) && is_string($all['place_bias'])
+            ? $all['place_bias']
+            : '';
+    }
+
+    public function setPlaceBias(string $value): void
+    {
+        $all = get_option(self::OPTION_PUBLIC, []);
+        if (!is_array($all)) {
+            $all = [];
+        }
+        $value = trim($value);
+        if ($value === '') {
+            unset($all['place_bias']);
+        } else {
+            $all['place_bias'] = $value;
+        }
+        update_option(self::OPTION_PUBLIC, $all, false);
+    }
+
     public function setClientId(string $provider, string $value): void
     {
         $all = get_option(self::OPTION_PUBLIC, []);

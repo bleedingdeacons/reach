@@ -28,7 +28,7 @@
     // Distance-filter steps (km), shown as buttons under the search.
     // The page fetches everyone inside the widest step once, then these
     // buttons narrow the *already-fetched* set client-side — no refetch.
-    var DISTANCE_STEPS = [1, 5, 10, 20];
+    var DISTANCE_STEPS = [1, 2, 5, 10];
     var FETCH_MAX_KM = DISTANCE_STEPS[DISTANCE_STEPS.length - 1];
     var FETCH_LIMIT = 50;
     // Distance the results default to on a fresh search.

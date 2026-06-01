@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Distance\Haversine;
+
 /**
  * Geocoder backed by the free postcodes.io API.
  *
@@ -25,10 +27,23 @@ if (!defined('ABSPATH')) {
  *   3. Anything else (e.g. "Bedminster", "Clifton") — passed to
  *      /places?q={...}; the first hit's coordinates are returned.
  *
+ * Strategy 3 also takes an optional **place bias**: a free-text area
+ * (typically a postcode like "BS5") whose centroid is used to
+ * disambiguate ambiguous place-name lookups. Many UK locality names
+ * collide ("Kingswood" exists in Bristol, Surrey, Warwickshire and
+ * elsewhere); without a bias, the geocoder takes whichever entry
+ * postcodes.io happens to rank first, which is rarely the one the
+ * intergroup wants. When a bias is configured, place lookups fetch
+ * multiple candidates and return the one closest to the bias centre.
+ * The bias is resolved lazily on first use and cached like any other
+ * lookup. Postcode and outcode lookups ignore the bias — they're
+ * unambiguous by construction.
+ *
  * Each successfully resolved lookup is cached in a WordPress transient
- * keyed by a normalised form of the input. Misses are cached for a much
- * shorter period to avoid hammering the API for a typo while still
- * letting the data heal once an admin fixes the bad area string.
+ * keyed by a normalised form of the input *and* the active bias. Misses
+ * are cached for a much shorter period to avoid hammering the API for a
+ * typo while still letting the data heal once an admin fixes the bad
+ * area string.
  *
  * Network failures are logged and returned as null — never throw — so a
  * single bad postcode does not abort a search across hundreds of members.
@@ -56,6 +71,28 @@ final class PostcodesIoGeocoder implements Geocoder
 
     private const HTTP_TIMEOUT = 5;
 
+    /** Cached bias coordinates after first resolution. Null is ambiguous — see $biasResolved. */
+    private ?Coordinates $resolvedBias = null;
+
+    /** Has the bias string been resolved yet (possibly to null)? */
+    private bool $biasResolved = false;
+
+    /**
+     * Recursion guard. When resolving the bias string itself we re-enter
+     * geocode(), and that re-entry must not try to apply the (not-yet-
+     * known) bias to its own resolution.
+     */
+    private bool $resolvingBias = false;
+
+    /**
+     * @param string $biasArea Free-text area whose centroid disambiguates
+     *                         place-name lookups. Empty disables biasing.
+     *                         See {@see Settings::getPlaceBias()}.
+     */
+    public function __construct(private readonly string $biasArea = '')
+    {
+    }
+
     public function geocode(string $area): ?Coordinates
     {
         $area = trim($area);
@@ -63,7 +100,15 @@ final class PostcodesIoGeocoder implements Geocoder
             return null;
         }
 
-        $cacheKey = self::CACHE_PREFIX . md5(strtolower($area));
+        // Bias must be part of the cache key so that toggling the admin
+        // setting doesn't keep returning the now-wrong centroid for an
+        // ambiguous place name. The biasFragment is empty when bias is
+        // disabled, preserving cache compatibility with the no-bias
+        // build. While resolving the bias string itself we deliberately
+        // key without bias — the bias resolution is just a plain
+        // geocode and must not depend on itself.
+        $biasFragment = $this->resolvingBias ? '' : $this->biasCacheFragment();
+        $cacheKey = self::CACHE_PREFIX . md5($biasFragment . '|' . strtolower($area));
         $cached = get_transient($cacheKey);
 
         if ($cached === self::MISS_SENTINEL) {
@@ -161,13 +206,85 @@ final class PostcodesIoGeocoder implements Geocoder
 
     private function lookupPlace(string $area): ?Coordinates
     {
+        $bias = $this->resolvingBias ? null : $this->getBias();
+
+        // Without a bias: postcodes.io's default ranking (closest match
+        // by name) is fine — take the first hit and stop. With a bias:
+        // fetch more candidates so a less-prominent match in the right
+        // region beats a more-prominent match in the wrong one. The
+        // limit of 20 is generous for any place-name collision we care
+        // about; postcodes.io caps at 100 if it ever proves too low.
         $url = self::API_BASE . '/places?q=' . rawurlencode($area);
+        if ($bias !== null) {
+            $url .= '&limit=20';
+        }
+
         $body = $this->fetchJson($url);
         if ($body === null || empty($body['result']) || !is_array($body['result'])) {
             return null;
         }
-        // First result is the closest match by postcodes.io's own ranking.
-        return $this->coordsFromResult($body['result'][0]);
+
+        if ($bias === null) {
+            return $this->coordsFromResult($body['result'][0]);
+        }
+
+        // Re-rank by distance to the configured bias centre. We can't
+        // push this into the API call — postcodes.io's /places endpoint
+        // has no geographic filter — so it happens client-side over the
+        // small candidate set.
+        $best = null;
+        $bestDistance = INF;
+        foreach ($body['result'] as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $candidate = $this->coordsFromResult($row);
+            if ($candidate === null) {
+                continue;
+            }
+            $distance = Haversine::kilometres($bias, $candidate);
+            if ($distance < $bestDistance) {
+                $bestDistance = $distance;
+                $best = $candidate;
+            }
+        }
+        return $best;
+    }
+
+    /**
+     * Resolve the bias string (e.g. "BS5") to coordinates on first
+     * use and cache for the life of the instance. A null result here
+     * either means no bias is configured or the configured bias didn't
+     * geocode — in both cases the geocoder falls back to unbiased
+     * place ranking.
+     */
+    private function getBias(): ?Coordinates
+    {
+        if ($this->biasResolved) {
+            return $this->resolvedBias;
+        }
+        if ($this->biasArea === '') {
+            $this->biasResolved = true;
+            return null;
+        }
+
+        // resolvingBias guards two things at once: the cache key
+        // (so the bias's own lookup keys without a bias fragment) and
+        // lookupPlace (so it doesn't try to apply a bias while
+        // computing one).
+        $this->resolvingBias = true;
+        try {
+            $this->resolvedBias = $this->geocode($this->biasArea);
+        } finally {
+            $this->resolvingBias = false;
+            $this->biasResolved = true;
+        }
+        return $this->resolvedBias;
+    }
+
+    private function biasCacheFragment(): string
+    {
+        return $this->biasArea === '' ? '' : 'bias:' . strtolower($this->biasArea);
     }
 
     /**

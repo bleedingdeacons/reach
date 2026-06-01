@@ -11,15 +11,20 @@ if (!defined('ABSPATH')) {
 use Reach\Core\Settings;
 
 /**
- * Admin settings page for OAuth credentials.
+ * Admin settings page for Reach.
  *
- * Sits as the "Authentication" submenu under the top-level Reach menu
- * (registered by CallAttemptsPage). Hosts the four providers
- * (Google, Microsoft, Apple, Facebook) and the require-Scrutiny-
- * capability toggle. Each provider gets a client ID field and a write-
- * only client secret field: the existing secret is displayed as a
- * fixed-width placeholder so an admin can see it's set without it
- * being readable from the form.
+ * Sits as the "Settings" submenu under the top-level Reach menu
+ * (registered by CallAttemptsPage). Hosts two groups of settings:
+ *
+ *   - Find page — the place-name disambiguation bias used when
+ *     resolving ambiguous locality names (a single text field,
+ *     typically a postcode like "BS5"; see Settings::getPlaceBias).
+ *
+ *   - Authentication — the four OAuth providers (Google, Microsoft,
+ *     Apple, Facebook). Each provider gets a client ID field and a
+ *     write-only client secret field: the existing secret is
+ *     displayed as a fixed-width placeholder so an admin can see it's
+ *     set without it being readable from the form.
  *
  * Secrets are AES-256-GCM encrypted at rest by the Settings class
  * (see Reach\Core\Settings::encrypt) and never come back to the
@@ -66,8 +71,8 @@ final class SettingsPage
         // submenu item — WP handles that automatically.
         add_submenu_page(
             CallAttemptsPage::MENU_SLUG,
-            'Authentication',
-            'Authentication',
+            'Settings',
+            'Settings',
             self::CAPABILITY,
             self::PAGE_SLUG,
             [$this, 'render']
@@ -101,13 +106,34 @@ final class SettingsPage
             <h1>Reach</h1>
             <?php echo $notice; ?>
 
-            <p>Configure the OAuth providers that Reach uses to verify a visitor&rsquo;s email address. Each provider needs a client ID and (except Apple) a client secret. Secrets are encrypted at rest.</p>
-
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                 <input type="hidden" name="action" value="reach_save_settings">
                 <?php wp_nonce_field('reach_save_settings'); ?>
 
-                <h2>Redirect URIs</h2>
+                <h2>Find page</h2>
+                <p>Settings that affect the public <code>/reach/find</code> page.</p>
+                <table class="form-table">
+                    <tr>
+                        <th><label for="reach_place_bias">Default search area</label></th>
+                        <td>
+                            <input type="text"
+                                   id="reach_place_bias"
+                                   name="place_bias"
+                                   value="<?php echo esc_attr($this->settings->getPlaceBias()); ?>"
+                                   class="regular-text"
+                                   placeholder="e.g. BS5"
+                                   autocomplete="off">
+                            <p class="description">
+                                Disambiguates place-name searches toward your intergroup&rsquo;s region. When a visitor or member area is a locality name that exists in several places (for example <em>Kingswood</em>, which is both a Bristol suburb and a village in Surrey, Warwickshire and elsewhere), Reach picks the candidate closest to this centre. A postcode or outcode (e.g. <code>BS5</code>) is the most reliable choice; a place name will also work but inherits whatever postcodes.io ranks first for it. Leave blank to disable biasing.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <h2>Authentication</h2>
+                <p>Configure the OAuth providers that Reach uses to verify a visitor&rsquo;s email address. Each provider needs a client ID and (except Apple) a client secret. Secrets are encrypted at rest.</p>
+
+                <h3>Redirect URIs</h3>
                 <p>Register these with each provider. The domain matches your WordPress Site Address &mdash; change it under <em>Settings &rarr; General</em> if it&rsquo;s wrong.</p>
                 <table class="form-table">
                     <tr>
@@ -195,7 +221,7 @@ final class SettingsPage
                 </script>
 
                 <?php foreach (self::PROVIDERS as $provider): ?>
-                    <h2><?php echo esc_html($provider['label']); ?></h2>
+                    <h3><?php echo esc_html($provider['label']); ?></h3>
                     <table class="form-table">
                         <tr>
                             <th><label for="reach_client_id_<?php echo esc_attr($provider['name']); ?>">Client ID</label></th>
@@ -248,6 +274,12 @@ final class SettingsPage
             wp_die('Insufficient permissions', '', ['response' => 403]);
         }
         check_admin_referer('reach_save_settings');
+
+        // Find-page settings.
+        $placeBias = isset($_POST['place_bias']) && is_string($_POST['place_bias'])
+            ? sanitize_text_field(wp_unslash($_POST['place_bias']))
+            : '';
+        $this->settings->setPlaceBias($placeBias);
 
         foreach (self::PROVIDERS as $provider) {
             $name = $provider['name'];
