@@ -119,7 +119,10 @@ final class NearestMembersResolver
             // cover several neighbourhoods. We geocode each part and
             // attribute the member to whichever entry is closest to the
             // caller's origin — that's the most charitable read of
-            // "nearest" when a single member spans an area.
+            // "nearest" when a single member spans an area. The chosen
+            // entry's string is propagated so the response surfaces
+            // only the area that actually drove the match (the user
+            // sees "Kingswood", not "Kingswood|Hanham").
             $resolved = $this->resolveMemberArea($area, $origin);
             if ($resolved === null) {
                 self::logDebug('Resolver: member area not geocodable', [
@@ -127,13 +130,13 @@ final class NearestMembersResolver
                 ]);
                 continue;
             }
-            [$memberCoords, $distance] = $resolved;
+            [$memberCoords, $distance, $matchedArea] = $resolved;
 
             if ($maxKm !== null && $distance > $maxKm) {
                 continue;
             }
 
-            $candidates[] = new ScoredMember($member, $memberCoords, $distance, $preferred);
+            $candidates[] = new ScoredMember($member, $memberCoords, $distance, $preferred, $matchedArea);
         }
 
         // Distance ascending is the primary key; preferred-first breaks
@@ -200,28 +203,37 @@ final class NearestMembersResolver
 
     /**
      * Geocode a member's area field — which may be a single area or
-     * several pipe-separated entries — and return the coordinates plus
-     * distance for the entry closest to the caller's origin.
+     * several pipe-separated entries — and return the coordinates,
+     * distance, and the chosen entry for the entry closest to the
+     * caller's origin.
      *
      * Returns null if no entry could be geocoded. Empty parts (from
      * stray separators like "Kingswood||BS15") are skipped silently;
      * a single bad entry within a list does not disqualify the member.
      *
-     * @return array{0: Coordinates, 1: float}|null
+     * The third tuple element is the chosen pipe entry's string when
+     * the area was a pipe list, and null for a single-entry area. The
+     * controller surfaces this so the UI shows only the area that
+     * actually mapped to the member's reported distance.
+     *
+     * @return array{0: Coordinates, 1: float, 2: ?string}|null
      */
     private function resolveMemberArea(string $area, Coordinates $origin): ?array
     {
         // Single-area is the common case; avoid the explode/loop cost
         // and keep behaviour identical to the pre-pipe-separation code.
+        // The third element is null — there's no entry to "pick" — and
+        // the controller falls back to the raw getArea() value.
         if (!str_contains($area, '|')) {
             $coords = $this->geocoder->geocode($area);
             if ($coords === null) {
                 return null;
             }
-            return [$coords, Haversine::kilometres($origin, $coords)];
+            return [$coords, Haversine::kilometres($origin, $coords), null];
         }
 
         $best = null;
+        $bestPart = null;
         $bestDistance = INF;
         foreach (explode('|', $area) as $part) {
             $part = trim($part);
@@ -236,9 +248,10 @@ final class NearestMembersResolver
             if ($distance < $bestDistance) {
                 $bestDistance = $distance;
                 $best = $coords;
+                $bestPart = $part;
             }
         }
 
-        return $best === null ? null : [$best, $bestDistance];
+        return $best === null ? null : [$best, $bestDistance, $bestPart];
     }
 }

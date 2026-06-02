@@ -268,7 +268,13 @@ final class NearestMembersController
                 return [
                     'id'              => $id,
                     'anonymous_name'  => $m->getAnonymousName(),
-                    'area'            => $m->getArea(),
+                    // For a pipe-separated member (e.g. "Kingswood|Hanham"),
+                    // surface only the entry that drove the match — that's
+                    // the area the reported distance refers to, and it
+                    // avoids leaking the separator-as-data into the UI.
+                    // Single-area members fall back to the raw field, so
+                    // their behaviour is unchanged.
+                    'area'            => $scored->matchedArea ?? $m->getArea(),
                     'accepts'         => $m->getAccepts(),
                     'preferred'       => $scored->preferred,
                     'mobile_number'   => $m->getMobileNumber(),

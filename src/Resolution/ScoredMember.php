@@ -23,6 +23,16 @@ use Unity\Members\Interfaces\Member;
  * offered as nearby fallbacks; `$preferred` lets the controller and
  * UI distinguish a preference match from an in-location-only result.
  * With no gender filter every in-range member is trivially preferred.
+ *
+ * `$matchedArea` is the specific entry from the member's area field
+ * that won when that field is a pipe-separated list (e.g. for a
+ * member stored as `Kingswood|Hanham`, this is `Kingswood` when
+ * Kingswood is the nearer of the two to the caller). It is null when
+ * the member's area is a single entry — there's nothing to pick from,
+ * so the controller falls back to the raw `getArea()` value. The
+ * field lets the response carry only the area that actually mapped
+ * to this member's reported distance, instead of leaking the
+ * separator-as-data into the UI.
  */
 final class ScoredMember
 {
@@ -31,6 +41,7 @@ final class ScoredMember
         public readonly Coordinates $coordinates,
         public readonly float $distanceKm,
         public readonly bool $preferred = true,
+        public readonly ?string $matchedArea = null,
     ) {
     }
 }
