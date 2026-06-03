@@ -44,6 +44,9 @@
     --m3-error-container:    #f9dedc;     /* soft error tint for notices */
     --m3-on-error-container: #410e0b;     /* readable text on that tint  */
     --m3-success:           #1f7a3a;
+    --m3-success-container: #c8efd4;      /* soft success tint, used on
+                                             the "Spoke" outcome button   */
+    --m3-on-success-container: #0a3a18;   /* readable text on that tint  */
 
     /* Disabled-state foreground (M3: on-surface @ 38%) — solid hex
        so it overrides any inherited colour without needing alpha. */
@@ -469,6 +472,7 @@ html, body {
     min-height: 40px;
     display: inline-flex;
     align-items: center;
+    gap: 10px;
     padding: 0 12px;
     margin: 0 -12px;
     border-radius: var(--m3-corner-text-btn);
@@ -476,6 +480,19 @@ html, body {
 }
 .reach-result__contact a:hover  { background: rgba(31, 111, 235, .08); }
 .reach-result__contact a:active { background: rgba(31, 111, 235, .12); }
+
+/*
+ * Inline SVG icons. Sized to the line-height of the 14px contact
+ * label, coloured by `currentColor` so they pick up the link's
+ * accent (M3 primary) and follow hover/active changes automatically.
+ * `flex-shrink: 0` keeps the icon at full size if a long number
+ * forces the label to wrap.
+ */
+.reach-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
 
 .reach-result__accepts {
     font-size: 13px;
@@ -518,8 +535,15 @@ html, body {
 }
 
 /*
- * Outcome buttons — secondary actions tucked under each result.
- * Visually subordinate to the call/text/email links above.
+ * Outcome buttons — "How did it go?" feedback after a call.
+ *
+ * Tonal-filled buttons in semantically appropriate hues so each
+ * outcome is glanceable at a tap-distance: success-tint for the
+ * positive case (Spoke), primary-tint for the neutral case (No
+ * answer), error-tint for the flag case (Wrong / bad number).
+ * Larger and louder than the call/text links above them on purpose
+ * — the previous quiet treatment was getting missed by callers
+ * working their way down a results list.
  */
 .reach-result__actions {
     margin-top: 12px;
@@ -529,23 +553,43 @@ html, body {
 .reach-result__actions-label {
     font-size: 12px;
     color: var(--m3-on-surface-variant);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 .reach-result__action-buttons {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
 }
 .reach-btn--outcome {
     flex: 0 0 auto;
-    padding: 6px 12px;
+    padding: 8px 14px;
     font-size: 13px;
-    min-height: 0;
+    font-weight: 600;
+    min-height: 36px;
     line-height: 1.3;
+    border: 0;
+    border-radius: var(--m3-corner-text-btn);
+    transition: filter .15s ease, opacity .15s ease;
 }
+.reach-btn--outcome:hover  { filter: brightness(.97); }
+.reach-btn--outcome:active { filter: brightness(.92); }
 .reach-btn--outcome:disabled {
     opacity: .55;
     cursor: default;
+    filter: none;
+}
+
+.reach-btn--outcome-reached {
+    background: var(--m3-success-container);
+    color: var(--m3-on-success-container);
+}
+.reach-btn--outcome-no-answer {
+    background: var(--m3-primary-container);
+    color: var(--m3-on-primary-container);
+}
+.reach-btn--outcome-wrong-or-bad-number {
+    background: var(--m3-error-container);
+    color: var(--m3-on-error-container);
 }
 .reach-result__logged {
     font-size: 13px;
