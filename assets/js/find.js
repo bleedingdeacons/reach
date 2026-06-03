@@ -115,6 +115,35 @@
         return s ? s.charAt(0).toUpperCase() + s.slice(1) : value;
     }
 
+    /*
+     * Display-format a phone number for the Call / Text labels.
+     *
+     * Database values are stored as the responder entered them, which
+     * means inconsistent grouping ("07700900123", "07700 900123",
+     * "+447700900123"). Dyslexic readers parse numbers in chunks, so
+     * a consistent visual rhythm — "07700 900 123" — materially helps.
+     * Non-display callsites (the tel:/sms: hrefs) still strip whitespace
+     * and use the raw digits, since dial strings don't want spaces.
+     *
+     * Recognises UK mobile shapes only; anything else is returned as
+     * given so we never mangle an international number we don't
+     * understand.
+     */
+    function formatPhone(raw) {
+        if (!raw) return '';
+        var digits = String(raw).replace(/[^\d+]/g, '');
+        // UK domestic mobile: 11 digits starting "07".
+        if (/^07\d{9}$/.test(digits)) {
+            return digits.slice(0, 5) + ' ' + digits.slice(5, 8) + ' ' + digits.slice(8);
+        }
+        // UK international mobile: "+447" followed by 9 digits.
+        if (/^\+447\d{9}$/.test(digits)) {
+            return '+44 7' + digits.slice(4, 7) + ' ' + digits.slice(7, 10) + ' ' + digits.slice(10);
+        }
+        // Unknown shape — return as-is rather than guess.
+        return String(raw);
+    }
+
     function logAttempt(member, outcome, btn, group) {
         // Disable the whole group while in flight so the user can't
         // double-tap or race two outcomes against each other.
@@ -174,7 +203,7 @@
                     err.className = 'reach-result__logged is-error';
                     err.textContent = msg;
                     group.appendChild(err);
-                    setTimeout(function () { if (err.parentNode) err.parentNode.removeChild(err); }, 4000);
+                    setTimeout(function () { if (err.parentNode) err.parentNode.removeChild(err); }, 10000);
                 }
             })
             .catch(function () {
@@ -296,13 +325,27 @@
 
             var top = document.createElement('div');
             top.className = 'reach-result__top';
+            // Name and area as two stacked lines rather than joined
+            // by a middle dot. A mid-string separator forces the
+            // reader to mentally split one token into two; stacking
+            // them lets the eye chunk each piece independently —
+            // measurably easier for dyslexic readers.
+            var identity = document.createElement('div');
+            identity.className = 'reach-result__identity';
             var name = document.createElement('div');
             name.className = 'reach-result__name';
-            name.textContent = m.anonymous_name + ' \u00b7 ' + (m.area || '');
+            name.textContent = m.anonymous_name;
+            identity.appendChild(name);
+            if (m.area) {
+                var area = document.createElement('div');
+                area.className = 'reach-result__area';
+                area.textContent = m.area;
+                identity.appendChild(area);
+            }
             var dist = document.createElement('div');
             dist.className = 'reach-result__dist';
             dist.textContent = m.distance_km + ' km away';
-            top.appendChild(name);
+            top.appendChild(identity);
             top.appendChild(dist);
             li.appendChild(top);
 
@@ -353,7 +396,7 @@
                 tel.appendChild(icon('call'));
                 var telLabel = document.createElement('span');
                 telLabel.className = 'reach-result__contact-label';
-                telLabel.textContent = 'Call ' + m.mobile_number;
+                telLabel.textContent = 'Call ' + formatPhone(m.mobile_number);
                 tel.appendChild(telLabel);
                 tel.addEventListener('click', reopenFeedback);
                 contact.appendChild(tel);
@@ -362,7 +405,7 @@
                 sms.appendChild(icon('message'));
                 var smsLabel = document.createElement('span');
                 smsLabel.className = 'reach-result__contact-label';
-                smsLabel.textContent = 'Text ' + m.mobile_number;
+                smsLabel.textContent = 'Text ' + formatPhone(m.mobile_number);
                 sms.appendChild(smsLabel);
                 sms.addEventListener('click', reopenFeedback);
                 contact.appendChild(sms);
@@ -370,9 +413,23 @@
             li.appendChild(contact);
 
             if (m.accepts && m.accepts.length) {
+                // Chip rendering rather than a comma-separated string:
+                // comma lists are harder to scan than visually
+                // separated items, especially for dyslexic readers
+                // who tend to fixate on chunks rather than parse
+                // continuously through punctuation.
                 var ac = document.createElement('div');
                 ac.className = 'reach-result__accepts';
-                ac.textContent = 'Accepts calls from: ' + m.accepts.map(acceptsLabel).join(', ');
+                var acLabel = document.createElement('span');
+                acLabel.className = 'reach-result__accepts-label';
+                acLabel.textContent = 'Accepts calls from:';
+                ac.appendChild(acLabel);
+                m.accepts.forEach(function (a) {
+                    var chip = document.createElement('span');
+                    chip.className = 'reach-result__accepts-chip';
+                    chip.textContent = acceptsLabel(a);
+                    ac.appendChild(chip);
+                });
                 li.appendChild(ac);
             }
 

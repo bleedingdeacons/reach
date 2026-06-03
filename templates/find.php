@@ -45,7 +45,7 @@ $signInUrl = esc_url(home_url('/reach/signin'));
         <h1 class="reach-title">Find Nearest 12th Stepper</h1>
 
         <form id="reach-form" class="reach-form" novalidate>
-            <label class="reach-label" for="reach-location">Callers Location</label>
+            <label class="reach-label" for="reach-location">Caller&rsquo;s Location</label>
             <input type="text"
                    id="reach-location"
                    name="location"
