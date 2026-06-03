@@ -19,10 +19,10 @@ if (!defined('ABSPATH')) {
  * authenticated requests to /reach/signin before reaching the
  * template), so we render the signed-in user's email in the header.
  *
- * `nonce` is the standard WP REST nonce — although Reach sessions
- * authenticate the request, sending the nonce too makes the request
- * survive any future capability-check overlay that might require a
- * logged-in WP user in addition to the email-verified session.
+ * No WP REST nonce is emitted: Reach users are OAuth-only and have
+ * no WordPress account, so WP's cookie-auth nonce check is never
+ * the thing gating these requests. Including a nonce would only
+ * introduce a second clock that ticks over while a tab sits idle.
  */
 
 /** @var \Reach\Session\Session|null $session */
@@ -31,7 +31,6 @@ $restUrl  = esc_url(rest_url('reach/v1/nearest-members'));
 $attemptsUrl = esc_url(rest_url('reach/v1/call-attempts'));
 $signOutUrl = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl = esc_url(home_url('/reach/signin'));
-$nonce = wp_create_nonce('wp_rest');
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
 <head>
@@ -85,8 +84,7 @@ $nonce = wp_create_nonce('wp_rest');
             restUrl: <?php echo wp_json_encode($restUrl); ?>,
             attemptsUrl: <?php echo wp_json_encode($attemptsUrl); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
-            nonce: <?php echo wp_json_encode($nonce); ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/find.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>

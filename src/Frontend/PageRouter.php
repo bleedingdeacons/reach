@@ -89,9 +89,14 @@ final class PageRouter
         status_header(200);
         nocache_headers();
 
+        // Cookie check failed on the gated page — render the sign-in
+        // template in place rather than bouncing the visitor through a
+        // redirect. The URL stays at /reach/find, which means after a
+        // successful sign-in the visitor lands back where they meant
+        // to go without us having to thread a `?return_to` through the
+        // OAuth flow.
         if ($page === 'find' && !$this->session->isAuthenticated()) {
-            wp_safe_redirect(home_url('/reach/signin'));
-            exit;
+            $page = 'signin';
         }
 
         // The templates handle their own <html> shell so we don't pick

@@ -4,12 +4,14 @@
  * Hooks the form to /reach/v1/nearest-members, renders results,
  * handles the sign-out button. No framework, no dependencies.
  *
- * Authentication piggy-backs on the HttpOnly session cookie that
- * was set during sign-in — we just have to send credentials with
- * the fetch. The WP REST nonce is sent in case the capability
- * gate is also enabled (cookie auth path in WordPress requires
- * the nonce; pure Reach-cookie auth doesn't, and sending it is
- * harmless when unused).
+ * Authentication piggy-backs on the HttpOnly Reach session cookie
+ * that was set during sign-in — we just have to send credentials
+ * with the fetch. We deliberately do NOT send X-WP-Nonce: Reach
+ * users authenticate via OAuth and have no WP account, so WP's
+ * cookie-auth nonce check never fires for them. Sending a nonce
+ * "just in case" only introduces a second clock (the ~12-hour
+ * nonce tick) that can tick over while a tab sits idle, turning a
+ * still-signed-in user into a "Cookie check failed." error.
  */
 (function () {
     'use strict';
@@ -101,8 +103,7 @@
             credentials: 'same-origin',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-WP-Nonce': cfg.nonce || ''
+                'Content-Type': 'application/json'
             },
             body: body
         })
@@ -111,6 +112,17 @@
             })
             .then(function (resp) {
                 btn.classList.remove('is-loading');
+                // Session expired between rendering the page and the
+                // user tapping an outcome button — bounce to sign-in
+                // rather than show a confusing error next to the
+                // buttons. The other 403 we can see here —
+                // reach_invalid_attempt_token — means the search
+                // results have gone stale and the user should re-run
+                // the search; that case stays inline as an error.
+                if (resp.status === 401) {
+                    window.location = cfg.signInUrl;
+                    return;
+                }
                 if (resp.status >= 200 && resp.status < 300) {
                     // Replace the buttons with a confirmation. Tracking
                     // multiple outcomes per call (e.g. "no answer, then
@@ -400,16 +412,20 @@
         fetch(url.toString(), {
             method: 'GET',
             credentials: 'same-origin',
-            headers: { 'Accept': 'application/json', 'X-WP-Nonce': cfg.nonce || '' }
+            headers: { 'Accept': 'application/json' }
         })
             .then(function (r) {
-                if (r.status === 401) {
-                    window.location = cfg.signInUrl;
-                    return Promise.reject(new Error('signed-out'));
-                }
                 return r.json().then(function (body) { return { status: r.status, body: body }; });
             })
             .then(function (resp) {
+                // Reach session cookie aged out while the tab sat
+                // open — bounce to sign-in rather than surfacing a
+                // confusing inline error on a page that no longer
+                // works.
+                if (resp.status === 401) {
+                    window.location = cfg.signInUrl;
+                    return;
+                }
                 if (resp.status >= 200 && resp.status < 300) {
                     applyResults(resp.body);
                 } else {
@@ -417,7 +433,6 @@
                 }
             })
             .catch(function (err) {
-                if (err && err.message === 'signed-out') return;
                 console.error(err);
                 setStatus('Network error. Check your connection and try again.', 'error');
             })
@@ -432,7 +447,7 @@
             fetch(cfg.signOutUrl, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 'Accept': 'application/json', 'X-WP-Nonce': cfg.nonce || '' }
+                headers: { 'Accept': 'application/json' }
             }).then(function () {
                 window.location = cfg.signInUrl;
             }).catch(function () {
