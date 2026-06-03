@@ -94,29 +94,60 @@ if ($reachErrorCode !== '') {
         <div class="reach-buttons">
             <?php if ($googleConfigured): ?>
                 <a class="reach-btn reach-btn--google" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=google')); ?>" rel="nofollow">
-                    <span class="reach-btn__icon" aria-hidden="true">G</span>
-                    <span>Sign using Google</span>
+                    <!--
+                        Google "G" mark — the four-colour brand logo
+                        required by Google's Sign-In branding guidelines.
+                        Letter glyphs ("G") fail the guideline and also
+                        risk being parsed as part of the button label by
+                        sighted readers chunking the line visually.
+                    -->
+                    <svg class="reach-btn__icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48">
+                        <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+                        <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+                        <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0124 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+                        <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+                    </svg>
+                    <span>Sign in with Google</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($microsoftConfigured): ?>
                 <a class="reach-btn reach-btn--microsoft" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=microsoft')); ?>" rel="nofollow">
-                    <span class="reach-btn__icon" aria-hidden="true">&#x2756;</span>
-                    <span>Sign using Microsoft</span>
+                    <!-- Microsoft four-square brand mark. -->
+                    <svg class="reach-btn__icon" aria-hidden="true" focusable="false" viewBox="0 0 23 23">
+                        <path fill="#F35325" d="M1 1h10v10H1z"/>
+                        <path fill="#81BC06" d="M12 1h10v10H12z"/>
+                        <path fill="#05A6F0" d="M1 12h10v10H1z"/>
+                        <path fill="#FFBA08" d="M12 12h10v10H12z"/>
+                    </svg>
+                    <span>Sign in with Microsoft</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($facebookConfigured): ?>
                 <a class="reach-btn reach-btn--facebook" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=facebook')); ?>" rel="nofollow">
-                    <span class="reach-btn__icon" aria-hidden="true">f</span>
-                    <span>Sign using Facebook</span>
+                    <!-- Facebook "f in circle" brand mark. -->
+                    <svg class="reach-btn__icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+                        <path fill="#1877F2" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073c0 6.025 4.388 11.02 10.125 11.927v-8.437H7.078v-3.49h3.047V9.412c0-3.022 1.792-4.692 4.533-4.692 1.312 0 2.686.235 2.686.235v2.962h-1.514c-1.491 0-1.957.93-1.957 1.886v2.265h3.328l-.532 3.49h-2.796v8.437C19.612 23.092 24 18.098 24 12.073z"/>
+                    </svg>
+                    <span>Sign in with Facebook</span>
                 </a>
             <?php endif; ?>
 
             <?php if ($appleConfigured): ?>
                 <button type="button" class="reach-btn reach-btn--apple" id="reach-apple-btn">
-                    <span class="reach-btn__icon" aria-hidden="true">&#xf8ff;</span>
-                    <span>Sign using Apple</span>
+                    <!--
+                        Apple logo silhouette. `fill="currentColor"` lets
+                        the icon inherit the button's `color: #fff`, so
+                        the logo renders white on the black Apple button
+                        without needing a separate colour rule. Replaces
+                        U+F8FF, which only mapped to the Apple glyph on
+                        Apple's own OSes — everywhere else it was tofu.
+                    -->
+                    <svg class="reach-btn__icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+                        <path fill="currentColor" d="M17.05 12.04c-.03-2.85 2.32-4.21 2.42-4.27-1.32-1.93-3.38-2.2-4.11-2.23-1.75-.18-3.42 1.03-4.31 1.03-.89 0-2.27-1.01-3.74-.98-1.92.03-3.7 1.12-4.69 2.84-2 3.47-.51 8.59 1.44 11.4.95 1.38 2.08 2.92 3.57 2.86 1.43-.06 1.97-.93 3.7-.93s2.22.93 3.74.9c1.54-.03 2.52-1.4 3.46-2.78 1.09-1.6 1.54-3.15 1.56-3.23-.03-.01-2.99-1.15-3.04-4.55zM14.21 4.04c.79-.96 1.32-2.29 1.17-3.61-1.13.05-2.5.75-3.32 1.71-.73.85-1.37 2.21-1.2 3.51 1.26.1 2.55-.64 3.35-1.61z"/>
+                    </svg>
+                    <span>Sign in with Apple</span>
                 </button>
             <?php endif; ?>
 

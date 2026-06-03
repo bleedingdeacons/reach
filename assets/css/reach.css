@@ -243,20 +243,18 @@ html, body {
     box-shadow: none;
     opacity: 1;
 }
+/*
+ * Icon slot inside an OAuth button. The slot is sized to host an
+ * inline SVG brand mark; flex behaviour keeps it from being squeezed
+ * by long button labels. No text-styling rules here — the icon is
+ * always an SVG now, never a glyph character.
+ */
 .reach-btn__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 22px;
     height: 22px;
-    font-weight: 700;
-    font-size: 18px;
     flex: 0 0 auto;
 }
 
-.reach-btn--google     .reach-btn__icon { color: #4285f4; }
-.reach-btn--microsoft  .reach-btn__icon { color: #00a4ef; }
-.reach-btn--facebook   .reach-btn__icon { color: #1877f2; }
 .reach-btn--apple      { background: #000; color: #fff; border-color: #000; }
 .reach-btn--apple:hover  { background: #1a1a1a; }
 .reach-btn--apple:active { background: #2a2a2a; }
