@@ -5,10 +5,10 @@ declare(strict_types=1);
 /**
  * Plugin Name: Reach
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
- * Version: 1.5.0
+ * Version: 1.5.1
  * Requires at least: 6.1
  * Requires PHP: 8.1
- * Requires Plugins: unity, scrutiny
+ * Requires Plugins: scrutiny
  * GitHub Plugin URI: https://github.com/thebleedingdeacons/reach
  * GitHub Branch: main
  * Author: The Bleeding Deacons
@@ -109,14 +109,24 @@ add_action('unity/loaded', function($container) {
     }
 }, 10);
 
-// Show admin notice if Unity or Scrutiny is not active.
-add_action('admin_notices', function() {
-    if (!function_exists('unity') && !did_action('unity/loaded')) {
-        echo '<div class="notice notice-warning is-dismissible"><p><strong>Reach:</strong> Requires the Unity plugin to be installed and activated.</p></div>';
-    } elseif (!function_exists('scrutiny') && function_exists('unity')) {
-        echo '<div class="notice notice-error is-dismissible"><p><strong>Reach:</strong> Requires the Scrutiny plugin to be installed and activated for GDPR audit logging.</p></div>';
+// Show admin notice if a required plugin is not available.
+add_action('plugins_loaded', function () {
+    if (!class_exists('Unity\\Plugin')) {
+        add_action('admin_notices', function () {
+            echo '<div class="notice notice-error"><p>';
+            echo '<strong>' . esc_html__('Reach', 'reach') . ':</strong> ';
+            echo esc_html__('This plugin requires the Unity plugin to be installed and activated.', 'reach');
+            echo '</p></div>';
+        });
+    } elseif (!function_exists('scrutiny')) {
+        add_action('admin_notices', function () {
+            echo '<div class="notice notice-error"><p>';
+            echo '<strong>' . esc_html__('Reach', 'reach') . ':</strong> ';
+            echo esc_html__('This plugin requires the Scrutiny plugin to be installed and activated for GDPR audit logging.', 'reach');
+            echo '</p></div>';
+        });
     }
-});
+}, 20);
 
 // Activation: ensure Unity and Scrutiny are present.
 register_activation_hook(__FILE__, function () {
