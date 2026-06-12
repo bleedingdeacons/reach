@@ -501,7 +501,7 @@ class PluginBuilder
             return;
         }
 
-        $buildDate = date('Y/m/d');
+        $buildDate = date('Y/m/d H:i:s');
 
         // First, try to update an existing "Build date:" line.
         $updated = preg_replace(
