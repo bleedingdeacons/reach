@@ -1,0 +1,73 @@
+<?php
+
+declare(strict_types=1);
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+/**
+ * Reach home / menu page.
+ *
+ * Shown right after sign-in (PageRouter sends authenticated visitors here).
+ * Two choices: Search the 12th-step finder, or Shift sign-up. The shift button
+ * only appears when the Trusted plugin is active, since that's what backs it.
+ *
+ * Standalone shell, same conventions as find.php — own <html>, no theme chrome,
+ * no WP nonce (Reach is OAuth/session-cookie only).
+ *
+ * @var \Reach\Session\Session|null $session
+ */
+
+$email          = $session !== null ? $session->email : '';
+$findUrl        = esc_url(home_url('/reach/find'));
+$shiftsUrl      = esc_url(home_url('/reach/shifts'));
+$signOutUrl     = esc_url(rest_url('reach/v1/oauth/signout'));
+$signInUrl      = esc_url(home_url('/reach/signin'));
+$shiftsEnabled  = defined('TRUSTED_VERSION');
+?><!DOCTYPE html>
+<html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
+<head>
+    <meta charset="<?php echo esc_attr(get_bloginfo('charset')); ?>">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Reach</title>
+    <link rel="stylesheet" href="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/css/reach.css'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>">
+</head>
+<body class="reach-page reach-home">
+    <main class="reach-card">
+        <h1 class="reach-title">Reach</h1>
+        <p class="reach-subtitle">What would you like to do?</p>
+
+        <nav class="reach-menu">
+            <a class="reach-btn reach-btn--primary" href="<?php echo $findUrl; ?>">
+                <span>Search</span>
+            </a>
+            <?php if ($shiftsEnabled): ?>
+                <a class="reach-btn" href="<?php echo $shiftsUrl; ?>">
+                    <span>Shift sign-up</span>
+                </a>
+            <?php endif; ?>
+        </nav>
+
+        <footer class="reach-footer">
+            <div class="reach-footer__who"><?php echo esc_html($email); ?></div>
+            <button type="button" class="reach-signout" id="reach-signout">Sign out</button>
+        </footer>
+    </main>
+
+    <script>
+        (function () {
+            var signOutUrl = <?php echo wp_json_encode($signOutUrl); ?>;
+            var signInUrl = <?php echo wp_json_encode($signInUrl); ?>;
+            var btn = document.getElementById('reach-signout');
+            if (!btn) return;
+            btn.addEventListener('click', function () {
+                fetch(signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                    .then(function () { window.location = signInUrl; })
+                    .catch(function () { window.location = signInUrl; });
+            });
+        })();
+    </script>
+</body>
+</html>

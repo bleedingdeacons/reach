@@ -153,7 +153,7 @@ final class OAuthController
         // range.
         $codeVerifier = bin2hex(random_bytes(32));
 
-        $tokens = $this->stateStore->issue($providerName, $this->findPageUrl(), $codeVerifier);
+        $tokens = $this->stateStore->issue($providerName, $this->homePageUrl(), $codeVerifier);
         $redirectUri = $this->callbackUrl();
 
         $authUrl = $provider->getAuthorizationUrl($tokens['state'], $tokens['nonce'], $redirectUri, $codeVerifier);
@@ -187,7 +187,7 @@ final class OAuthController
             return $this->denyRedirect('signin_failed');
         }
 
-        $returnTo = $stored['return_to'] !== '' ? $stored['return_to'] : $this->findPageUrl();
+        $returnTo = $stored['return_to'] !== '' ? $stored['return_to'] : $this->homePageUrl();
 
         // If the provider proved who the user is but only gave us a
         // relay address we can't treat as a contact email, refuse
@@ -241,7 +241,7 @@ final class OAuthController
         }
 
         $this->issueSessionFor($identity);
-        return new WP_REST_Response(['redirect' => $this->findPageUrl()], 200);
+        return new WP_REST_Response(['redirect' => $this->homePageUrl()], 200);
     }
 
     /**
@@ -318,7 +318,7 @@ final class OAuthController
      */
     public function appleStart(WP_REST_Request $request): WP_REST_Response
     {
-        $tokens = $this->stateStore->issue('apple', $this->findPageUrl());
+        $tokens = $this->stateStore->issue('apple', $this->homePageUrl());
         return new WP_REST_Response(['state' => $tokens['state'], 'nonce' => $tokens['nonce']], 200);
     }
 
@@ -333,9 +333,10 @@ final class OAuthController
         return rest_url(self::NAMESPACE . '/oauth/callback');
     }
 
-    private function findPageUrl(): string
+    private function homePageUrl(): string
     {
-        return home_url('/reach/find');
+        // After sign-in the visitor lands on the menu (Search / Shift sign-up).
+        return home_url('/reach/home');
     }
 
     /**

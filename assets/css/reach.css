@@ -785,3 +785,84 @@ html, body {
     .reach-btn--apple:active { background: #d6d6d6; }
     .reach-distance__count { background: rgba(255, 255, 255, .10); }
 }
+
+/* ── Home menu (stacked choice buttons) ─────────────────────────── */
+
+.reach-home .reach-card { display: flex; flex-direction: column; }
+
+.reach-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 8px 0 24px;
+}
+.reach-menu .reach-btn { width: 100%; justify-content: center; }
+
+/* ── Shift sign-up ──────────────────────────────────────────────── */
+
+.reach-shifts .reach-card { display: flex; flex-direction: column; }
+
+/* Day navigator: ‹ [date] › */
+.reach-day {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+.reach-day__input { flex: 1; min-width: 0; }
+.reach-day__nav {
+    flex: 0 0 auto;
+    width: 44px;
+    min-height: 44px;
+    border: 1px solid var(--m3-outline, #c3c4c7);
+    border-radius: var(--m3-corner-text-btn, 8px);
+    background: transparent;
+    color: var(--m3-primary, #1f6feb);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+.reach-day__nav:hover { background: rgba(31, 111, 235, .08); }
+
+.reach-shifts-list {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.reach-shift {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--m3-outline, #c3c4c7);
+    border-radius: var(--m3-corner-text-btn, 8px);
+}
+.reach-shift.is-taken { opacity: .55; }
+
+/* The open-shift row is one big tap target wrapping the checkbox. */
+.reach-shift__pick {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    cursor: pointer;
+}
+.reach-shift__check { width: 20px; height: 20px; flex: 0 0 auto; }
+
+.reach-shift__time { font-weight: 600; flex: 0 0 auto; }
+.reach-shift__label {
+    color: var(--m3-on-surface-variant, #50575e);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.reach-shift__taken {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--m3-on-surface-variant, #50575e);
+}

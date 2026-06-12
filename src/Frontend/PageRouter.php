@@ -37,6 +37,8 @@ final class PageRouter
     public const QUERY_VAR = 'reach_page';
     public const SIGNIN_SLUG = 'reach/signin';
     public const FIND_SLUG = 'reach/find';
+    public const HOME_SLUG = 'reach/home';
+    public const SHIFTS_SLUG = 'reach/shifts';
 
     public function __construct(
         private readonly CurrentSession $session,
@@ -56,7 +58,9 @@ final class PageRouter
         // /reach/signin and /reach/find rules above it.
         add_rewrite_rule('^reach/?$',        'index.php?' . self::QUERY_VAR . '=index',  'top');
         add_rewrite_rule('^reach/signin/?$', 'index.php?' . self::QUERY_VAR . '=signin', 'top');
+        add_rewrite_rule('^reach/home/?$',   'index.php?' . self::QUERY_VAR . '=home',   'top');
         add_rewrite_rule('^reach/find/?$',   'index.php?' . self::QUERY_VAR . '=find',   'top');
+        add_rewrite_rule('^reach/shifts/?$', 'index.php?' . self::QUERY_VAR . '=shifts', 'top');
     }
 
     /**
@@ -72,7 +76,7 @@ final class PageRouter
     public function renderPage(): void
     {
         $page = get_query_var(self::QUERY_VAR);
-        if ($page !== 'signin' && $page !== 'find' && $page !== 'index') {
+        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'index'], true)) {
             return;
         }
 
@@ -95,7 +99,8 @@ final class PageRouter
         // successful sign-in the visitor lands back where they meant
         // to go without us having to thread a `?return_to` through the
         // OAuth flow.
-        if ($page === 'find' && !$this->session->isAuthenticated()) {
+        // All the signed-in pages bounce to sign-in when there's no session.
+        if (in_array($page, ['home', 'find', 'shifts'], true) && !$this->session->isAuthenticated()) {
             $page = 'signin';
         }
 
@@ -104,6 +109,8 @@ final class PageRouter
         // mobile views, not theme-wrapped WordPress pages.
         $template = match ($page) {
             'signin' => REACH_PLUGIN_DIR . 'templates/signin.php',
+            'home'   => REACH_PLUGIN_DIR . 'templates/home.php',
+            'shifts' => REACH_PLUGIN_DIR . 'templates/shifts.php',
             default  => REACH_PLUGIN_DIR . 'templates/find.php',
         };
 
@@ -119,6 +126,6 @@ final class PageRouter
      */
     public static function landingPath(bool $isAuthenticated): string
     {
-        return $isAuthenticated ? '/reach/find' : '/reach/signin';
+        return $isAuthenticated ? '/reach/home' : '/reach/signin';
     }
 }

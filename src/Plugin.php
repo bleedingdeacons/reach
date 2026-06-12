@@ -15,8 +15,12 @@ use Reach\Frontend\PageRouter;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
+use Reach\Session\CurrentSession;
 use Psr\Container\ContainerInterface;
 use Unity\Core\Interfaces\Container;
+use Unity\Members\Interfaces\MemberRepository;
+
+use function add_filter;
 
 use RuntimeException;
 
@@ -62,6 +66,25 @@ class Plugin
 
         // Frontend pages (rewrite rules + template_redirect).
         self::$container->get(PageRouter::class)->register();
+
+        // Bridge Reach's authenticated member to Trusted's sign-up endpoints.
+        // Trusted's /signup REST resolves the acting member ONLY via this filter,
+        // so a member's browser (carrying the Reach session cookie) can sign up
+        // for shifts without Trusted trusting any request-supplied identity.
+        // Inert when Trusted isn't installed (nothing fires the filter).
+        $session = self::$container->get(CurrentSession::class);
+        $members = self::$container->get(MemberRepository::class);
+        add_filter('trusted_signup_member', static function ($member) use ($session, $members) {
+            if ($member !== null) {
+                return $member;
+            }
+            $current = $session->get();
+            if ($current === null || $current->email === '') {
+                return null;
+            }
+            // Trusted re-checks the member is a telephone responder before access.
+            return $members->findByEmail($current->email);
+        }, 10, 1);
 
         // Admin settings page.
         if (is_admin()) {
