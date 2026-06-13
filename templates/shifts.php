@@ -38,7 +38,7 @@ $homeUrl    = esc_url(home_url('/reach/home'));
 
         <div class="reach-day" role="group" aria-label="Day">
             <button type="button" class="reach-day__nav" id="reach-day-prev" aria-label="Previous day">&lsaquo;</button>
-            <input type="date" id="reach-day" class="reach-input reach-day__input">
+            <input type="date" id="reach-day" class="reach-input reach-day__input" lang="en-GB">
             <button type="button" class="reach-day__nav" id="reach-day-next" aria-label="Next day">&rsaquo;</button>
         </div>
 
