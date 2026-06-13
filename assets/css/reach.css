@@ -855,6 +855,13 @@ html, body {
     cursor: pointer;
 }
 .reach-day__nav:hover { background: rgba(31, 111, 235, .08); }
+.reach-day__weekday {
+    margin: -8px 0 16px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--m3-on-surface-variant, #57606a);
+}
+.reach-day__weekday:empty { display: none; }
 
 .reach-shifts-list {
     list-style: none;

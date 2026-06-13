@@ -45,6 +45,8 @@ $homeUrl    = esc_url(home_url('/reach/home'));
             <button type="button" class="reach-day__nav" id="reach-day-next" aria-label="Next day">&rsaquo;</button>
         </div>
 
+        <div id="reach-day-weekday" class="reach-day__weekday" aria-live="polite"></div>
+
         <div id="reach-status" class="reach-status" role="status" aria-live="polite"></div>
 
         <form id="reach-shifts-form" class="reach-shifts-form" novalidate>

@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Reach
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
- * Version: 1.6.0
+ * Version: 1.6.1
  * Requires at least: 6.1
  * Requires PHP: 8.1
  * Requires Plugins: scrutiny

@@ -21,8 +21,11 @@
     var listEl = document.getElementById('reach-shifts-list');
     var submitBtn = document.getElementById('reach-shifts-submit');
     var signOutBtn = document.getElementById('reach-signout');
+    var weekdayEl = document.getElementById('reach-day-weekday');
 
     if (!form || !listEl || !dayInput) { return; }
+
+    var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
     // --- Helpers ------------------------------------------------------------
 
@@ -37,6 +40,11 @@
         var d = new Date(iso + 'T00:00:00');
         d.setDate(d.getDate() + delta);
         return isoDate(d);
+    }
+
+    function setWeekday(iso) {
+        if (!weekdayEl) { return; }
+        weekdayEl.textContent = iso ? WEEKDAYS[new Date(iso + 'T00:00:00').getDay()] : '';
     }
 
     function setStatus(message, kind) {
@@ -131,6 +139,7 @@
     // --- Data ---------------------------------------------------------------
 
     function loadDay(iso) {
+        setWeekday(iso);
         setStatus('Loading…');
         listEl.innerHTML = '';
         submitBtn.hidden = true;
