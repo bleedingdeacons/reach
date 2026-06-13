@@ -98,10 +98,20 @@
             } else {
                 var taken = document.createElement('span');
                 taken.className = 'reach-shift__taken';
-                taken.textContent = 'Taken';
+                taken.textContent = s.is_mine ? 'You' : (s.assignee || 'Taken');
                 li.appendChild(time);
                 li.appendChild(label);
                 li.appendChild(taken);
+
+                if (s.is_mine) {
+                    li.classList.add('is-mine');
+                    var remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'reach-shift__remove';
+                    remove.textContent = 'Remove';
+                    remove.setAttribute('data-rota', String(s.id));
+                    li.appendChild(remove);
+                }
             }
 
             listEl.appendChild(li);
@@ -184,6 +194,26 @@
         });
     }
 
+    function removeSignup(rotaId) {
+        setStatus('Removing…');
+
+        api('/signup/' + rotaId, { method: 'DELETE' }).then(function (resp) {
+            if (resp.status === 403) {
+                setStatus('You’re not registered as a telephone responder.', 'error');
+                return;
+            }
+            if (resp.status !== 200) {
+                setStatus((resp.body && resp.body.message) || 'Could not remove your sign-up.', 'error');
+                return;
+            }
+            setStatus('Removed your sign-up.', 'success');
+            loadDay(dayInput.value); // refresh so the now-open shift updates
+        }).catch(function (e) {
+            if (e && e.handled) { return; }
+            setStatus('Could not remove your sign-up.', 'error');
+        });
+    }
+
     // --- Wire up ------------------------------------------------------------
 
     var today = isoDate(new Date());
@@ -201,6 +231,15 @@
         loadDay(dayInput.value);
     });
     form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
+
+    listEl.addEventListener('click', function (e) {
+        var btn = e.target;
+        if (!btn.classList || !btn.classList.contains('reach-shift__remove')) { return; }
+        var rotaId = parseInt(btn.getAttribute('data-rota'), 10);
+        if (rotaId > 0 && window.confirm('Remove your sign-up for this shift?')) {
+            removeSignup(rotaId);
+        }
+    });
 
     if (signOutBtn) {
         signOutBtn.addEventListener('click', function () {

@@ -898,3 +898,23 @@ html, body {
     font-weight: 600;
     color: var(--m3-on-surface-variant, #50575e);
 }
+
+/* The member's own shift: undim it and offer a remove control. */
+.reach-shift.is-mine { opacity: 1; }
+.reach-shift.is-mine .reach-shift__taken { color: var(--m3-primary, #1f6feb); }
+.reach-shift__remove {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: var(--m3-corner-text-btn, 8px);
+    padding: 6px 12px;
+    font: 600 13px/1.2 inherit;
+    color: var(--m3-error, #b3261e);
+    background: transparent;
+    min-height: 32px;
+    cursor: pointer;
+}
+.reach-shift__remove:hover  { background: rgba(179, 38, 30, .08); }
+.reach-shift__remove:focus-visible {
+    outline: 2px solid var(--m3-error, #b3261e);
+    outline-offset: 2px;
+}
