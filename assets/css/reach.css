@@ -184,6 +184,38 @@ html, body {
     line-height: 1.25;
     letter-spacing: 0;
 }
+
+/* Title row: back button at top-left, on the same line as the title. */
+.reach-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+}
+.reach-header .reach-title { margin: 0; }
+.reach-back {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    min-height: 40px;
+    margin-left: -8px;            /* pull toward the card's left edge */
+    border: 0;
+    border-radius: var(--m3-corner-text-btn, 8px);
+    background: transparent;
+    color: var(--m3-primary, #1f6feb);
+    font-size: 28px;
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+}
+.reach-back:hover  { background: rgba(31, 111, 235, .08); }
+.reach-back:active { background: rgba(31, 111, 235, .12); }
+.reach-back:focus-visible {
+    outline: 2px solid var(--m3-primary, #1f6feb);
+    outline-offset: 2px;
+}
 .reach-subtitle {
     margin: 0 0 24px;
     color: var(--m3-on-surface-variant);

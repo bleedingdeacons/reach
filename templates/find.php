@@ -31,6 +31,7 @@ $restUrl  = esc_url(rest_url('reach/v1/nearest-members'));
 $attemptsUrl = esc_url(rest_url('reach/v1/call-attempts'));
 $signOutUrl = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl = esc_url(home_url('/reach/signin'));
+$homeUrl   = esc_url(home_url('/reach/home'));
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
 <head>
@@ -42,7 +43,10 @@ $signInUrl = esc_url(home_url('/reach/signin'));
 </head>
 <body class="reach-page reach-find">
     <main class="reach-card">
-        <h1 class="reach-title">Find Nearest 12th Stepper</h1>
+        <header class="reach-header">
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lsaquo;</a>
+            <h1 class="reach-title">Find Nearest 12th Stepper</h1>
+        </header>
 
         <form id="reach-form" class="reach-form" novalidate>
             <label class="reach-label" for="reach-location">Caller&rsquo;s Location</label>

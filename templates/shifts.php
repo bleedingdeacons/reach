@@ -34,7 +34,10 @@ $homeUrl    = esc_url(home_url('/reach/home'));
 </head>
 <body class="reach-page reach-shifts">
     <main class="reach-card">
-        <h1 class="reach-title">Shift sign-up</h1>
+        <header class="reach-header">
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lsaquo;</a>
+            <h1 class="reach-title">Shift sign-up</h1>
+        </header>
 
         <div class="reach-day" role="group" aria-label="Day">
             <button type="button" class="reach-day__nav" id="reach-day-prev" aria-label="Previous day">&lsaquo;</button>
@@ -54,7 +57,6 @@ $homeUrl    = esc_url(home_url('/reach/home'));
 
         <footer class="reach-footer">
             <div class="reach-footer__who"><?php echo esc_html($email); ?></div>
-            <a class="reach-signout" href="<?php echo $homeUrl; ?>">Menu</a>
             <button type="button" class="reach-signout" id="reach-signout">Sign out</button>
         </footer>
     </main>
