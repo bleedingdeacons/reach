@@ -139,6 +139,15 @@
     // --- Data ---------------------------------------------------------------
 
     function loadDay(iso) {
+        // Belt-and-braces: never fetch without a date. An empty iso would hit
+        // /signup/shifts/ (no date segment) and surface as a load error; if we
+        // somehow get here with nothing, fall back to the last shown day, or
+        // today on first run.
+        if (!iso) { iso = currentIso || today; }
+        // Single source of truth for the shown day — keep the tracked value
+        // and the (clearable) date field in step with what we're loading.
+        currentIso = iso;
+        dayInput.value = iso;
         setWeekday(iso);
         setStatus('Loading…');
         listEl.innerHTML = '';
@@ -194,7 +203,7 @@
                 msg += ' ' + skipped.length + ' were already taken.';
             }
             setStatus(msg, 'success');
-            loadDay(dayInput.value); // refresh so the now-taken shifts update
+            loadDay(currentIso); // refresh so the now-taken shifts update
         }).catch(function (e) {
             submitBtn.disabled = false;
             submitBtn.classList.remove('is-loading');
@@ -216,7 +225,7 @@
                 return;
             }
             setStatus('Removed your sign-up.', 'success');
-            loadDay(dayInput.value); // refresh so the now-open shift updates
+            loadDay(currentIso); // refresh so the now-open shift updates
         }).catch(function (e) {
             if (e && e.handled) { return; }
             setStatus('Could not remove your sign-up.', 'error');
@@ -226,18 +235,24 @@
     // --- Wire up ------------------------------------------------------------
 
     var today = isoDate(new Date());
-    dayInput.value = today;
+    var currentIso = today;
 
     dayInput.addEventListener('change', function () {
-        if (dayInput.value) { loadDay(dayInput.value); }
+        if (dayInput.value) {
+            loadDay(dayInput.value);
+        } else {
+            // Android Chrome lets the native date field be cleared. An empty
+            // day isn't a valid state here: it leaves a stale list on screen
+            // and makes the post-sign-up refresh load an empty date and error.
+            // Snap the field back to the day that's actually shown.
+            dayInput.value = currentIso;
+        }
     });
     prevBtn.addEventListener('click', function () {
-        dayInput.value = shiftDay(dayInput.value || today, -1);
-        loadDay(dayInput.value);
+        loadDay(shiftDay(currentIso, -1));
     });
     nextBtn.addEventListener('click', function () {
-        dayInput.value = shiftDay(dayInput.value || today, 1);
-        loadDay(dayInput.value);
+        loadDay(shiftDay(currentIso, 1));
     });
     form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
 
