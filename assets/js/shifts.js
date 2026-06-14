@@ -13,7 +13,6 @@
     var cfg = window.REACH_CONFIG || {};
     var base = String(cfg.trustedBase || '').replace(/\/$/, '');
 
-    var dayInput = document.getElementById('reach-day');
     var prevBtn = document.getElementById('reach-day-prev');
     var nextBtn = document.getElementById('reach-day-next');
     var statusEl = document.getElementById('reach-status');
@@ -23,7 +22,7 @@
     var signOutBtn = document.getElementById('reach-signout');
     var weekdayEl = document.getElementById('reach-day-weekday');
 
-    if (!form || !listEl || !dayInput) { return; }
+    if (!form || !listEl) { return; }
 
     // --- Helpers ------------------------------------------------------------
 
@@ -151,9 +150,9 @@
         // today on first run.
         if (!iso) { iso = currentIso || today; }
         // currentIso is the source of truth for the shown day (the
-        // post-sign-up / remove refreshes pass it back in). The date field is
-        // written only by the handlers that actually change the day, so a
-        // same-day refresh never repaints — and flickers — the native input.
+        // post-sign-up / remove refreshes pass it back in). The chosen day is
+        // surfaced to the visitor through the weekday label between the
+        // chevrons — there's no editable date field.
         currentIso = iso;
         setWeekday(iso);
         setStatus('Loading…');
@@ -243,28 +242,12 @@
 
     var today = isoDate(new Date());
     var currentIso = today;
-    dayInput.value = today;
 
-    dayInput.addEventListener('change', function () {
-        if (dayInput.value) {
-            loadDay(dayInput.value);
-        } else {
-            // Android Chrome lets the native date field be cleared. An empty
-            // day isn't a valid state here: it leaves a stale list on screen
-            // and makes the post-sign-up refresh load an empty date and error.
-            // Snap the field back to the day that's actually shown.
-            dayInput.value = currentIso;
-        }
-    });
     prevBtn.addEventListener('click', function () {
-        var iso = shiftDay(currentIso, -1);
-        dayInput.value = iso;
-        loadDay(iso);
+        loadDay(shiftDay(currentIso, -1));
     });
     nextBtn.addEventListener('click', function () {
-        var iso = shiftDay(currentIso, 1);
-        dayInput.value = iso;
-        loadDay(iso);
+        loadDay(shiftDay(currentIso, 1));
     });
     form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
 

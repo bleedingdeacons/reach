@@ -41,12 +41,10 @@ $homeUrl    = esc_url(home_url('/reach/home'));
         <p class="reach-subtitle">Choose a day, then sign up for an open shift.</p>
 
         <div class="reach-day" role="group" aria-label="Day">
-            <button type="button" class="reach-day__nav" id="reach-day-prev" aria-label="Previous day">Previous</button>
-            <input type="date" id="reach-day" class="reach-input reach-day__input" lang="en-GB">
-            <button type="button" class="reach-day__nav" id="reach-day-next" aria-label="Next day">Next</button>
+            <button type="button" class="reach-day__nav" id="reach-day-prev" aria-label="Previous day">&lsaquo;</button>
+            <div id="reach-day-weekday" class="reach-day__weekday" aria-live="polite"></div>
+            <button type="button" class="reach-day__nav" id="reach-day-next" aria-label="Next day">&rsaquo;</button>
         </div>
-
-        <div id="reach-day-weekday" class="reach-day__weekday" aria-live="polite"></div>
 
         <div id="reach-status" class="reach-status" role="status" aria-live="polite"></div>
 
