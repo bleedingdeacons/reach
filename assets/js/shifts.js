@@ -260,7 +260,11 @@
 
     // --- Wire up ------------------------------------------------------------
 
-    var today = isoDate(new Date());
+    // Anchor to the site timezone's "today" supplied by the server; fall back to
+    // the device clock only if the config is missing or malformed.
+    var today = (typeof cfg.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cfg.today))
+        ? cfg.today
+        : isoDate(new Date());
     var currentIso = today;
 
     prevBtn.addEventListener('click', function () {

@@ -69,7 +69,11 @@ $homeUrl    = esc_url(home_url('/reach/home'));
         window.REACH_CONFIG = {
             trustedBase: <?php echo wp_json_encode(esc_url_raw(rest_url('trusted/v1'))); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
+            // "Today" in the site's configured timezone (Settings → General), so
+            // the day list opens on the same day the rest of the site considers
+            // today rather than whatever the visitor's device clock reads.
+            today: <?php echo wp_json_encode(current_datetime()->format('Y-m-d')); ?>
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/shifts.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
