@@ -35,14 +35,15 @@ $homeUrl    = esc_url(home_url('/reach/home'));
 <body class="reach-page reach-shifts">
     <main class="reach-card">
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lsaquo;</a>
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">Back</a>
             <h1 class="reach-title">Shift sign-up</h1>
         </header>
+        <p class="reach-subtitle">Choose a day, then sign up for an open shift.</p>
 
         <div class="reach-day" role="group" aria-label="Day">
-            <button type="button" class="reach-day__nav" id="reach-day-prev" aria-label="Previous day">&lsaquo;</button>
+            <button type="button" class="reach-day__nav" id="reach-day-prev" aria-label="Previous day">Previous</button>
             <input type="date" id="reach-day" class="reach-input reach-day__input" lang="en-GB">
-            <button type="button" class="reach-day__nav" id="reach-day-next" aria-label="Next day">&rsaquo;</button>
+            <button type="button" class="reach-day__nav" id="reach-day-next" aria-label="Next day">Next</button>
         </div>
 
         <div id="reach-day-weekday" class="reach-day__weekday" aria-live="polite"></div>

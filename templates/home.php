@@ -31,12 +31,14 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
     <meta charset="<?php echo esc_attr(get_bloginfo('charset')); ?>">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
-    <title>Reach</title>
+    <title>Menu &mdash; Reach</title>
     <link rel="stylesheet" href="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/css/reach.css'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>">
 </head>
 <body class="reach-page reach-home">
     <main class="reach-card">
-        <h1 class="reach-title">Reach</h1>
+        <header class="reach-header">
+            <h1 class="reach-title">Reach</h1>
+        </header>
         <p class="reach-subtitle">What would you like to do?</p>
 
         <nav class="reach-menu">
@@ -57,15 +59,20 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
     </main>
 
     <script>
+        window.REACH_CONFIG = {
+            signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
+        };
+    </script>
+    <script>
         (function () {
-            var signOutUrl = <?php echo wp_json_encode($signOutUrl); ?>;
-            var signInUrl = <?php echo wp_json_encode($signInUrl); ?>;
-            var btn = document.getElementById('reach-signout');
-            if (!btn) return;
-            btn.addEventListener('click', function () {
-                fetch(signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
-                    .then(function () { window.location = signInUrl; })
-                    .catch(function () { window.location = signInUrl; });
+            var cfg = window.REACH_CONFIG || {};
+            var signOutBtn = document.getElementById('reach-signout');
+            if (!signOutBtn) return;
+            signOutBtn.addEventListener('click', function () {
+                fetch(cfg.signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                    .then(function () { window.location = cfg.signInUrl; })
+                    .catch(function () { window.location = cfg.signInUrl; });
             });
         })();
     </script>

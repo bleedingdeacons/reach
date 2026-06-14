@@ -33,10 +33,9 @@ $appleConfigured     = !empty($reachSettings['client_id_apple']);
 $facebookConfigured  = !empty($reachSettings['client_id_facebook']);
 $appleClientId       = $reachSettings['client_id_apple'] ?? '';
 
-$signOutUrl    = esc_url(rest_url('reach/v1/oauth/signout'));
 $appleStartUrl = esc_url(rest_url('reach/v1/oauth/apple/start'));
 $appleVerifyUrl = esc_url(rest_url('reach/v1/oauth/apple'));
-$homePageUrl   = esc_url(home_url('/reach/home'));
+$homeUrl       = esc_url(home_url('/reach/home'));
 
 // Friendly sign-in notices. When the OAuth callback can prove who you
 // are but can't let you in, it bounces back here with
@@ -164,7 +163,7 @@ if ($reachErrorCode !== '') {
     (function () {
         var startUrl = <?php echo wp_json_encode($appleStartUrl); ?>;
         var verifyUrl = <?php echo wp_json_encode($appleVerifyUrl); ?>;
-        var findUrl = <?php echo wp_json_encode($homePageUrl); ?>;
+        var homeUrl = <?php echo wp_json_encode($homeUrl); ?>;
         var signinUrl = <?php echo wp_json_encode(esc_url(home_url('/reach/signin'))); ?>;
         var clientId = <?php echo wp_json_encode($appleClientId); ?>;
         var btn = document.getElementById('reach-apple-btn');
@@ -201,7 +200,7 @@ if ($reachErrorCode !== '') {
                 .then(function (r) {
                     if (r.ok) {
                         return r.json().then(function (data) {
-                            window.location = data.redirect || findUrl;
+                            window.location = data.redirect || homeUrl;
                         });
                     }
                     // Verification was refused (e.g. not a registered

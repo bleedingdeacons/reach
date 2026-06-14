@@ -44,9 +44,10 @@ $homeUrl   = esc_url(home_url('/reach/home'));
 <body class="reach-page reach-find">
     <main class="reach-card">
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lsaquo;</a>
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">Back</a>
             <h1 class="reach-title">Find Nearest 12th Stepper</h1>
         </header>
+        <p class="reach-subtitle">Enter the caller&rsquo;s location to find the nearest available responder.</p>
 
         <form id="reach-form" class="reach-form" novalidate>
             <label class="reach-label" for="reach-location">Caller&rsquo;s Location</label>
