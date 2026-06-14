@@ -144,10 +144,11 @@
         // somehow get here with nothing, fall back to the last shown day, or
         // today on first run.
         if (!iso) { iso = currentIso || today; }
-        // Single source of truth for the shown day — keep the tracked value
-        // and the (clearable) date field in step with what we're loading.
+        // currentIso is the source of truth for the shown day (the
+        // post-sign-up / remove refreshes pass it back in). The date field is
+        // written only by the handlers that actually change the day, so a
+        // same-day refresh never repaints — and flickers — the native input.
         currentIso = iso;
-        dayInput.value = iso;
         setWeekday(iso);
         setStatus('Loading…');
         listEl.innerHTML = '';
@@ -236,6 +237,7 @@
 
     var today = isoDate(new Date());
     var currentIso = today;
+    dayInput.value = today;
 
     dayInput.addEventListener('change', function () {
         if (dayInput.value) {
@@ -249,10 +251,14 @@
         }
     });
     prevBtn.addEventListener('click', function () {
-        loadDay(shiftDay(currentIso, -1));
+        var iso = shiftDay(currentIso, -1);
+        dayInput.value = iso;
+        loadDay(iso);
     });
     nextBtn.addEventListener('click', function () {
-        loadDay(shiftDay(currentIso, 1));
+        var iso = shiftDay(currentIso, 1);
+        dayInput.value = iso;
+        loadDay(iso);
     });
     form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
 
