@@ -58,6 +58,9 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
         </footer>
     </main>
 
+    <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
+    <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
+
     <script>
         window.REACH_CONFIG = {
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,

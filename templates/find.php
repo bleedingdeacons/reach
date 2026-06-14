@@ -84,6 +84,9 @@ $homeUrl   = esc_url(home_url('/reach/home'));
         </footer>
     </main>
 
+    <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
+    <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
+
     <script>
         window.REACH_CONFIG = {
             restUrl: <?php echo wp_json_encode($restUrl); ?>,

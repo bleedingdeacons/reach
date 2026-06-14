@@ -158,6 +158,9 @@ if ($reachErrorCode !== '') {
         <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email so you can connect with a 12th Stepper.</p>
     </main>
 
+    <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
+    <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
+
     <?php if ($appleConfigured): ?>
     <script>
     (function () {

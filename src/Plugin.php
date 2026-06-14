@@ -47,6 +47,13 @@ class Plugin
     private static ?ContainerInterface $container = null;
     private static bool $initialized = false;
 
+    /**
+     * Cached build date read from readme.txt. Null means "not looked up
+     * yet"; the empty string is a valid cached result (no Build date line)
+     * and stops us re-reading the file on every page render.
+     */
+    private static ?string $buildDate = null;
+
     public static function init(Container $unityContainer): void
     {
         if (self::$initialized) {
@@ -108,5 +115,44 @@ class Plugin
             throw new RuntimeException('Reach Plugin not initialized');
         }
         return self::$container;
+    }
+
+    /**
+     * The build date stamped into readme.txt by the build script, e.g.
+     * "2026/06/14 13:45:36". Empty string if no Build date line is found
+     * (for instance running straight from a working checkout). The result
+     * is cached for the lifetime of the request so the footer of every
+     * Reach page can call this without re-reading the file each time.
+     */
+    public static function buildDate(): string
+    {
+        if (self::$buildDate === null) {
+            $dir = defined('REACH_PLUGIN_DIR') ? REACH_PLUGIN_DIR : __DIR__ . '/../';
+            self::$buildDate = self::readBuildDateFromReadme($dir);
+        }
+        return self::$buildDate;
+    }
+
+    private static function readBuildDateFromReadme(string $pluginDir): string
+    {
+        foreach (['readme.txt', 'README.txt'] as $name) {
+            $readme = rtrim($pluginDir, '/\\') . '/' . $name;
+            if (!is_readable($readme)) {
+                continue;
+            }
+
+            // The build date lives in the header block at the top of the
+            // file; read only the first chunk to avoid loading large readmes.
+            $contents = file_get_contents($readme, false, null, 0, 8192);
+            if ($contents === false) {
+                continue;
+            }
+
+            if (preg_match('/^[ \t]*Build date[ \t]*:[ \t]*(.+?)[ \t]*$/mi', $contents, $matches)) {
+                return trim($matches[1]);
+            }
+        }
+
+        return '';
     }
 }

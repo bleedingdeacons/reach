@@ -158,6 +158,19 @@ html, body {
 
 /* ── M3 card surface ────────────────────────────────────────────── */
 
+/* Build stamp — a quiet version/build marker centred below the card,
+   present on every Reach page. Sits outside .reach-card so it never
+   competes with the card's own pinned footer. */
+.reach-buildstamp {
+    flex: 0 0 auto;
+    margin: 12px auto 0;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--m3-on-surface-variant);
+    opacity: 0.7;
+}
+
 .reach-card {
     background: var(--m3-surface);
     border-radius: var(--m3-corner-card);
