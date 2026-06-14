@@ -25,8 +25,6 @@
 
     if (!form || !listEl || !dayInput) { return; }
 
-    var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
     // --- Helpers ------------------------------------------------------------
 
     function isoDate(d) {
@@ -42,9 +40,17 @@
         return isoDate(d);
     }
 
+    // Show the chosen day as a full, unambiguous GB-formatted date, e.g.
+    // "Tuesday 13 January 2026". Intl honours the explicit 'en-GB' locale on
+    // every platform, unlike the native date field — Android Chrome takes that
+    // field's displayed format from the device's system language and ignores
+    // our lang="en-GB" attribute (which only takes effect on desktop Chrome).
     function setWeekday(iso) {
         if (!weekdayEl) { return; }
-        weekdayEl.textContent = iso ? WEEKDAYS[new Date(iso + 'T00:00:00').getDay()] : '';
+        if (!iso) { weekdayEl.textContent = ''; return; }
+        weekdayEl.textContent = new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', {
+            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        });
     }
 
     function setStatus(message, kind) {
