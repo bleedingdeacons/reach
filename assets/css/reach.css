@@ -443,6 +443,12 @@ html, body {
     color: var(--m3-on-surface-variant);
     margin: 8px 0 4px;
 }
+/* Nothing to say → reserve no space. Stays in the DOM (not display:none)
+   so the aria-live region still announces once a message lands. */
+.reach-status:empty {
+    min-height: 0;
+    margin: 0;
+}
 .reach-status.is-error   { color: var(--m3-error); }
 .reach-status.is-success { color: var(--m3-success); }
 
