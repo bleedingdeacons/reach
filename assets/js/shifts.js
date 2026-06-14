@@ -143,23 +143,42 @@
 
     // --- Data ---------------------------------------------------------------
 
-    function loadDay(iso) {
+    // Monotonic load counter. Each loadDay() takes a ticket; when its response
+    // arrives it only renders if it's still the latest request. This stops two
+    // overlapping loads (rapid prev/next taps, or a refresh racing a nav on a
+    // slow mobile connection) from resolving out of order and repainting twice.
+    var loadSeq = 0;
+
+    // `quiet` keeps the currently shown rows on screen while the refresh is in
+    // flight instead of blanking to an empty "Loading…" state. The post-assign
+    // / post-remove refreshes pass it so the list swaps in a single paint when
+    // the new data lands — on a slow connection (Android Chrome) the old
+    // teardown-then-wait-then-repaint was visible as a flicker. Day changes
+    // (initial load, prev/next) stay loud: clearing is the right cue there.
+    function loadDay(iso, quiet) {
         // Belt-and-braces: never fetch without a date. An empty iso would hit
         // /signup/shifts/ (no date segment) and surface as a load error; if we
         // somehow get here with nothing, fall back to the last shown day, or
         // today on first run.
         if (!iso) { iso = currentIso || today; }
-        // currentIso is the source of truth for the shown day (the
-        // post-sign-up / remove refreshes pass it back in). The chosen day is
-        // surfaced to the visitor through the weekday label between the
+        // currentIso is the source of truth for the shown day. The chosen day
+        // is surfaced to the visitor through the weekday label between the
         // chevrons — there's no editable date field.
         currentIso = iso;
         setWeekday(iso);
-        setStatus('Loading…');
-        listEl.innerHTML = '';
-        submitBtn.hidden = true;
+
+        var seq = ++loadSeq;
+
+        if (!quiet) {
+            setStatus('Loading…');
+            listEl.innerHTML = '';
+            submitBtn.hidden = true;
+        }
 
         api('/signup/shifts/' + iso, { method: 'GET' }).then(function (resp) {
+            // A newer load (or a day change) started after us — drop this stale
+            // response rather than letting it overwrite fresher content.
+            if (seq !== loadSeq) { return; }
             if (resp.status === 403) {
                 setStatus('You’re not registered as a telephone responder.', 'error');
                 return;
@@ -171,6 +190,7 @@
             render(resp.body);
         }).catch(function (e) {
             if (e && e.handled) { return; }
+            if (seq !== loadSeq) { return; }
             setStatus('Could not load shifts.', 'error');
         });
     }
@@ -209,7 +229,7 @@
                 msg += ' ' + skipped.length + ' were already taken.';
             }
             setStatus(msg, 'success');
-            loadDay(currentIso); // refresh so the now-taken shifts update
+            loadDay(currentIso, true); // quiet refresh so the now-taken shifts update without flicker
         }).catch(function (e) {
             submitBtn.disabled = false;
             submitBtn.classList.remove('is-loading');
@@ -231,7 +251,7 @@
                 return;
             }
             setStatus('Removed your sign-up.', 'success');
-            loadDay(currentIso); // refresh so the now-open shift updates
+            loadDay(currentIso, true); // quiet refresh so the now-open shift updates without flicker
         }).catch(function (e) {
             if (e && e.handled) { return; }
             setStatus('Could not remove your sign-up.', 'error');
