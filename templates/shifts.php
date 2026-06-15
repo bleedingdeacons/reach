@@ -78,6 +78,5 @@ $homeUrl    = esc_url(home_url('/reach/home'));
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/shifts.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
-    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>

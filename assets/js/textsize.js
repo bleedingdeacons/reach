@@ -1,11 +1,11 @@
 /*
  * Reach — text-size toggle.
  *
- * Builds the "A A A" control (Normal / Larger / Largest) and places it at the
- * bottom of the card, centered, just above the email + sign-out footer. The
- * choice is applied by setting data-reach-text on <html>, which flips the --ts
- * CSS scale every font-size multiplies against (see reach.css), and is
- * persisted in localStorage so it carries across pages and visits.
+ * Builds the "A A A" control (Normal / Larger / Largest) and places it on the
+ * home/menu page, centered just under the menu buttons. Only the home template
+ * loads this file, but the chosen size applies everywhere: the choice is stored
+ * in localStorage and every Reach page's <head> snippet replays it before paint,
+ * setting data-reach-text on <html> to flip the --ts CSS scale (see reach.css).
  *
  * The saved preference is applied before first paint by a tiny inline snippet
  * in each template's <head>; this file only builds the control and keeps the
@@ -72,11 +72,11 @@
     }
 
     function mount() {
-        // Sit above the email + sign-out footer where there is one (signed-in
-        // pages); otherwise drop it at the bottom of the card (e.g. sign-in).
-        var footer = document.querySelector('.reach-footer');
-        if (footer && footer.parentNode) {
-            footer.parentNode.insertBefore(wrap, footer);
+        // Directly under the menu buttons on the home page. Fall back to the end
+        // of the card if the menu markup ever changes.
+        var menu = document.querySelector('.reach-menu');
+        if (menu && menu.parentNode) {
+            menu.parentNode.insertBefore(wrap, menu.nextSibling);
         } else {
             var card = document.querySelector('.reach-card') || document.body;
             card.appendChild(wrap);

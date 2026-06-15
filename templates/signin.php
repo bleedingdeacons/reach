@@ -156,7 +156,7 @@ if ($reachErrorCode !== '') {
             <?php endif; ?>
         </div>
 
-        <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email so you can connect with a 12th Stepper.</p>
+        <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email.</p>
     </main>
 
     <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
@@ -224,6 +224,5 @@ if ($reachErrorCode !== '') {
     })();
     </script>
     <?php endif; ?>
-    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>

@@ -968,16 +968,16 @@ html, body {
  * Larger reading modes. Each step bumps the --ts scale every font-size
  * multiplies against; layout stays in px so type grows and reflows within
  * the card rather than widening it. Built/toggled by assets/js/textsize.js. */
-html[data-reach-text="large"]  { --ts: 1.2; }
-html[data-reach-text="xlarge"] { --ts: 1.4; }
+html[data-reach-text="large"]  { --ts: 1.6; }
+html[data-reach-text="xlarge"] { --ts: 2.2; }
 
-/* Centered pill at the bottom of the card, sitting just above the email +
- * sign-out footer. margin-top:auto pushes it (and the footer) to the bottom;
- * the adjacent-sibling rule below keeps the footer tucked right under it.
- * Its own type is a constant size (no var(--ts)) so it never resizes itself. */
+/* Centered pill on the home/menu page, tucked just under the menu buttons.
+ * Only home loads textsize.js, so this control appears there alone; the chosen
+ * size still applies across every page. Its own type is a constant size (no
+ * var(--ts)) so the control never resizes itself. */
 .reach-textsize {
-    align-self: center;        /* centers it on the flex-column cards (home/find/shifts) */
-    margin-top: auto;          /* pushes it (and the footer) to the bottom of those cards */
+    align-self: center;        /* home card is a flex column — centre horizontally */
+    margin-top: 12px;          /* small gap under the menu buttons */
     width: max-content;
     display: flex;
     gap: 2px;
@@ -987,11 +987,6 @@ html[data-reach-text="xlarge"] { --ts: 1.4; }
     border-radius: 999px;
     box-shadow: var(--m3-elev-1);
 }
-/* Sign-in's card is a plain block (no flex), so centre it with auto margins. */
-.reach-signin .reach-textsize { margin: 24px auto 0; }
-/* When the toggle precedes the footer, override the footer's margin-top:auto
- * so the two stay grouped at the bottom instead of splitting the free space. */
-.reach-textsize + .reach-footer { margin-top: 16px; }
 
 .reach-textsize__btn {
     display: inline-flex;
