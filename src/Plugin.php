@@ -71,6 +71,24 @@ class Plugin
         self::$container->get(NearestMembersController::class)->register();
         self::$container->get(CallAttemptController::class)->register();
 
+        // Everything under reach/v1 is per-member and authorised by the Reach
+        // session cookie, which shared caches (SiteGround, Cloudflare, the
+        // browser) don't recognise. WordPress only sends REST no-cache headers
+        // for logged-in WP users (`rest_send_nocache_headers` defaults to
+        // is_user_logged_in()), so an anonymous member's response — search
+        // results, sign-in redirects — could otherwise be cached and served to
+        // the next visitor. Force no-store across the namespace.
+        add_filter('rest_post_dispatch', static function ($response, $server, $request) {
+            if ($response instanceof \WP_REST_Response
+                && $request instanceof \WP_REST_Request
+                && str_starts_with(ltrim((string) $request->get_route(), '/'), OAuthController::NAMESPACE)
+            ) {
+                $response->header('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0, private');
+            }
+
+            return $response;
+        }, 10, 3);
+
         // Frontend pages (rewrite rules + template_redirect).
         self::$container->get(PageRouter::class)->register();
 

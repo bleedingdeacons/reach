@@ -31,6 +31,7 @@ $homeUrl    = esc_url(home_url('/reach/home'));
     <meta name="robots" content="noindex, nofollow">
     <title>Shift sign-up &mdash; Reach</title>
     <link rel="stylesheet" href="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/css/reach.css'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>">
+    <script>try{var s=localStorage.getItem('reach.textSize');if(s==='large'||s==='xlarge')document.documentElement.setAttribute('data-reach-text',s);}catch(e){}</script>
 </head>
 <body class="reach-page reach-shifts">
     <main class="reach-card">
@@ -77,5 +78,6 @@ $homeUrl    = esc_url(home_url('/reach/home'));
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/shifts.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
+    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>

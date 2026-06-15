@@ -39,6 +39,26 @@
         return isoDate(d);
     }
 
+    // Remember the day the responder was last looking at so returning to the
+    // page (or reloading) reopens on it instead of snapping back to today. The
+    // value is a bare calendar date — no member data — so localStorage is fine
+    // here. Wrapped in try/catch: private-mode / disabled storage just means we
+    // fall back to today rather than throwing.
+    var LAST_DAY_KEY = 'reach.shifts.lastDay';
+
+    function rememberDay(iso) {
+        try { window.localStorage.setItem(LAST_DAY_KEY, iso); } catch (e) { /* storage unavailable */ }
+    }
+
+    function recallDay() {
+        try {
+            var v = window.localStorage.getItem(LAST_DAY_KEY);
+            return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
     // Show the chosen day as a full, unambiguous GB-formatted date, e.g.
     // "Tuesday 13 January 2026". Intl honours the explicit 'en-GB' locale on
     // every platform, unlike the native date field — Android Chrome takes that
@@ -165,6 +185,7 @@
         // is surfaced to the visitor through the weekday label between the
         // chevrons — there's no editable date field.
         currentIso = iso;
+        rememberDay(iso);
         setWeekday(iso);
 
         var seq = ++loadSeq;
@@ -267,6 +288,13 @@
         : isoDate(new Date());
     var currentIso = today;
 
+    // Reopen on the day last viewed, but never earlier than today: a remembered
+    // past day (e.g. yesterday's "today" carried over the date boundary) has no
+    // signable shifts, so fall back to today. ISO YYYY-MM-DD compares correctly
+    // as a string.
+    var remembered = recallDay();
+    var startIso = (remembered !== null && remembered >= today) ? remembered : today;
+
     prevBtn.addEventListener('click', function () {
         loadDay(shiftDay(currentIso, -1));
     });
@@ -292,5 +320,5 @@
         });
     }
 
-    loadDay(today);
+    loadDay(startIso);
 })();

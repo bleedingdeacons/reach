@@ -74,6 +74,7 @@ if ($reachErrorCode !== '') {
     <meta name="robots" content="noindex, nofollow">
     <title>Sign in &mdash; Reach</title>
     <link rel="stylesheet" href="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/css/reach.css'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>">
+    <script>try{var s=localStorage.getItem('reach.textSize');if(s==='large'||s==='xlarge')document.documentElement.setAttribute('data-reach-text',s);}catch(e){}</script>
     <?php if ($appleConfigured): ?>
         <script type="text/javascript" src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js" defer></script>
     <?php endif; ?>
@@ -223,5 +224,6 @@ if ($reachErrorCode !== '') {
     })();
     </script>
     <?php endif; ?>
+    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>
