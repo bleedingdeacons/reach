@@ -25,6 +25,23 @@
     var distanceEl = document.getElementById('reach-distance');
     var signOutBtn = document.getElementById('reach-signout');
 
+    // Out-of-hours callback-request dialog. Present in the DOM on every
+    // find page but only used when cfg.outOfHours is true.
+    var requestDialog = document.getElementById('reach-request-dialog');
+    var requestForm   = document.getElementById('reach-request-form');
+    var requestPhone  = document.getElementById('reach-request-phone');
+    var requestName   = document.getElementById('reach-request-name');
+    var requestNote   = document.getElementById('reach-request-note');
+    var requestStatus = document.getElementById('reach-request-status');
+    var requestForEl  = document.getElementById('reach-request-for');
+    var requestSend   = document.getElementById('reach-request-send');
+    var requestCancel = document.getElementById('reach-request-cancel');
+
+    // localStorage key holding the in-progress request draft so a part-
+    // filled form survives a reload or an accidental close. Cleared only
+    // once a request sends successfully.
+    var REQUEST_DRAFT_KEY = 'reach.callRequest.draft';
+
     if (!form) return;
 
     // Distance-filter steps (km), shown as buttons under the search.
@@ -43,6 +60,10 @@
     var lastResults = [];
     var activeMaxKm = FETCH_MAX_KM;
     var loggedOutcomes = {};
+    // Members a callback request has been sent for this session, so the
+    // "Request" link is replaced by a confirmation after a successful
+    // send (and survives a distance-filter re-render).
+    var requestedMembers = {};
 
     function setStatus(message, kind) {
         statusEl.textContent = message || '';
@@ -69,7 +90,10 @@
      */
     var ICON_PATHS = {
         call:    'M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.24.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
-        message: 'M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z'
+        message: 'M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z',
+        // "send" paper-plane — denotes passing the caller's details on
+        // rather than dialling out.
+        request: 'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z'
     };
     var SVG_NS = 'http://www.w3.org/2000/svg';
     function icon(name) {
@@ -226,6 +250,7 @@
     function applyResults(payload) {
         lastResults = (payload && payload.members) || [];
         loggedOutcomes = {};
+        requestedMembers = {};
         activeMaxKm = pickDefaultMaxKm();
 
         if (lastResults.length === 0) {
@@ -409,6 +434,32 @@
                 sms.appendChild(smsLabel);
                 sms.addEventListener('click', reopenFeedback);
                 contact.appendChild(sms);
+
+                // Out-of-hours only: offer a "Request a callback" link
+                // beneath Text. Needs an attempt_token to authorise the
+                // POST, same as the outcome buttons. Once a request has
+                // been sent this session, show a confirmation instead.
+                if (cfg.outOfHours && m.attempt_token) {
+                    if (requestedMembers[m.id]) {
+                        var sent = document.createElement('div');
+                        sent.className = 'reach-result__logged';
+                        sent.textContent = 'Callback requested';
+                        contact.appendChild(sent);
+                    } else {
+                        var req = document.createElement('button');
+                        req.type = 'button';
+                        req.className = 'reach-result__request';
+                        req.appendChild(icon('request'));
+                        var reqLabel = document.createElement('span');
+                        reqLabel.className = 'reach-result__contact-label';
+                        reqLabel.textContent = 'Request ' + formatPhone(m.mobile_number);
+                        req.appendChild(reqLabel);
+                        req.addEventListener('click', function (member) {
+                            return function () { openRequestDialog(member); };
+                        }(m));
+                        contact.appendChild(req);
+                    }
+                }
             }
             li.appendChild(contact);
 
@@ -472,6 +523,170 @@
             }
 
             resultsEl.appendChild(li);
+        });
+    }
+
+    /*
+     * Out-of-hours callback request dialog.
+     *
+     * The form's values are mirrored to localStorage on every keystroke
+     * so a part-filled request survives a reload or an accidental close,
+     * and the draft is cleared only once a request sends successfully.
+     * The member the request is for is held in currentRequestMember
+     * while the dialog is open.
+     */
+    var currentRequestMember = null;
+
+    function draftRead() {
+        try {
+            var raw = localStorage.getItem(REQUEST_DRAFT_KEY);
+            if (!raw) return {};
+            var obj = JSON.parse(raw);
+            return obj && typeof obj === 'object' ? obj : {};
+        } catch (e) {
+            return {};
+        }
+    }
+    function draftSave() {
+        try {
+            localStorage.setItem(REQUEST_DRAFT_KEY, JSON.stringify({
+                phone: requestPhone ? requestPhone.value : '',
+                name:  requestName  ? requestName.value  : '',
+                note:  requestNote  ? requestNote.value  : ''
+            }));
+        } catch (e) {}
+    }
+    function draftClear() {
+        try { localStorage.removeItem(REQUEST_DRAFT_KEY); } catch (e) {}
+    }
+
+    function setRequestStatus(message, kind) {
+        if (!requestStatus) return;
+        requestStatus.textContent = message || '';
+        requestStatus.classList.remove('is-error', 'is-success');
+        if (kind) requestStatus.classList.add('is-' + kind);
+    }
+    function setRequestLoading(loading) {
+        if (!requestSend) return;
+        requestSend.disabled = !!loading;
+        requestSend.classList.toggle('is-loading', !!loading);
+    }
+
+    function closeRequestDialog() {
+        if (!requestDialog) return;
+        if (typeof requestDialog.close === 'function') {
+            requestDialog.close();
+        } else {
+            requestDialog.removeAttribute('open');
+        }
+    }
+
+    function openRequestDialog(member) {
+        if (!requestDialog || !requestForm) return;
+        currentRequestMember = member;
+
+        if (requestForEl) {
+            requestForEl.textContent = member && member.anonymous_name
+                ? 'For ' + member.anonymous_name
+                : '';
+        }
+
+        // Restore any saved draft (caller details are the same whoever
+        // the request is for, so a single shared draft is intentional).
+        var draft = draftRead();
+        if (requestPhone) requestPhone.value = draft.phone || '';
+        if (requestName)  requestName.value  = draft.name  || '';
+        if (requestNote)  requestNote.value  = draft.note  || '';
+
+        setRequestStatus('');
+        setRequestLoading(false);
+
+        if (typeof requestDialog.showModal === 'function') {
+            requestDialog.showModal();
+        } else {
+            requestDialog.setAttribute('open', '');
+        }
+
+        var focusEl = (requestPhone && !requestPhone.value) ? requestPhone
+            : ((requestName && !requestName.value) ? requestName : requestPhone);
+        if (focusEl) { try { focusEl.focus(); } catch (e) {} }
+    }
+
+    // Persist the draft as the user types.
+    [requestPhone, requestName, requestNote].forEach(function (el) {
+        if (el) el.addEventListener('input', draftSave);
+    });
+
+    if (requestCancel) {
+        requestCancel.addEventListener('click', closeRequestDialog);
+    }
+    // Click on the backdrop (the dialog element itself, outside the
+    // form) dismisses — the draft is safe in localStorage regardless.
+    if (requestDialog) {
+        requestDialog.addEventListener('click', function (event) {
+            if (event.target === requestDialog) closeRequestDialog();
+        });
+    }
+
+    if (requestForm) {
+        requestForm.addEventListener('submit', function (event) {
+            // The form uses method="dialog"; preventDefault both stops a
+            // real navigation and keeps the dialog open so we can show
+            // an error without it vanishing.
+            event.preventDefault();
+            if (!currentRequestMember) return;
+
+            var phone = (requestPhone ? requestPhone.value : '').trim();
+            var name  = (requestName  ? requestName.value  : '').trim();
+            var note  = (requestNote  ? requestNote.value  : '').trim();
+            if (!phone || !name) {
+                setRequestStatus('Enter the caller’s name and phone number.', 'error');
+                if (!name && requestName) { requestName.focus(); }
+                else if (requestPhone) { requestPhone.focus(); }
+                return;
+            }
+
+            setRequestLoading(true);
+            setRequestStatus('Sending…');
+
+            var member = currentRequestMember;
+            fetch(cfg.requestsUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    member_id:     member.id,
+                    attempt_token: member.attempt_token,
+                    caller_phone:  phone,
+                    caller_name:   name,
+                    note:          note
+                })
+            })
+                .then(function (r) {
+                    return r.json().then(function (body) { return { status: r.status, body: body }; });
+                })
+                .then(function (resp) {
+                    setRequestLoading(false);
+                    // Session expired while the dialog sat open — bounce
+                    // to sign-in like the rest of the page.
+                    if (resp.status === 401) {
+                        window.location = cfg.signInUrl;
+                        return;
+                    }
+                    if (resp.status >= 200 && resp.status < 300) {
+                        requestedMembers[member.id] = true;
+                        draftClear();
+                        closeRequestDialog();
+                        renderList();
+                    } else {
+                        var msg = (resp.body && resp.body.message) || 'Could not send that. Try again.';
+                        setRequestStatus(msg, 'error');
+                    }
+                })
+                .catch(function () {
+                    setRequestLoading(false);
+                    setRequestStatus('Network error. Check your connection and try again.', 'error');
+                });
         });
     }
 
