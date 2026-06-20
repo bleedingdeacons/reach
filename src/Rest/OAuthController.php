@@ -371,8 +371,16 @@ final class OAuthController
 
     private function redirect(string $url): WP_REST_Response
     {
+        // Validate the target against the host allow-list (same gate
+        // wp_safe_redirect() uses) so a tampered or off-site return_to
+        // can never turn this into an open redirect. wp_validate_redirect
+        // returns the fallback when the host isn't permitted; we can't
+        // call wp_safe_redirect() here because this emits a REST Location
+        // header rather than sending headers itself.
+        $safeUrl = wp_validate_redirect($url, $this->homePageUrl());
+
         $response = new WP_REST_Response(null, 302);
-        $response->header('Location', $url);
+        $response->header('Location', $safeUrl);
         return $response;
     }
 }
