@@ -946,6 +946,7 @@ html, body {
 .reach-shift {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     padding: 10px 12px;
     border: 1px solid var(--m3-outline, #c3c4c7);
@@ -957,6 +958,7 @@ html, body {
 .reach-shift__pick {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     width: 100%;
     cursor: pointer;
@@ -966,9 +968,11 @@ html, body {
 .reach-shift__time { font-weight: 600; flex: 0 0 auto; }
 .reach-shift__label {
     color: var(--m3-on-surface-variant, #50575e);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wrap onto extra lines rather than truncating with an ellipsis;
+       overflow-wrap: anywhere also breaks a single long unbroken token
+       (e.g. a URL-like label) so it can never force a horizontal overflow. */
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .reach-shift__taken {
     margin-left: auto;

@@ -204,7 +204,9 @@ final class OAuthController
         }
 
         $this->issueSessionFor($identity);
-        return $this->redirect($returnTo);
+        // return_to is the only redirect target that could be influenced
+        // by a tampered link, so clamp it to this site here.
+        return $this->redirect($this->safeInternalUrl($returnTo));
     }
 
     public function apple(WP_REST_Request $request): WP_REST_Response|WP_Error
@@ -369,18 +371,32 @@ final class OAuthController
             : 'signin_failed';
     }
 
+    /**
+     * Emit a 302 to an arbitrary URL.
+     *
+     * This helper must pass URLs through verbatim — start() uses it to
+     * send the browser to the provider's *external* authorisation
+     * endpoint (e.g. accounts.google.com), which an internal-only
+     * allow-list check would wrongly reject. Open-redirect protection for
+     * the one caller that takes an attacker-influenceable target (the
+     * callback's return_to) is applied at that call site via
+     * {@see safeInternalUrl()}, not here.
+     */
     private function redirect(string $url): WP_REST_Response
     {
-        // Validate the target against the host allow-list (same gate
-        // wp_safe_redirect() uses) so a tampered or off-site return_to
-        // can never turn this into an open redirect. wp_validate_redirect
-        // returns the fallback when the host isn't permitted; we can't
-        // call wp_safe_redirect() here because this emits a REST Location
-        // header rather than sending headers itself.
-        $safeUrl = wp_validate_redirect($url, $this->homePageUrl());
-
         $response = new WP_REST_Response(null, 302);
-        $response->header('Location', $safeUrl);
+        $response->header('Location', $url);
         return $response;
+    }
+
+    /**
+     * Clamp a post-sign-in return target to this site, falling back to the
+     * home page if the host isn't permitted — the string-returning
+     * equivalent of wp_safe_redirect() (which we can't use here because we
+     * emit a REST Location header rather than sending headers ourselves).
+     */
+    private function safeInternalUrl(string $url): string
+    {
+        return wp_validate_redirect($url, $this->homePageUrl());
     }
 }
