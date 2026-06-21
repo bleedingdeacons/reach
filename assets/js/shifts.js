@@ -116,6 +116,14 @@
             label.className = 'reach-shift__label';
             label.textContent = s.label || '';
 
+            // Group time + label into a content column so they stack
+            // (time over label) and the row grows downward at larger text
+            // sizes instead of cramming onto a single line.
+            var body = document.createElement('span');
+            body.className = 'reach-shift__body';
+            body.appendChild(time);
+            body.appendChild(label);
+
             if (s.is_open) {
                 openCount++;
                 var lbl = document.createElement('label');
@@ -125,16 +133,23 @@
                 cb.className = 'reach-shift__check';
                 cb.value = String(s.id);
                 lbl.appendChild(cb);
-                lbl.appendChild(time);
-                lbl.appendChild(label);
+                lbl.appendChild(body);
                 li.appendChild(lbl);
             } else {
                 var taken = document.createElement('span');
                 taken.className = 'reach-shift__taken';
                 taken.textContent = s.is_mine ? 'You' : (s.assignee || 'Taken');
-                li.appendChild(time);
-                li.appendChild(label);
-                li.appendChild(taken);
+
+                // Badge + Remove live in a right-aligned actions cluster
+                // that always follows the body, so the order is always
+                // time/label → "You" → Remove, and the cluster stays
+                // right-aligned (and wraps as a unit) at large text sizes.
+                var actions = document.createElement('span');
+                actions.className = 'reach-shift__actions';
+                actions.appendChild(taken);
+
+                li.appendChild(body);
+                li.appendChild(actions);
 
                 if (s.is_mine) {
                     li.classList.add('is-mine');
@@ -143,7 +158,7 @@
                     remove.className = 'reach-shift__remove';
                     remove.textContent = 'Remove';
                     remove.setAttribute('data-rota', String(s.id));
-                    li.appendChild(remove);
+                    actions.appendChild(remove);
                 }
             }
 

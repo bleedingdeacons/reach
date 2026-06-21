@@ -943,29 +943,56 @@ html, body {
     gap: 8px;
 }
 
+/* A shift row is a control column + a content column. Items top-align so
+   the checkbox / taken-badge line up with the first text line, and the
+   row wraps so the badge/Remove drop below the content rather than
+   squashing it when type is large. */
 .reach-shift {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 8px 12px;
+    padding: 12px;
     border: 1px solid var(--m3-outline, #c3c4c7);
     border-radius: var(--m3-corner-text-btn, 8px);
+    /* The time line is 20% larger than the row's base type (16px → 19.2px),
+       and the checkbox is sized off this same token so it always matches
+       the time text — at any text-size setting. */
+    --reach-time-size: calc(19.2px * var(--ts));
 }
 .reach-shift.is-taken { opacity: .55; }
 
 /* The open-shift row is one big tap target wrapping the checkbox. */
 .reach-shift__pick {
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
+    align-items: flex-start;
+    gap: 12px;
     width: 100%;
     cursor: pointer;
 }
-.reach-shift__check { width: 20px; height: 20px; flex: 0 0 auto; }
 
-.reach-shift__time { font-weight: 600; flex: 0 0 auto; }
+/* Checkbox always matches the time text size, and is centred against the
+   time line: the line box is line-height (1.5) × the time size, so half
+   the leftover ((1.5 − 1) ÷ 2 = 0.25 × time size) drops it onto the
+   text's vertical centre. Tracks the text-size setting via the token. */
+.reach-shift__check {
+    width: var(--reach-time-size);
+    height: var(--reach-time-size);
+    flex: 0 0 auto;
+    margin-top: calc(var(--reach-time-size) * 0.25);
+}
+
+/* Content column — time stacked over label. Stacking means a larger font
+   grows the row taller instead of fighting for a single line. */
+.reach-shift__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.reach-shift__time { font-weight: 600; font-size: var(--reach-time-size); }
 .reach-shift__label {
     color: var(--m3-on-surface-variant, #50575e);
     /* Wrap onto extra lines rather than truncating with an ellipsis;
@@ -974,8 +1001,23 @@ html, body {
     min-width: 0;
     overflow-wrap: anywhere;
 }
-.reach-shift__taken {
+/* Right-aligned actions column: the "You"/"Taken" badge pinned to the top
+   and (for the member's own shift) the Remove button pushed to the bottom.
+   margin-left:auto pins the column to the right after the body;
+   align-self:stretch matches the body's height so space-between can throw
+   the badge to the top-right and Remove to the bottom-right. It still
+   wraps to its own line as a unit at large text sizes. */
+.reach-shift__actions {
     margin-left: auto;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    flex: 0 0 auto;
+}
+.reach-shift__taken {
     font-size: calc(12px * var(--ts));
     font-weight: 600;
     color: var(--m3-on-surface-variant, #50575e);
