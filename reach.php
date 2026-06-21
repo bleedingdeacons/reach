@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Reach
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
- * Version: 1.6.18
+ * Version: 1.6.23
  * Requires at least: 6.1
  * Requires PHP: 8.1
  * Requires Plugins: scrutiny
@@ -148,6 +148,13 @@ register_activation_hook(__FILE__, function () {
     // activation including upgrades.
     global $wpdb;
     \Reach\CallAttempts\WpdbCallAttemptRepository::install($wpdb);
+
+    // Install/upgrade the call-requests table (out-of-hours callback
+    // requests) and schedule the daily retention purge.
+    \Reach\CallRequests\WpdbCallRequestRepository::install($wpdb);
+    if (!wp_next_scheduled(\Reach\Plugin::PURGE_CRON_HOOK)) {
+        wp_schedule_event(time() + DAY_IN_SECONDS, 'daily', \Reach\Plugin::PURGE_CRON_HOOK);
+    }
 });
 
 // Self-deactivate if Scrutiny gets deactivated while Reach is active —
@@ -163,4 +170,7 @@ add_action('admin_init', function() {
 
 register_deactivation_hook(__FILE__, function () {
     flush_rewrite_rules();
+
+    // Stop the retention purge from firing once Reach is inactive.
+    wp_clear_scheduled_hook(\Reach\Plugin::PURGE_CRON_HOOK);
 });

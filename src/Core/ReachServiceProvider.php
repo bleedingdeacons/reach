@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 
 use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
+use Reach\Admin\CallRequestsPage;
 use Reach\Admin\SettingsPage;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\ProviderRegistry;
@@ -22,11 +23,14 @@ use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
+use Reach\CallRequests\CallRequestRepository;
+use Reach\CallRequests\WpdbCallRequestRepository;
 use Reach\Frontend\PageRouter;
 use Reach\Geocoding\Geocoder;
 use Reach\Geocoding\PostcodesIoGeocoder;
 use Reach\Resolution\NearestMembersResolver;
 use Reach\Rest\CallAttemptController;
+use Reach\Rest\CallRequestController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Session\CurrentSession;
@@ -91,6 +95,12 @@ final class ReachServiceProvider
             return new WpdbCallAttemptRepository($wpdb);
         });
 
+        // Out-of-hours callback requests.
+        $container->register(CallRequestRepository::class, function () {
+            global $wpdb;
+            return new WpdbCallRequestRepository($wpdb);
+        });
+
         // Geocoder + nearest-members resolver. The Geocoder interface
         // binds to the postcodes.io implementation; a test fake or a
         // future Google fallback can be slotted in without touching
@@ -132,6 +142,14 @@ final class ReachServiceProvider
             $c->get(MemberRepository::class),
         ));
 
+        $container->register(CallRequestController::class, fn(ContainerInterface $c) => new CallRequestController(
+            $c->get(CallRequestRepository::class),
+            $c->get(AttemptTokenMinter::class),
+            $c->get(CurrentSession::class),
+            $c->get(AuditLogger::class),
+            $c->get(MemberRepository::class),
+        ));
+
         // Frontend + admin.
         $container->register(PageRouter::class, fn(ContainerInterface $c) => new PageRouter(
             $c->get(CurrentSession::class),
@@ -145,6 +163,11 @@ final class ReachServiceProvider
             $c->get(CallAttemptRepository::class),
             $c->get(MemberViewFactory::class),
             $c->get(MemberRepository::class),
+        ));
+
+        $container->register(CallRequestsPage::class, fn(ContainerInterface $c) => new CallRequestsPage(
+            $c->get(CallRequestRepository::class),
+            $c->get(MemberViewFactory::class),
         ));
     }
 }

@@ -128,6 +128,25 @@ final class SettingsPage
                             </p>
                         </td>
                     </tr>
+                    <tr>
+                        <th><label for="reach_out_of_hours_start">Out of hours</label></th>
+                        <td>
+                            <label for="reach_out_of_hours_start" class="screen-reader-text">Out-of-hours start time</label>
+                            <input type="time"
+                                   id="reach_out_of_hours_start"
+                                   name="out_of_hours_start"
+                                   value="<?php echo esc_attr($this->settings->getOutOfHoursStart()); ?>">
+                            <span aria-hidden="true">&ndash;</span>
+                            <label for="reach_out_of_hours_end" class="screen-reader-text">Out-of-hours end time</label>
+                            <input type="time"
+                                   id="reach_out_of_hours_end"
+                                   name="out_of_hours_end"
+                                   value="<?php echo esc_attr($this->settings->getOutOfHoursEnd()); ?>">
+                            <p class="description">
+                                During these hours the find page offers a <em>Request a callback</em> option beside each responder, so the caller&rsquo;s details can be passed on instead of ringing the 12th&#8209;Stepper directly. Times are 24&#8209;hour and use the site timezone; a window may span midnight (e.g. <code>22:00 &ndash; 08:00</code>). Leave either field blank to switch the feature off.
+                            </p>
+                        </td>
+                    </tr>
                 </table>
 
                 <h2>Authentication</h2>
@@ -280,6 +299,17 @@ final class SettingsPage
             ? sanitize_text_field(wp_unslash($_POST['place_bias']))
             : '';
         $this->settings->setPlaceBias($placeBias);
+
+        // Out-of-hours window. Settings::setOutOfHours validates the
+        // H:i shape itself and blanks anything that doesn't parse, so
+        // we only need to unslash and string-guard here.
+        $ohStart = isset($_POST['out_of_hours_start']) && is_string($_POST['out_of_hours_start'])
+            ? sanitize_text_field(wp_unslash($_POST['out_of_hours_start']))
+            : '';
+        $ohEnd = isset($_POST['out_of_hours_end']) && is_string($_POST['out_of_hours_end'])
+            ? sanitize_text_field(wp_unslash($_POST['out_of_hours_end']))
+            : '';
+        $this->settings->setOutOfHours($ohStart, $ohEnd);
 
         foreach (self::PROVIDERS as $provider) {
             $name = $provider['name'];

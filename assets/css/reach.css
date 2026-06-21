@@ -576,6 +576,40 @@ html, body {
 .reach-result__contact a:active { background: rgba(31, 111, 235, .12); }
 
 /*
+ * "Request a callback" link — visually identical to the Call/Text
+ * links above it, but it's a <button> (it opens a dialog rather than
+ * following a tel:/sms: URL), so the native button chrome is reset to
+ * match the anchor treatment.
+ */
+.reach-result__request {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    background: transparent;
+    width: auto;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    color: var(--m3-primary);
+    font-weight: 600;
+    font-size: calc(14px * var(--ts));
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    margin: 0 -12px;
+    border-radius: var(--m3-corner-text-btn);
+    transition: background-color .15s ease;
+}
+.reach-result__request:hover  { background: rgba(31, 111, 235, .08); }
+.reach-result__request:active { background: rgba(31, 111, 235, .12); }
+.reach-result__request:focus-visible {
+    outline: 2px solid var(--m3-primary);
+    outline-offset: 2px;
+}
+
+/*
  * Inline SVG icons. Sized to the line-height of the 14px contact
  * label, coloured by `currentColor` so they pick up the link's
  * accent (M3 primary) and follow hover/active changes automatically.
@@ -912,6 +946,7 @@ html, body {
 .reach-shift {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     padding: 10px 12px;
     border: 1px solid var(--m3-outline, #c3c4c7);
@@ -923,6 +958,7 @@ html, body {
 .reach-shift__pick {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     width: 100%;
     cursor: pointer;
@@ -932,9 +968,11 @@ html, body {
 .reach-shift__time { font-weight: 600; flex: 0 0 auto; }
 .reach-shift__label {
     color: var(--m3-on-surface-variant, #50575e);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Wrap onto extra lines rather than truncating with an ellipsis;
+       overflow-wrap: anywhere also breaks a single long unbroken token
+       (e.g. a URL-like label) so it can never force a horizontal overflow. */
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 .reach-shift__taken {
     margin-left: auto;
@@ -1012,3 +1050,81 @@ html[data-reach-text="xlarge"] { --ts: 2.2; }
     outline: 2px solid var(--m3-primary, #1f6feb);
     outline-offset: 2px;
 }
+
+/* ── Out-of-hours callback-request dialog ───────────────────────────
+ * A native <dialog> opened by find.js during configured out-of-hours.
+ * Styled as an M3 surface card centred on screen (full-width-ish sheet
+ * on phones). Colours use the --m3 tokens so dark mode is inherited. */
+.reach-dialog {
+    width: min(92vw, 420px);
+    max-width: 92vw;
+    padding: 0;
+    border: 0;
+    border-radius: var(--m3-corner-card);
+    background: var(--m3-surface);
+    color: var(--m3-on-surface);
+    box-shadow: var(--m3-elev-2);
+}
+.reach-dialog::backdrop {
+    background: rgba(0, 0, 0, .45);
+}
+.reach-dialog__form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    margin: 0;
+}
+.reach-dialog__title {
+    margin: 0;
+    font-size: calc(20px * var(--ts));
+    font-weight: 600;
+    line-height: 1.3;
+}
+.reach-dialog__lead {
+    margin: -4px 0 2px;
+    font-size: calc(14px * var(--ts));
+    color: var(--m3-on-surface-variant);
+}
+.reach-dialog__lead:empty { display: none; }
+.reach-dialog .reach-label { margin-bottom: 0; }
+.reach-dialog__optional {
+    font-weight: 400;
+    color: var(--m3-on-surface-variant);
+}
+.reach-dialog__note {
+    resize: vertical;
+    line-height: 1.4;
+}
+.reach-dialog__status {
+    min-height: 1.2em;
+    font-size: calc(14px * var(--ts));
+    color: var(--m3-on-surface-variant);
+}
+.reach-dialog__status:empty { min-height: 0; }
+.reach-dialog__status.is-error   { color: var(--m3-error); }
+.reach-dialog__status.is-success { color: var(--m3-success); }
+.reach-dialog__actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+}
+.reach-dialog__actions .reach-btn {
+    flex: 1 1 0;
+    width: auto;
+    min-height: 48px;
+}
+
+/*
+ * Ghost button — borderless, low-emphasis. Used for the dialog's
+ * Cancel action beside the filled Send so the destructive/neutral
+ * choice doesn't compete visually with the primary one.
+ */
+.reach-btn--ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--m3-primary);
+    box-shadow: none;
+}
+.reach-btn--ghost:hover  { background: rgba(31, 111, 235, .08); }
+.reach-btn--ghost:active { background: rgba(31, 111, 235, .12); }
