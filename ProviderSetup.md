@@ -87,18 +87,19 @@ return you signed in.
 
 ## Microsoft
 
-Microsoft uses Entra ID (formerly Azure AD) via the **common** tenant, so
-work, school, and personal Microsoft accounts can all sign in. Reach
-requests `openid email profile`.
+Microsoft uses Entra ID (formerly Azure AD) via the **consumers** tenant,
+so only personal Microsoft accounts (Outlook.com, Hotmail, Live, etc.) can
+sign in — work and school accounts are not accepted. Reach requests
+`openid email profile`.
 
 1. Go to the **Microsoft Entra admin center** →
    <https://entra.microsoft.com/> (or the Azure portal → Microsoft Entra
    ID). Open **App registrations → New registration**.
 2. **Name:** e.g. "Reach".
-3. **Supported account types:** choose **Accounts in any organizational
-   directory (any Microsoft Entra ID tenant — multitenant) and personal
-   Microsoft accounts**. This is what makes the `common` tenant work; any
-   narrower choice will reject some users.
+3. **Supported account types:** choose **Personal Microsoft accounts
+   only**. This is what makes the `consumers` tenant work; a broader choice
+   would let work/school accounts through, which Reach's pinned consumer
+   issuer rejects.
 4. **Redirect URI:** set the platform to **Web** and paste your callback
    URL:
    `https://example.com/wp-json/reach/v1/oauth/callback`
@@ -214,7 +215,7 @@ popup; on success the ID token is posted back and you're signed in.
 | Provider | Reach needs | Redirect / return URL to register | Flow |
 |---|---|---|---|
 | Google | Client ID + secret | `…/wp-json/reach/v1/oauth/callback` | Server-side (OIDC) |
-| Microsoft | Client ID + secret | `…/wp-json/reach/v1/oauth/callback` | Server-side (OIDC, common tenant) |
+| Microsoft | Client ID + secret | `…/wp-json/reach/v1/oauth/callback` | Server-side (OIDC, consumers tenant) |
 | Facebook | App ID + App secret | `…/wp-json/reach/v1/oauth/callback` | Server-side (OIDC + PKCE) |
 | Apple | Services ID only (no secret) | `…/reach/signin` | Client-side (JS SDK) |
 

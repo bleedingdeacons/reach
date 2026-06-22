@@ -1017,15 +1017,16 @@ html, body {
     gap: 10px;
     flex: 0 0 auto;
 }
+/* The responder name (or "You" / "Taken") is always shown in the primary
+   blue so it reads as a name regardless of whose shift it is. */
 .reach-shift__taken {
     font-size: calc(12px * var(--ts));
     font-weight: 600;
-    color: var(--m3-on-surface-variant, #50575e);
+    color: var(--m3-primary, #1f6feb);
 }
 
 /* The member's own shift: undim it and offer a remove control. */
 .reach-shift.is-mine { opacity: 1; }
-.reach-shift.is-mine .reach-shift__taken { color: var(--m3-primary, #1f6feb); }
 .reach-shift__remove {
     flex: 0 0 auto;
     border: 0;
