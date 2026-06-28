@@ -8,9 +8,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\CallRequests\WpdbCallRequestRepository;
+use Scrutiny\Audit\Interfaces\AuditLogger;
+use Scrutiny\Privacy\PersonalDataFields;
 use Scrutiny\Privacy\PersonalDataPolicy;
+use Unity\Members\Interfaces\MemberRepository;
 
 /**
  * Admin view of wp_reach_call_requests — out-of-hours callback requests
@@ -51,6 +55,8 @@ final class CallRequestsPage
 
     public function __construct(
         private readonly CallRequestRepository $repository,
+        private readonly AuditLogger $auditLogger,
+        private readonly MemberRepository $members,
     ) {
     }
 
@@ -125,10 +131,10 @@ final class CallRequestsPage
                     <tr>
                         <th scope="col" style="width: 130px;">When</th>
                         <th scope="col" style="width: 200px;">Telephone Responder</th>
-                        <th scope="col" style="width: 110px;">Preferred</th>
-                        <th scope="col" style="width: 160px;">Area</th>
                         <th scope="col" style="width: 160px;">Caller</th>
                         <th scope="col" style="width: 150px;">Phone</th>
+                        <th scope="col" style="width: 160px;">Area</th>
+                        <th scope="col" style="width: 110px;">Preferred</th>
                         <th scope="col">Notes</th>
                         <th scope="col" style="width: 90px;">&nbsp;</th>
                     </tr>
@@ -142,10 +148,10 @@ final class CallRequestsPage
                         <tr>
                             <td style="white-space: nowrap;"><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
                             <td><?php echo $this->responderCell($row->responderName); ?></td>
-                            <td><?php echo esc_html($this->genderLabel($row->gender)); ?></td>
-                            <td><?php echo $this->areaCell($row->area); ?></td>
                             <td><?php echo esc_html($row->callerName); ?></td>
                             <td><a href="tel:<?php echo esc_attr(preg_replace('/\s+/', '', $row->callerPhone) ?? ''); ?>"><?php echo esc_html($row->callerPhone); ?></a></td>
+                            <td><?php echo $this->areaCell($row->area); ?></td>
+                            <td><?php echo esc_html($this->genderLabel($row->gender)); ?></td>
                             <td><?php echo $this->noteCell($row->note); ?></td>
                             <td><?php $this->renderDeleteButton($row->id, $page); ?></td>
                         </tr>
@@ -170,7 +176,12 @@ final class CallRequestsPage
 
         $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
         if ($id > 0) {
-            $this->repository->delete($id);
+            // Load the row before deleting so the audit entry can name the
+            // responder who raised it; only audit once a row is actually gone.
+            $request = $this->repository->findById($id);
+            if ($this->repository->delete($id) && $request !== null) {
+                $this->auditDeletion($request);
+            }
         }
 
         $page = isset($_POST['paged']) ? max(1, (int) $_POST['paged']) : 1;
@@ -178,10 +189,40 @@ final class CallRequestsPage
         exit;
     }
 
+    /**
+     * Record a Scrutiny audit entry for a deleted call request.
+     *
+     * A request holds the *caller's* name and phone, so removing it is a
+     * deletion of personal data and is logged as such. The entry is anchored
+     * to the responder's member record (resolved from the stored viewer
+     * email) when one exists, against the mobile-number field — the kind of
+     * datum the request carried. The acting admin, time and anonymised IP are
+     * recorded by the logger; no raw caller PII goes into the detail.
+     */
+    private function auditDeletion(CallRequest $request): void
+    {
+        $memberId = 0;
+        if ($request->viewerEmail !== '') {
+            $member = $this->members->findByEmail($request->viewerEmail);
+            if ($member !== null) {
+                $memberId = $member->getId();
+            }
+        }
+
+        $this->auditLogger->logBatch(
+            AuditLogger::ACTION_DELETE,
+            AuditLogger::ENTITY_MEMBER,
+            $memberId,
+            [PersonalDataFields::MOBILE_NUMBER],
+            'Reach call request deleted',
+        );
+    }
+
     private function renderDeleteButton(int $id, int $page): void
     {
         ?>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin: 0;">
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin: 0;"
+              onsubmit="return confirm('Delete this call request? This permanently removes the caller details and cannot be undone.');">
             <input type="hidden" name="action" value="<?php echo esc_attr(self::DELETE_ACTION); ?>">
             <input type="hidden" name="id" value="<?php echo (int) $id; ?>">
             <input type="hidden" name="paged" value="<?php echo (int) $page; ?>">

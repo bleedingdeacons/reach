@@ -39,17 +39,44 @@ final class PageRouter
     public const FIND_SLUG = 'reach/find';
     public const HOME_SLUG = 'reach/home';
     public const SHIFTS_SLUG = 'reach/shifts';
+    public const REQUEST_SLUG = 'reach/request';
 
     public function __construct(
         private readonly CurrentSession $session,
     ) {
     }
 
+    /** Option holding the plugin version the rewrite rules were last
+     *  flushed for. When it lags REACH_VERSION the routes have changed
+     *  (e.g. a new page slug) but the cached rewrite_rules haven't caught
+     *  up yet — so flush once and record the new version. */
+    private const REWRITE_VERSION_OPTION = 'reach_rewrite_version';
+
     public function register(): void
     {
         add_action('init', [self::class, 'addRewriteRules']);
+        // Self-heal the cached rewrite rules after an update that added or
+        // changed a route, without needing a manual permalink flush or a
+        // full reactivate. Runs after addRewriteRules (priority 10) so the
+        // rules are registered before the flush regenerates the cache.
+        add_action('init', [self::class, 'maybeFlushRewriteRules'], 11);
         add_filter('query_vars', [self::class, 'addQueryVar']);
         add_action('template_redirect', [$this, 'renderPage']);
+    }
+
+    /**
+     * Flush the rewrite rules once per plugin version. Cheap on the steady
+     * state (a single option read); only does the heavier flush the first
+     * request after the version changes.
+     */
+    public static function maybeFlushRewriteRules(): void
+    {
+        $current = defined('REACH_VERSION') ? REACH_VERSION : '';
+        if (get_option(self::REWRITE_VERSION_OPTION) === $current) {
+            return;
+        }
+        flush_rewrite_rules(false);
+        update_option(self::REWRITE_VERSION_OPTION, $current, false);
     }
 
     public static function addRewriteRules(): void
@@ -61,6 +88,7 @@ final class PageRouter
         add_rewrite_rule('^reach/home/?$',   'index.php?' . self::QUERY_VAR . '=home',   'top');
         add_rewrite_rule('^reach/find/?$',   'index.php?' . self::QUERY_VAR . '=find',   'top');
         add_rewrite_rule('^reach/shifts/?$', 'index.php?' . self::QUERY_VAR . '=shifts', 'top');
+        add_rewrite_rule('^reach/request/?$', 'index.php?' . self::QUERY_VAR . '=request', 'top');
     }
 
     /**
@@ -76,7 +104,7 @@ final class PageRouter
     public function renderPage(): void
     {
         $page = get_query_var(self::QUERY_VAR);
-        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'index'], true)) {
+        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'request', 'index'], true)) {
             return;
         }
 
@@ -100,7 +128,7 @@ final class PageRouter
         // to go without us having to thread a `?return_to` through the
         // OAuth flow.
         // All the signed-in pages bounce to sign-in when there's no session.
-        if (in_array($page, ['home', 'find', 'shifts'], true) && !$this->session->isAuthenticated()) {
+        if (in_array($page, ['home', 'find', 'shifts', 'request'], true) && !$this->session->isAuthenticated()) {
             $page = 'signin';
         }
 
@@ -108,10 +136,11 @@ final class PageRouter
         // up theme chrome — Reach pages are intentionally standalone
         // mobile views, not theme-wrapped WordPress pages.
         $template = match ($page) {
-            'signin' => REACH_PLUGIN_DIR . 'templates/signin.php',
-            'home'   => REACH_PLUGIN_DIR . 'templates/home.php',
-            'shifts' => REACH_PLUGIN_DIR . 'templates/shifts.php',
-            default  => REACH_PLUGIN_DIR . 'templates/find.php',
+            'signin'  => REACH_PLUGIN_DIR . 'templates/signin.php',
+            'home'    => REACH_PLUGIN_DIR . 'templates/home.php',
+            'shifts'  => REACH_PLUGIN_DIR . 'templates/shifts.php',
+            'request' => REACH_PLUGIN_DIR . 'templates/request.php',
+            default   => REACH_PLUGIN_DIR . 'templates/find.php',
         };
 
         $session = $this->session->get(); // available inside template

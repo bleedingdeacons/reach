@@ -24,7 +24,7 @@ $findUrl        = esc_url(home_url('/reach/find'));
 $shiftsUrl      = esc_url(home_url('/reach/shifts'));
 $signOutUrl     = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl      = esc_url(home_url('/reach/signin'));
-$requestsUrl    = esc_url(rest_url('reach/v1/call-requests'));
+$requestPageUrl = esc_url(home_url('/reach/request'));
 $shiftsEnabled  = defined('TRUSTED_VERSION');
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
@@ -52,9 +52,9 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
                     <span>Shift sign-up</span>
                 </a>
             <?php endif; ?>
-            <button type="button" class="reach-btn" id="reach-request-open">
-                <span>Request a callback</span>
-            </button>
+            <a class="reach-btn" href="<?php echo $requestPageUrl; ?>">
+                <span>Request 12th Step</span>
+            </a>
         </nav>
 
         <footer class="reach-footer">
@@ -66,72 +66,10 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
     <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
     <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
 
-    <?php /* Callback-request form. Hidden until "Request a callback" is
-             tapped; request.js opens it as a modal, restores any saved
-             draft from localStorage, and posts to requestsUrl. No member
-             target — the request records the signed-in responder's name
-             plus the preferred 12th-stepper gender and the caller's area. */ ?>
-    <dialog id="reach-request-dialog" class="reach-dialog" aria-labelledby="reach-request-title">
-        <form id="reach-request-form" class="reach-dialog__form" method="dialog" novalidate>
-            <h2 id="reach-request-title" class="reach-dialog__title">Request a callback</h2>
-
-            <label class="reach-label" for="reach-request-phone">Caller&rsquo;s phone number</label>
-            <input type="tel"
-                   id="reach-request-phone"
-                   name="caller_phone"
-                   class="reach-input"
-                   autocomplete="off"
-                   inputmode="tel"
-                   required>
-
-            <label class="reach-label" for="reach-request-name">Caller&rsquo;s name</label>
-            <input type="text"
-                   id="reach-request-name"
-                   name="caller_name"
-                   class="reach-input"
-                   autocomplete="off"
-                   required>
-
-            <label class="reach-label" for="reach-request-area">Caller&rsquo;s area</label>
-            <input type="text"
-                   id="reach-request-area"
-                   name="area"
-                   class="reach-input"
-                   placeholder="Postcode or area"
-                   autocomplete="off"
-                   inputmode="text"
-                   required>
-
-            <fieldset class="reach-fieldset">
-                <legend class="reach-label">Preferred 12th Stepper</legend>
-                <label class="reach-check"><input type="radio" name="gender" value="male"> Male</label>
-                <label class="reach-check"><input type="radio" name="gender" value="female"> Female</label>
-                <label class="reach-check"><input type="radio" name="gender" value="non-binary"> Non-Binary</label>
-            </fieldset>
-
-            <label class="reach-label" for="reach-request-note">Notes <span class="reach-dialog__optional">(optional)</span></label>
-            <textarea id="reach-request-note"
-                      name="note"
-                      class="reach-input reach-dialog__note"
-                      rows="3"></textarea>
-
-            <div class="reach-dialog__status" id="reach-request-status" role="status" aria-live="polite"></div>
-
-            <div class="reach-dialog__actions">
-                <button type="button" class="reach-btn reach-btn--ghost" id="reach-request-cancel">Cancel</button>
-                <button type="submit" class="reach-btn reach-btn--primary" id="reach-request-send">
-                    <span class="reach-btn__label">Send</span>
-                    <span class="reach-btn__spinner" aria-hidden="true"></span>
-                </button>
-            </div>
-        </form>
-    </dialog>
-
     <script>
         window.REACH_CONFIG = {
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
-            requestsUrl: <?php echo wp_json_encode($requestsUrl); ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
         };
     </script>
     <script>
@@ -146,7 +84,6 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
             });
         })();
     </script>
-    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/request.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>

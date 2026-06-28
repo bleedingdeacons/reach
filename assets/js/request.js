@@ -1,22 +1,21 @@
 /**
- * Reach — "Request a callback" dialog (home page).
+ * Reach — "Request 12th Step" page.
  *
- * A standalone callback request: the responder captures the caller's
+ * A standalone callback request form: the responder captures the caller's
  * name, phone and area plus a preferred 12th-stepper gender, and posts it
  * to cfg.requestsUrl. There is no member target — the server records the
  * signed-in responder's name. A part-filled request is preserved in
- * localStorage so it survives a reload or an accidental close, and the
- * draft is cleared only once a request sends successfully.
+ * localStorage so it survives a reload or leaving the page, and the draft
+ * is cleared only once a request sends successfully (after which the page
+ * returns to the home menu).
  */
 (function () {
     'use strict';
 
     var cfg = window.REACH_CONFIG || {};
 
-    var openBtn = document.getElementById('reach-request-open');
-    var dialog  = document.getElementById('reach-request-dialog');
-    var form    = document.getElementById('reach-request-form');
-    if (!openBtn || !dialog || !form) return;
+    var form = document.getElementById('reach-request-form');
+    if (!form) return;
 
     var phoneEl  = document.getElementById('reach-request-phone');
     var nameEl   = document.getElementById('reach-request-name');
@@ -24,10 +23,9 @@
     var noteEl   = document.getElementById('reach-request-note');
     var statusEl = document.getElementById('reach-request-status');
     var sendBtn  = document.getElementById('reach-request-send');
-    var cancelBtn = document.getElementById('reach-request-cancel');
 
-    // localStorage key holding the in-progress draft. Shared with no one;
-    // cleared once a request sends successfully.
+    // localStorage key holding the in-progress draft. Cleared once a
+    // request sends successfully.
     var DRAFT_KEY = 'reach.callRequest.draft';
 
     function genderEls() {
@@ -77,15 +75,8 @@
         sendBtn.classList.toggle('is-loading', !!loading);
     }
 
-    function closeDialog() {
-        if (typeof dialog.close === 'function') {
-            dialog.close();
-        } else {
-            dialog.removeAttribute('open');
-        }
-    }
-
-    function openDialog() {
+    // Restore any saved draft on load.
+    (function restore() {
         var draft = draftRead();
         if (phoneEl) phoneEl.value = draft.phone || '';
         if (nameEl)  nameEl.value  = draft.name  || '';
@@ -94,22 +85,7 @@
         Array.prototype.forEach.call(genderEls(), function (el) {
             el.checked = (el.value === draft.gender);
         });
-
-        setStatus('');
-        setLoading(false);
-
-        if (typeof dialog.showModal === 'function') {
-            dialog.showModal();
-        } else {
-            dialog.setAttribute('open', '');
-        }
-
-        var focusEl = (phoneEl && !phoneEl.value) ? phoneEl
-            : ((nameEl && !nameEl.value) ? nameEl : phoneEl);
-        if (focusEl) { try { focusEl.focus(); } catch (e) {} }
-    }
-
-    openBtn.addEventListener('click', openDialog);
+    })();
 
     // Persist the draft as the user types / picks a gender.
     [phoneEl, nameEl, areaEl, noteEl].forEach(function (el) {
@@ -119,18 +95,7 @@
         el.addEventListener('change', draftSave);
     });
 
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', closeDialog);
-    }
-    // Click on the backdrop (the dialog element itself, outside the form)
-    // dismisses — the draft is safe in localStorage regardless.
-    dialog.addEventListener('click', function (event) {
-        if (event.target === dialog) closeDialog();
-    });
-
     form.addEventListener('submit', function (event) {
-        // method="dialog"; preventDefault stops the navigation and keeps
-        // the dialog open so an error can show without it vanishing.
         event.preventDefault();
 
         var phone  = (phoneEl ? phoneEl.value : '').trim();
@@ -170,8 +135,7 @@
                 return r.json().then(function (body) { return { status: r.status, body: body }; });
             })
             .then(function (resp) {
-                setLoading(false);
-                // Session expired while the dialog sat open — bounce to
+                // Session expired while the form sat open — bounce to
                 // sign-in like the rest of the app.
                 if (resp.status === 401) {
                     window.location = cfg.signInUrl;
@@ -179,11 +143,13 @@
                 }
                 if (resp.status >= 200 && resp.status < 300) {
                     draftClear();
-                    form.reset();
                     setStatus('Callback request sent.', 'success');
-                    setLoading(true); // keep Send disabled until reopened
-                    setTimeout(closeDialog, 1200);
+                    // Return to the menu once the confirmation has shown.
+                    setTimeout(function () {
+                        window.location = cfg.homeUrl || '/reach/home';
+                    }, 1000);
                 } else {
+                    setLoading(false);
                     var msg = (resp.body && resp.body.message) || 'Could not send that. Try again.';
                     setStatus(msg, 'error');
                 }
