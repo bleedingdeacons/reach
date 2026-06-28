@@ -46,11 +46,37 @@ final class PageRouter
     ) {
     }
 
+    /** Option holding the plugin version the rewrite rules were last
+     *  flushed for. When it lags REACH_VERSION the routes have changed
+     *  (e.g. a new page slug) but the cached rewrite_rules haven't caught
+     *  up yet — so flush once and record the new version. */
+    private const REWRITE_VERSION_OPTION = 'reach_rewrite_version';
+
     public function register(): void
     {
         add_action('init', [self::class, 'addRewriteRules']);
+        // Self-heal the cached rewrite rules after an update that added or
+        // changed a route, without needing a manual permalink flush or a
+        // full reactivate. Runs after addRewriteRules (priority 10) so the
+        // rules are registered before the flush regenerates the cache.
+        add_action('init', [self::class, 'maybeFlushRewriteRules'], 11);
         add_filter('query_vars', [self::class, 'addQueryVar']);
         add_action('template_redirect', [$this, 'renderPage']);
+    }
+
+    /**
+     * Flush the rewrite rules once per plugin version. Cheap on the steady
+     * state (a single option read); only does the heavier flush the first
+     * request after the version changes.
+     */
+    public static function maybeFlushRewriteRules(): void
+    {
+        $current = defined('REACH_VERSION') ? REACH_VERSION : '';
+        if (get_option(self::REWRITE_VERSION_OPTION) === $current) {
+            return;
+        }
+        flush_rewrite_rules(false);
+        update_option(self::REWRITE_VERSION_OPTION, $current, false);
     }
 
     public static function addRewriteRules(): void

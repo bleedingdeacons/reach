@@ -165,6 +165,8 @@ final class ReachServiceProvider
 
         $container->register(CallRequestsPage::class, fn(ContainerInterface $c) => new CallRequestsPage(
             $c->get(CallRequestRepository::class),
+            $c->get(AuditLogger::class),
+            $c->get(MemberRepository::class),
         ));
     }
 }
