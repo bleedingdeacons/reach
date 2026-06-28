@@ -57,7 +57,9 @@ final class WpdbCallRequestRepository implements CallRequestRepository
 
         $sql = "CREATE TABLE {$table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            member_id BIGINT UNSIGNED NOT NULL,
+            responder_name VARCHAR(200) NOT NULL,
+            gender VARCHAR(20) NOT NULL,
+            area VARCHAR(200) NOT NULL,
             caller_name VARCHAR(200) NOT NULL,
             caller_phone VARCHAR(50) NOT NULL,
             note TEXT NULL,
@@ -65,15 +67,61 @@ final class WpdbCallRequestRepository implements CallRequestRepository
             viewer_provider VARCHAR(32) NOT NULL,
             created_at BIGINT UNSIGNED NOT NULL,
             PRIMARY KEY  (id),
-            KEY created_at (created_at),
-            KEY member_created (member_id, created_at)
+            KEY created_at (created_at)
         ) {$charset};";
 
         dbDelta($sql);
+
+        self::migrateFromMemberId($wpdb, $table);
+    }
+
+    /**
+     * Migrate a table created under the old, member-targeted schema.
+     *
+     * The request used to carry a `member_id` (the 12th-stepper) plus a
+     * `member_created` index; it now carries the responder's name and a
+     * preferred gender instead. dbDelta adds the new columns but cannot
+     * drop the old ones, so do that here once the new columns exist:
+     * backfill `responder_name` from the stored viewer email for any rows
+     * left over, then drop the legacy column and index. Guarded on column
+     * existence so it is a no-op on fresh installs and on re-runs.
+     */
+    private static function migrateFromMemberId(wpdb $wpdb, string $table): void
+    {
+        $hasMemberId = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'member_id'",
+            $table,
+        ));
+
+        if ((int) $hasMemberId === 0) {
+            return;
+        }
+
+        // Any rows predating the new columns have an empty responder_name;
+        // fall back to the viewer email so the admin list still identifies
+        // who raised them.
+        $wpdb->query(
+            "UPDATE {$table} SET responder_name = viewer_email WHERE responder_name = ''"
+        );
+
+        // Drop the legacy index before the column it covers.
+        $hasIndex = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = 'member_created'",
+            $table,
+        ));
+        if ((int) $hasIndex > 0) {
+            $wpdb->query("ALTER TABLE {$table} DROP INDEX member_created");
+        }
+
+        $wpdb->query("ALTER TABLE {$table} DROP COLUMN member_id");
     }
 
     public function create(
-        int $memberId,
+        string $responderName,
+        string $gender,
+        string $area,
         string $callerName,
         string $callerPhone,
         ?string $note,
@@ -86,7 +134,9 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         $this->wpdb->insert(
             $table,
             [
-                'member_id'       => $memberId,
+                'responder_name'  => $responderName,
+                'gender'          => $gender,
+                'area'            => $area,
                 'caller_name'     => $callerName,
                 'caller_phone'    => $callerPhone,
                 'note'            => $note,
@@ -94,12 +144,14 @@ final class WpdbCallRequestRepository implements CallRequestRepository
                 'viewer_provider' => $viewerProvider,
                 'created_at'      => $now,
             ],
-            ['%d', '%s', '%s', '%s', '%s', '%s', '%d'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
         );
 
         return new CallRequest(
             (int) $this->wpdb->insert_id,
-            $memberId,
+            $responderName,
+            $gender,
+            $area,
             $callerName,
             $callerPhone,
             $note,
@@ -119,7 +171,7 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         // when several rows share a timestamp — same reasoning as the
         // call-attempts list.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
-            "SELECT id, member_id, caller_name, caller_phone, note, viewer_email, viewer_provider, created_at
+            "SELECT id, responder_name, gender, area, caller_name, caller_phone, note, viewer_email, viewer_provider, created_at
                FROM {$table}
               ORDER BY created_at DESC, id DESC
               LIMIT %d OFFSET %d",
@@ -143,7 +195,7 @@ final class WpdbCallRequestRepository implements CallRequestRepository
     {
         $table = self::tableName($this->wpdb);
         $row = $this->wpdb->get_row($this->wpdb->prepare(
-            "SELECT id, member_id, caller_name, caller_phone, note, viewer_email, viewer_provider, created_at
+            "SELECT id, responder_name, gender, area, caller_name, caller_phone, note, viewer_email, viewer_provider, created_at
                FROM {$table}
               WHERE id = %d
               LIMIT 1",
@@ -180,7 +232,9 @@ final class WpdbCallRequestRepository implements CallRequestRepository
     {
         return new CallRequest(
             (int) $row['id'],
-            (int) $row['member_id'],
+            (string) $row['responder_name'],
+            (string) $row['gender'],
+            (string) $row['area'],
             (string) $row['caller_name'],
             (string) $row['caller_phone'],
             $row['note'] !== null ? (string) $row['note'] : null,

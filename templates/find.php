@@ -29,17 +29,9 @@ if (!defined('ABSPATH')) {
 $email = $session !== null ? $session->email : '';
 $restUrl  = esc_url(rest_url('reach/v1/nearest-members'));
 $attemptsUrl = esc_url(rest_url('reach/v1/call-attempts'));
-$requestsUrl = esc_url(rest_url('reach/v1/call-requests'));
 $signOutUrl = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl = esc_url(home_url('/reach/signin'));
 $homeUrl   = esc_url(home_url('/reach/home'));
-
-// Whether we're currently inside the configured out-of-hours window.
-// Evaluated server-side (site timezone) so the find page and the admin
-// setting agree on "now"; the JS only renders the Request link when this
-// is true.
-$reachSettings = reach()->get(\Reach\Core\Settings::class);
-$outOfHours = $reachSettings->isOutOfHours(time());
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
 <head>
@@ -96,57 +88,12 @@ $outOfHours = $reachSettings->isOutOfHours(time());
     <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
     <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
 
-    <?php /* Out-of-hours callback-request form. Hidden until a Request
-             link is tapped; find.js opens it as a modal, restores any
-             saved draft from localStorage, and posts to requestsUrl. */ ?>
-    <dialog id="reach-request-dialog" class="reach-dialog" aria-labelledby="reach-request-title">
-        <form id="reach-request-form" class="reach-dialog__form" method="dialog" novalidate>
-            <h2 id="reach-request-title" class="reach-dialog__title">Request a callback</h2>
-            <p class="reach-dialog__lead" id="reach-request-for"></p>
-
-            <label class="reach-label" for="reach-request-phone">Caller&rsquo;s phone number</label>
-            <input type="tel"
-                   id="reach-request-phone"
-                   name="caller_phone"
-                   class="reach-input"
-                   autocomplete="off"
-                   inputmode="tel"
-                   required>
-
-            <label class="reach-label" for="reach-request-name">Caller&rsquo;s name</label>
-            <input type="text"
-                   id="reach-request-name"
-                   name="caller_name"
-                   class="reach-input"
-                   autocomplete="off"
-                   required>
-
-            <label class="reach-label" for="reach-request-note">Notes <span class="reach-dialog__optional">(optional)</span></label>
-            <textarea id="reach-request-note"
-                      name="note"
-                      class="reach-input reach-dialog__note"
-                      rows="3"></textarea>
-
-            <div class="reach-dialog__status" id="reach-request-status" role="status" aria-live="polite"></div>
-
-            <div class="reach-dialog__actions">
-                <button type="button" class="reach-btn reach-btn--ghost" id="reach-request-cancel">Cancel</button>
-                <button type="submit" class="reach-btn reach-btn--primary" id="reach-request-send">
-                    <span class="reach-btn__label">Send</span>
-                    <span class="reach-btn__spinner" aria-hidden="true"></span>
-                </button>
-            </div>
-        </form>
-    </dialog>
-
     <script>
         window.REACH_CONFIG = {
             restUrl: <?php echo wp_json_encode($restUrl); ?>,
             attemptsUrl: <?php echo wp_json_encode($attemptsUrl); ?>,
-            requestsUrl: <?php echo wp_json_encode($requestsUrl); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
-            outOfHours: <?php echo $outOfHours ? 'true' : 'false'; ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/find.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>

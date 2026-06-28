@@ -26,7 +26,9 @@ interface CallRequestRepository
      * Insert a request and return the persisted record.
      */
     public function create(
-        int $memberId,
+        string $responderName,
+        string $gender,
+        string $area,
         string $callerName,
         string $callerPhone,
         ?string $note,

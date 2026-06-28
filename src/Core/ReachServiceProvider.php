@@ -144,9 +144,7 @@ final class ReachServiceProvider
 
         $container->register(CallRequestController::class, fn(ContainerInterface $c) => new CallRequestController(
             $c->get(CallRequestRepository::class),
-            $c->get(AttemptTokenMinter::class),
             $c->get(CurrentSession::class),
-            $c->get(AuditLogger::class),
             $c->get(MemberRepository::class),
         ));
 
@@ -167,7 +165,6 @@ final class ReachServiceProvider
 
         $container->register(CallRequestsPage::class, fn(ContainerInterface $c) => new CallRequestsPage(
             $c->get(CallRequestRepository::class),
-            $c->get(MemberViewFactory::class),
         ));
     }
 }
