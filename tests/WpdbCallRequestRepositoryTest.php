@@ -59,10 +59,12 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $db->nextInsertId = 77;
         $repo = new WpdbCallRequestRepository($db);
 
-        $req = $repo->create(42, 'Sam', '07700 900123', 'call after 6', 'a@x', 'google', 1000);
+        $req = $repo->create('Resp One', 'female', 'BS5 / Easton', 'Sam', '07700 900123', 'call after 6', 'a@x', 'google', 1000);
 
         $this->assertSame(77, $req->id);
-        $this->assertSame(42, $req->memberId);
+        $this->assertSame('Resp One', $req->responderName);
+        $this->assertSame('female', $req->gender);
+        $this->assertSame('BS5 / Easton', $req->area);
         $this->assertSame('Sam', $req->callerName);
         $this->assertSame('07700 900123', $req->callerPhone);
         $this->assertSame('call after 6', $req->note);
@@ -74,7 +76,10 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $this->assertSame('wp_reach_call_requests', $db->inserted[0]['table']);
         $this->assertSame('Sam', $db->inserted[0]['data']['caller_name']);
         $this->assertSame('07700 900123', $db->inserted[0]['data']['caller_phone']);
-        $this->assertSame(42, $db->inserted[0]['data']['member_id']);
+        $this->assertSame('Resp One', $db->inserted[0]['data']['responder_name']);
+        $this->assertSame('female', $db->inserted[0]['data']['gender']);
+        $this->assertSame('BS5 / Easton', $db->inserted[0]['data']['area']);
+        $this->assertArrayNotHasKey('member_id', $db->inserted[0]['data']);
     }
 
     public function testCreateStoresNullNote(): void
@@ -82,7 +87,7 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $db = new CallRequestWpdbStub();
         $repo = new WpdbCallRequestRepository($db);
 
-        $req = $repo->create(1, 'A', '07', null, 'a@x', 'apple', 5);
+        $req = $repo->create('R', 'male', 'BS1', 'A', '07', null, 'a@x', 'apple', 5);
 
         $this->assertNull($req->note);
         $this->assertNull($db->inserted[0]['data']['note']);
@@ -113,7 +118,8 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $db = new CallRequestWpdbStub();
         $db->nextResults = [
             [
-                'id' => 9, 'member_id' => 1, 'caller_name' => 'Sam',
+                'id' => 9, 'responder_name' => 'Resp', 'gender' => 'female',
+                'area' => 'BS5', 'caller_name' => 'Sam',
                 'caller_phone' => '07', 'note' => null,
                 'viewer_email' => 'a@x', 'viewer_provider' => 'google',
                 'created_at' => 100,
@@ -124,6 +130,9 @@ final class WpdbCallRequestRepositoryTest extends TestCase
 
         $this->assertCount(1, $rows);
         $this->assertSame(9, $rows[0]->id);
+        $this->assertSame('Resp', $rows[0]->responderName);
+        $this->assertSame('female', $rows[0]->gender);
+        $this->assertSame('BS5', $rows[0]->area);
         $this->assertSame('Sam', $rows[0]->callerName);
         $this->assertNull($rows[0]->note);
     }
@@ -151,7 +160,8 @@ final class WpdbCallRequestRepositoryTest extends TestCase
     {
         $db = new CallRequestWpdbStub();
         $db->nextRow = [
-            'id' => 3, 'member_id' => 7, 'caller_name' => 'Jo',
+            'id' => 3, 'responder_name' => 'Resp', 'gender' => 'non-binary',
+            'area' => 'Bath', 'caller_name' => 'Jo',
             'caller_phone' => '0789', 'note' => 'leave a message',
             'viewer_email' => 'a@x', 'viewer_provider' => 'apple',
             'created_at' => 1_234_567,
@@ -162,6 +172,8 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $this->assertNotNull($found);
         $this->assertSame('leave a message', $found->note);
         $this->assertSame('Jo', $found->callerName);
+        $this->assertSame('non-binary', $found->gender);
+        $this->assertSame('Bath', $found->area);
     }
 
     public function testDeleteReturnsTrueWhenRowRemoved(): void

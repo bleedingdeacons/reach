@@ -11,8 +11,6 @@ if (!defined('ABSPATH')) {
 use Reach\CallRequests\CallRequestRepository;
 use Reach\CallRequests\WpdbCallRequestRepository;
 use Scrutiny\Privacy\PersonalDataPolicy;
-use Unity\Members\Interfaces\MemberView;
-use Unity\Members\Interfaces\MemberViewFactory;
 
 /**
  * Admin view of wp_reach_call_requests — out-of-hours callback requests
@@ -44,9 +42,15 @@ final class CallRequestsPage
     private const PER_PAGE = 50;
     private const MAX_PAGES_SHOWN = 1000;
 
+    /** Human labels for the stored single-choice gender values. */
+    private const GENDER_LABELS = [
+        'male'       => 'Male',
+        'female'     => 'Female',
+        'non-binary' => 'Non-Binary',
+    ];
+
     public function __construct(
         private readonly CallRequestRepository $repository,
-        private readonly MemberViewFactory $memberViews,
     ) {
     }
 
@@ -93,14 +97,6 @@ final class CallRequestsPage
         $total = $this->repository->countAll();
         $rows  = $this->repository->list(self::PER_PAGE, $offset);
 
-        // Resolve every referenced member in one batched factory call,
-        // same approach as the call-attempts list.
-        $memberIds = [];
-        foreach ($rows as $row) {
-            $memberIds[$row->memberId] = true;
-        }
-        $resolved = $this->loadMemberViews(array_keys($memberIds));
-
         $totalPages = max(1, (int) ceil(min($total, self::PER_PAGE * self::MAX_PAGES_SHOWN) / self::PER_PAGE));
 
         $notice = '';
@@ -112,8 +108,9 @@ final class CallRequestsPage
             <h1>Call requests</h1>
             <?php echo $notice; ?>
             <p class="description">
-                Out-of-hours callback requests raised from the Reach find page. Each asks the
-                listed 12th&#8209;Stepper to call the caller back. Requests are kept for
+                Callback requests raised from the Reach home page. Each is logged by the listed
+                telephone responder for a 12th&#8209;Stepper to call the caller back. Requests are
+                kept for
                 <?php echo (int) WpdbCallRequestRepository::RETENTION_DAYS; ?> days, then removed
                 automatically &mdash; delete one sooner once it has been actioned.
             </p>
@@ -127,7 +124,9 @@ final class CallRequestsPage
                 <thead>
                     <tr>
                         <th scope="col" style="width: 130px;">When</th>
-                        <th scope="col" style="width: 240px;">12th Stepper</th>
+                        <th scope="col" style="width: 200px;">Telephone Responder</th>
+                        <th scope="col" style="width: 110px;">Preferred</th>
+                        <th scope="col" style="width: 160px;">Area</th>
                         <th scope="col" style="width: 160px;">Caller</th>
                         <th scope="col" style="width: 150px;">Phone</th>
                         <th scope="col">Notes</th>
@@ -137,13 +136,14 @@ final class CallRequestsPage
                 <tbody>
                     <?php if ($rows === []): ?>
                         <tr>
-                            <td colspan="6">No call requests pending.</td>
+                            <td colspan="8">No call requests pending.</td>
                         </tr>
                     <?php else: foreach ($rows as $row): ?>
-                        <?php $memberView = $resolved[$row->memberId] ?? null; ?>
                         <tr>
                             <td style="white-space: nowrap;"><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
-                            <td><?php echo $this->memberCell($memberView); ?></td>
+                            <td><?php echo $this->responderCell($row->responderName); ?></td>
+                            <td><?php echo esc_html($this->genderLabel($row->gender)); ?></td>
+                            <td><?php echo $this->areaCell($row->area); ?></td>
                             <td><?php echo esc_html($row->callerName); ?></td>
                             <td><a href="tel:<?php echo esc_attr(preg_replace('/\s+/', '', $row->callerPhone) ?? ''); ?>"><?php echo esc_html($row->callerPhone); ?></a></td>
                             <td><?php echo $this->noteCell($row->note); ?></td>
@@ -235,57 +235,38 @@ final class CallRequestsPage
     }
 
     /**
-     * Resolve member ids to {@see MemberView}s in one batch, keyed by id.
-     *
-     * @param array<int, int> $ids
-     * @return array<int, MemberView>
+     * Render the "Telephone Responder" cell — the plain name stored with
+     * the request (a Unity anonymous name, or the sign-in email fallback).
      */
-    private function loadMemberViews(array $ids): array
+    private function responderCell(string $name): string
     {
-        if ($ids === []) {
-            return [];
+        $name = trim($name);
+        if ($name === '') {
+            return '<em>(unknown)</em>';
         }
-        $ids = array_values(array_unique(array_map('intval', $ids)));
-
-        $views = $this->memberViews->createFromSource($ids);
-
-        $out = [];
-        foreach ($views as $view) {
-            $out[$view->getId()] = $view;
-        }
-        return $out;
+        return esc_html($name);
     }
 
     /**
-     * Render the "12th Stepper" cell as pre-escaped HTML. Mirrors
-     * {@see CallAttemptsPage::memberCell()}: name (linked to the edit
-     * screen) followed by area, or an explicit marker when the member
-     * can't be resolved.
+     * Render the "Area" cell — the free-text area/postcode the caller is
+     * in, or a muted dash when somehow empty.
      */
-    private function memberCell(?MemberView $member): string
+    private function areaCell(string $area): string
     {
-        if ($member === null) {
-            return '<em>(member not found)</em>';
+        $area = trim($area);
+        if ($area === '') {
+            return '<span aria-hidden="true">&mdash;</span>';
         }
-        $name = trim($member->getAnonymousName());
-        $area = trim($member->getArea());
+        return esc_html($area);
+    }
 
-        if ($name === '' && $area === '') {
-            return '<em>(no name)</em>';
-        }
-
-        $primary     = $name !== '' ? $name : $area;
-        $primaryHtml = esc_html($primary);
-        $editUrl     = get_edit_post_link($member->getId());
-        if (is_string($editUrl) && $editUrl !== '') {
-            $primaryHtml = '<a href="' . esc_url($editUrl) . '">' . $primaryHtml . '</a>';
-        }
-
-        $parts = [$primaryHtml];
-        if ($name !== '' && $area !== '') {
-            $parts[] = esc_html($area);
-        }
-        return implode(' &middot; ', $parts);
+    /**
+     * Human label for a stored single-choice gender value, falling back
+     * to the raw value for anything unexpected.
+     */
+    private function genderLabel(string $gender): string
+    {
+        return self::GENDER_LABELS[$gender] ?? ($gender !== '' ? $gender : '—');
     }
 
     /**

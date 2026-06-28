@@ -8,12 +8,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\Session\CurrentSession;
-use Scrutiny\Audit\Interfaces\AuditLogger;
-use Scrutiny\Privacy\PersonalDataFields;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -26,42 +23,43 @@ use function register_rest_route;
 use function rest_ensure_response;
 
 /**
- * Record a Reach responder's request for a 12th-stepper to call a
+ * Record a telephone responder's request for a 12th-stepper to call a
  * caller back.
  *
  * Endpoint
  * --------
  *   POST /reach/v1/call-requests
  *     {
- *       "member_id":     123,
- *       "attempt_token": "<token issued with the member in the search result>",
- *       "caller_name":   "Sam",
- *       "caller_phone":  "07700 900123",
- *       "note":          "optional free text"
+ *       "gender":       "male" | "female" | "non-binary",
+ *       "area":         "BS5 / Easton",
+ *       "caller_name":  "Sam",
+ *       "caller_phone": "07700 900123",
+ *       "note":         "optional free text"
  *     }
+ *
+ * The request is not tied to a specific member: it records the preferred
+ * 12th-stepper gender and the caller's area, and the responder who raised
+ * it is identified by their *name* (derived from the signed-in session —
+ * see {@see responderName()}). A 12th-stepper picks the callback up from
+ * the admin "Call Requests" list.
  *
  * Authn / authz
  * -------------
- * Same shape as the call-attempts controller: a valid Reach session is
- * required, and the attempt_token must verify against (viewer email,
- * member id) — i.e. the responder must actually have been shown this
- * member in a recent result set. This keeps a session-holder from
- * spraying callback requests at arbitrary member ids.
+ * A valid Reach session is the only requirement. There is no per-member
+ * attempt token any more — the request targets no particular member, so
+ * there is nothing member-specific to authorise against.
  *
- * Audit
- * -----
- * One {@see AuditLogger::logBatch} entry per request, ACTION_CALL
- * against the member's {@see PersonalDataFields::MOBILE_NUMBER} field
- * (the field a callback would use). The detail carries the *responder's*
- * anonymous name and a fixed "Callback requested" result, in the same
- * "caller:<name>#<id>;result:<label>" shape the call-attempts audit
- * uses. The caller's name, phone and note are *never* written to the
- * audit trail — that personal data lives only in the call-requests
- * table, which is purged after a few days.
+ * No audit entry is written: a request accesses no member personal data
+ * (it carries the *caller's* details, stored only in the short-lived
+ * call-requests table and purged after a few days).
  */
 final class CallRequestController
 {
     public const NAMESPACE = 'reach/v1';
+
+    /** Accepted values for the preferred-gender field. Mirrors the
+     *  single-choice radio group on the request form. */
+    private const GENDERS = ['male', 'female', 'non-binary'];
 
     /** Hard cap on note length, in bytes — matches the call-attempts
      *  controller so one row can't balloon the table on a misbehaving
@@ -73,12 +71,11 @@ final class CallRequestController
      *  {@see \Reach\CallRequests\WpdbCallRequestRepository::install}. */
     private const NAME_MAX_BYTES = 200;
     private const PHONE_MAX_BYTES = 50;
+    private const AREA_MAX_BYTES = 200;
 
     public function __construct(
         private readonly CallRequestRepository $repository,
-        private readonly AttemptTokenMinter $tokens,
         private readonly CurrentSession $session,
-        private readonly AuditLogger $auditLogger,
         private readonly MemberRepository $members,
     ) {
     }
@@ -98,17 +95,17 @@ final class CallRequestController
                 'callback'            => [$this, 'create'],
                 'permission_callback' => [$this, 'permissionCallback'],
                 'args'                => [
-                    'member_id' => [
-                        'type'              => 'integer',
-                        'required'          => true,
-                        'sanitize_callback' => 'absint',
-                        'validate_callback' => static fn($v) => is_numeric($v) && (int) $v > 0,
-                    ],
-                    'attempt_token' => [
+                    'gender' => [
                         'type'              => 'string',
                         'required'          => true,
                         'sanitize_callback' => 'sanitize_text_field',
-                        'validate_callback' => static fn($v) => is_string($v) && $v !== '',
+                        'validate_callback' => static fn($v) => is_string($v) && in_array($v, self::GENDERS, true),
+                    ],
+                    'area' => [
+                        'type'              => 'string',
+                        'required'          => true,
+                        'sanitize_callback' => 'sanitize_text_field',
+                        'validate_callback' => static fn($v) => is_string($v) && trim($v) !== '',
                     ],
                     'caller_name' => [
                         'type'              => 'string',
@@ -158,38 +155,33 @@ final class CallRequestController
             return new WP_Error('reach_not_authenticated', 'Session expired.', ['status' => 401]);
         }
 
-        $memberId    = (int) $request->get_param('member_id');
-        $token       = (string) $request->get_param('attempt_token');
+        $gender      = (string) $request->get_param('gender');
+        $area        = trim((string) $request->get_param('area'));
         $callerName  = trim((string) $request->get_param('caller_name'));
         $callerPhone = trim((string) $request->get_param('caller_phone'));
         $note        = trim((string) $request->get_param('note'));
         $now         = time();
 
-        if (!$this->tokens->verify($token, $session->email, $memberId, $now)) {
-            return new WP_Error(
-                'reach_invalid_attempt_token',
-                'This request link is no longer valid. Run the search again.',
-                ['status' => 403]
-            );
-        }
-
-        // The validate_callbacks already require non-empty name/phone,
-        // but re-check after trimming — a value of only whitespace
-        // passes sanitisation yet is not a usable contact detail.
-        if ($callerName === '' || $callerPhone === '') {
+        // The validate_callbacks already require non-empty values, but
+        // re-check after trimming — a value of only whitespace passes
+        // sanitisation yet is not a usable detail.
+        if ($callerName === '' || $callerPhone === '' || $area === '') {
             return new WP_Error(
                 'reach_missing_caller_details',
-                'A caller name and phone number are both required.',
+                'A caller name, phone number and area are all required.',
                 ['status' => 400]
             );
         }
 
         $callerName  = $this->cap($callerName, self::NAME_MAX_BYTES);
         $callerPhone = $this->cap($callerPhone, self::PHONE_MAX_BYTES);
+        $area        = $this->cap($area, self::AREA_MAX_BYTES);
         $note        = $this->capNote($note);
 
         $callRequest = $this->repository->create(
-            $memberId,
+            $this->responderName($session->email),
+            $gender,
+            $area,
             $callerName,
             $callerPhone,
             $note,
@@ -198,19 +190,9 @@ final class CallRequestController
             $now,
         );
 
-        // Audit the request as a CALL against the member's mobile
-        // number — the field a returned call would use. The detail
-        // names the *responder* (never the caller) and records the
-        // fixed "Callback requested" result, mirroring the structured
-        // shape CallAttemptController uses so the Scrutiny admin renders
-        // it the same way. Caller PII stays out of the audit trail.
-        $this->auditLogger->logBatch(
-            AuditLogger::ACTION_CALL,
-            AuditLogger::ENTITY_MEMBER,
-            $memberId,
-            [PersonalDataFields::MOBILE_NUMBER],
-            $this->responderDetail($session->email),
-        );
+        // No audit entry: a request accesses no member personal data —
+        // it carries the caller's details, stored only in the short-lived
+        // call-requests table and purged after a few days.
 
         // Extension point for a future notifier (email/SMS). Inert
         // unless something hooks it.
@@ -248,30 +230,28 @@ final class CallRequestController
     }
 
     /**
-     * Build the audit-detail string identifying the responder who
-     * raised the request, in the same
-     * `caller:<anonymous name>#<member id>;result:<label>` format the
-     * call-attempts audit uses. We do not gate on
-     * {@see Member::isTwelfthStepper()}: any member record with a
-     * non-empty anonymous name is named, so the same person appears
-     * under the same identifier across the search → call → request
-     * lifecycle. When the responder cannot be resolved the prefix
-     * becomes `caller:unknown` — a deliberately non-PII fallback.
+     * The display name to store for the responder who raised the request.
+     *
+     * Resolved from the signed-in session email: the matching Unity
+     * member's anonymous name when there is one, otherwise the email
+     * itself as a fallback so the admin list can always identify who
+     * raised a request. We do not gate on {@see Member::isTwelfthStepper()}
+     * — any member record with a non-empty anonymous name is named.
      */
-    private function responderDetail(string $email): string
+    private function responderName(string $email): string
     {
-        $caller = 'unknown';
+        if ($email === '') {
+            return '';
+        }
 
-        if ($email !== '') {
-            $member = $this->members->findByEmail($email);
-            if ($member !== null) {
-                $name = trim($member->getAnonymousName());
-                if ($name !== '') {
-                    $caller = sprintf('%s#%d', $name, $member->getId());
-                }
+        $member = $this->members->findByEmail($email);
+        if ($member !== null) {
+            $name = trim($member->getAnonymousName());
+            if ($name !== '') {
+                return $name;
             }
         }
 
-        return sprintf('caller:%s;result:Callback requested', $caller);
+        return $email;
     }
 }
