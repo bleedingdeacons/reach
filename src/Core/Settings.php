@@ -74,6 +74,51 @@ final class Settings
     }
 
     /**
+     * Address that out-of-hours callback requests are emailed to.
+     *
+     * Each request raised on the find page is mailed here verbatim — it
+     * carries the caller's name, phone, preferred 12th-stepper and any
+     * note — so the inbox, not the database, holds the caller's personal
+     * data. Stored as plain text in the public option row; it is a piece
+     * of operational config, not a secret.
+     *
+     * Falls back to the site admin email when unset so the feature works
+     * out of the box rather than silently dropping requests.
+     */
+    public function getCallRequestEmail(): string
+    {
+        $all = get_option(self::OPTION_PUBLIC, []);
+        $value = is_array($all) && isset($all['call_request_email']) && is_string($all['call_request_email'])
+            ? trim($all['call_request_email'])
+            : '';
+        if ($value !== '') {
+            return $value;
+        }
+        $adminEmail = get_option('admin_email');
+        return is_string($adminEmail) ? $adminEmail : '';
+    }
+
+    /**
+     * Persist the call-request notification address. A value that does
+     * not validate as an email is stored blank, which falls the getter
+     * back to the site admin email.
+     */
+    public function setCallRequestEmail(string $value): void
+    {
+        $all = get_option(self::OPTION_PUBLIC, []);
+        if (!is_array($all)) {
+            $all = [];
+        }
+        $value = is_email(trim($value)) ? trim($value) : '';
+        if ($value === '') {
+            unset($all['call_request_email']);
+        } else {
+            $all['call_request_email'] = $value;
+        }
+        update_option(self::OPTION_PUBLIC, $all, false);
+    }
+
+    /**
      * Out-of-hours window bounds, each as a 24-hour `H:i` string (e.g.
      * "22:00"), or the empty string when unset. Both bounds must be set
      * for the window to be active — see {@see isOutOfHours()}.

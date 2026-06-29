@@ -16,22 +16,13 @@ use function dbDelta;
  * $wpdb-backed implementation of {@see CallRequestRepository}.
  *
  * Schema is created via dbDelta on plugin activation (see install()).
- * The table is small and short-lived: rows are deleted from the admin
- * page individually and purged wholesale once they age past
- * {@see self::RETENTION_DAYS} days. The created_at index covers both
- * the newest-first list query and the age-based purge.
+ * The table holds durable tracking history — no caller PII (that is
+ * emailed at the time the request is raised), so rows are kept rather
+ * than purged. The created_at index covers the newest-first list query.
  */
 final class WpdbCallRequestRepository implements CallRequestRepository
 {
     public const TABLE_SUFFIX = 'reach_call_requests';
-
-    /**
-     * How long a request is kept before it is automatically removed.
-     * Requests are operational, not an audit trail — once a callback
-     * has (or hasn't) happened a few days on, the caller's personal
-     * data should not linger in the database.
-     */
-    public const RETENTION_DAYS = 5;
 
     public function __construct(private readonly wpdb $wpdb)
     {
@@ -58,54 +49,37 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         $sql = "CREATE TABLE {$table} (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             responder_name VARCHAR(200) NOT NULL,
-            gender VARCHAR(20) NOT NULL,
             area VARCHAR(200) NOT NULL,
-            caller_name VARCHAR(200) NOT NULL,
-            caller_phone VARCHAR(50) NOT NULL,
-            note TEXT NULL,
             viewer_email VARCHAR(254) NOT NULL,
             viewer_provider VARCHAR(32) NOT NULL,
             created_at BIGINT UNSIGNED NOT NULL,
+            completed_at BIGINT UNSIGNED NULL,
+            completed_by_member_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            completed_by_name VARCHAR(200) NOT NULL DEFAULT '',
             PRIMARY KEY  (id),
             KEY created_at (created_at)
         ) {$charset};";
 
         dbDelta($sql);
 
-        self::migrateFromMemberId($wpdb, $table);
+        self::dropLegacyPiiColumns($wpdb, $table);
     }
 
     /**
-     * Migrate a table created under the old, member-targeted schema.
+     * Drop caller personal-data columns left over from the old schema.
      *
-     * The request used to carry a `member_id` (the 12th-stepper) plus a
-     * `member_created` index; it now carries the responder's name and a
-     * preferred gender instead. dbDelta adds the new columns but cannot
-     * drop the old ones, so do that here once the new columns exist:
-     * backfill `responder_name` from the stored viewer email for any rows
-     * left over, then drop the legacy column and index. Guarded on column
-     * existence so it is a no-op on fresh installs and on re-runs.
+     * Earlier versions stored the caller's name, phone, preferred gender
+     * and note (and, before that, a target member_id). Those details are
+     * now emailed at the time the request is raised and never persisted,
+     * so on upgrade we remove the columns — and with them any PII still
+     * sitting in old rows. dbDelta adds the new completion columns but
+     * cannot drop columns, so we do it here. Guarded on column existence
+     * so it is a no-op on fresh installs and on re-runs.
      */
-    private static function migrateFromMemberId(wpdb $wpdb, string $table): void
+    private static function dropLegacyPiiColumns(wpdb $wpdb, string $table): void
     {
-        $hasMemberId = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM information_schema.COLUMNS
-              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'member_id'",
-            $table,
-        ));
-
-        if ((int) $hasMemberId === 0) {
-            return;
-        }
-
-        // Any rows predating the new columns have an empty responder_name;
-        // fall back to the viewer email so the admin list still identifies
-        // who raised them.
-        $wpdb->query(
-            "UPDATE {$table} SET responder_name = viewer_email WHERE responder_name = ''"
-        );
-
-        // Drop the legacy index before the column it covers.
+        // The legacy member-targeted schema carried an index over
+        // (member_id, created_at); drop it before its columns.
         $hasIndex = $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM information_schema.STATISTICS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = 'member_created'",
@@ -115,16 +89,22 @@ final class WpdbCallRequestRepository implements CallRequestRepository
             $wpdb->query("ALTER TABLE {$table} DROP INDEX member_created");
         }
 
-        $wpdb->query("ALTER TABLE {$table} DROP COLUMN member_id");
+        foreach (['member_id', 'gender', 'caller_name', 'caller_phone', 'note'] as $column) {
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+                $table,
+                $column,
+            ));
+            if ((int) $exists > 0) {
+                $wpdb->query("ALTER TABLE {$table} DROP COLUMN `{$column}`");
+            }
+        }
     }
 
     public function create(
         string $responderName,
-        string $gender,
         string $area,
-        string $callerName,
-        string $callerPhone,
-        ?string $note,
         string $viewerEmail,
         string $viewerProvider,
         int $now,
@@ -135,26 +115,18 @@ final class WpdbCallRequestRepository implements CallRequestRepository
             $table,
             [
                 'responder_name'  => $responderName,
-                'gender'          => $gender,
                 'area'            => $area,
-                'caller_name'     => $callerName,
-                'caller_phone'    => $callerPhone,
-                'note'            => $note,
                 'viewer_email'    => $viewerEmail,
                 'viewer_provider' => $viewerProvider,
                 'created_at'      => $now,
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d'],
+            ['%s', '%s', '%s', '%s', '%d'],
         );
 
         return new CallRequest(
             (int) $this->wpdb->insert_id,
             $responderName,
-            $gender,
             $area,
-            $callerName,
-            $callerPhone,
-            $note,
             $viewerEmail,
             $viewerProvider,
             $now,
@@ -167,13 +139,14 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         $offset = max(0, $offset);
         $table  = self::tableName($this->wpdb);
 
-        // ORDER BY id DESC after created_at DESC stabilises pagination
-        // when several rows share a timestamp — same reasoning as the
-        // call-attempts list.
+        // Pending rows (completed_at IS NULL) sort first; within each
+        // group newest first. ORDER BY id DESC after created_at DESC
+        // stabilises pagination when rows share a timestamp.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
-            "SELECT id, responder_name, gender, area, caller_name, caller_phone, note, viewer_email, viewer_provider, created_at
+            "SELECT id, responder_name, area, viewer_email, viewer_provider, created_at,
+                    completed_at, completed_by_member_id, completed_by_name
                FROM {$table}
-              ORDER BY created_at DESC, id DESC
+              ORDER BY (completed_at IS NULL) DESC, created_at DESC, id DESC
               LIMIT %d OFFSET %d",
             $limit,
             $offset,
@@ -191,11 +164,18 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
     }
 
+    public function countPending(): int
+    {
+        $table = self::tableName($this->wpdb);
+        return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE completed_at IS NULL");
+    }
+
     public function findById(int $id): ?CallRequest
     {
         $table = self::tableName($this->wpdb);
         $row = $this->wpdb->get_row($this->wpdb->prepare(
-            "SELECT id, responder_name, gender, area, caller_name, caller_phone, note, viewer_email, viewer_provider, created_at
+            "SELECT id, responder_name, area, viewer_email, viewer_provider, created_at,
+                    completed_at, completed_by_member_id, completed_by_name
                FROM {$table}
               WHERE id = %d
               LIMIT 1",
@@ -205,24 +185,30 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         return is_array($row) ? $this->hydrate($row) : null;
     }
 
+    public function markCompleted(int $id, int $memberId, string $memberName, int $completedAt): bool
+    {
+        $table = self::tableName($this->wpdb);
+
+        // Only a still-pending row is updated — the WHERE clause makes
+        // completion idempotent and a double-click harmless.
+        $updated = $this->wpdb->query($this->wpdb->prepare(
+            "UPDATE {$table}
+                SET completed_at = %d, completed_by_member_id = %d, completed_by_name = %s
+              WHERE id = %d AND completed_at IS NULL",
+            $completedAt,
+            $memberId,
+            $memberName,
+            $id,
+        ));
+
+        return is_int($updated) && $updated > 0;
+    }
+
     public function delete(int $id): bool
     {
         $table = self::tableName($this->wpdb);
         $deleted = $this->wpdb->delete($table, ['id' => $id], ['%d']);
         return is_int($deleted) && $deleted > 0;
-    }
-
-    public function purgeOlderThan(int $olderThanSeconds, int $now): int
-    {
-        $table  = self::tableName($this->wpdb);
-        $cutoff = $now - max(0, $olderThanSeconds);
-
-        $deleted = $this->wpdb->query($this->wpdb->prepare(
-            "DELETE FROM {$table} WHERE created_at < %d",
-            $cutoff,
-        ));
-
-        return is_int($deleted) ? $deleted : 0;
     }
 
     /**
@@ -233,14 +219,13 @@ final class WpdbCallRequestRepository implements CallRequestRepository
         return new CallRequest(
             (int) $row['id'],
             (string) $row['responder_name'],
-            (string) $row['gender'],
             (string) $row['area'],
-            (string) $row['caller_name'],
-            (string) $row['caller_phone'],
-            $row['note'] !== null ? (string) $row['note'] : null,
             (string) $row['viewer_email'],
             (string) $row['viewer_provider'],
             (int) $row['created_at'],
+            $row['completed_at'] !== null ? (int) $row['completed_at'] : null,
+            (int) $row['completed_by_member_id'],
+            (string) $row['completed_by_name'],
         );
     }
 }

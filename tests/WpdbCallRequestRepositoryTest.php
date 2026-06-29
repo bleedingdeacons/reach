@@ -53,55 +53,47 @@ final class CallRequestWpdbStub extends WpdbStub
 
 final class WpdbCallRequestRepositoryTest extends TestCase
 {
-    public function testCreateInsertsRowAndReturnsModel(): void
+    public function testCreateStoresOnlyTrackingDataAndReturnsModel(): void
     {
         $db = new CallRequestWpdbStub();
         $db->nextInsertId = 77;
         $repo = new WpdbCallRequestRepository($db);
 
-        $req = $repo->create('Resp One', 'female', 'BS5 / Easton', 'Sam', '07700 900123', 'call after 6', 'a@x', 'google', 1000);
+        $req = $repo->create('Resp One', 'BS5 / Easton', 'a@x', 'google', 1000);
 
         $this->assertSame(77, $req->id);
         $this->assertSame('Resp One', $req->responderName);
-        $this->assertSame('female', $req->gender);
         $this->assertSame('BS5 / Easton', $req->area);
-        $this->assertSame('Sam', $req->callerName);
-        $this->assertSame('07700 900123', $req->callerPhone);
-        $this->assertSame('call after 6', $req->note);
         $this->assertSame('a@x', $req->viewerEmail);
         $this->assertSame('google', $req->viewerProvider);
         $this->assertSame(1000, $req->createdAt);
+        $this->assertFalse($req->isCompleted());
+        $this->assertSame('CR-000077', $req->serial());
 
+        // Caller PII must never be written to the table — it is emailed.
         $this->assertCount(1, $db->inserted);
         $this->assertSame('wp_reach_call_requests', $db->inserted[0]['table']);
-        $this->assertSame('Sam', $db->inserted[0]['data']['caller_name']);
-        $this->assertSame('07700 900123', $db->inserted[0]['data']['caller_phone']);
         $this->assertSame('Resp One', $db->inserted[0]['data']['responder_name']);
-        $this->assertSame('female', $db->inserted[0]['data']['gender']);
         $this->assertSame('BS5 / Easton', $db->inserted[0]['data']['area']);
+        $this->assertArrayNotHasKey('caller_name', $db->inserted[0]['data']);
+        $this->assertArrayNotHasKey('caller_phone', $db->inserted[0]['data']);
+        $this->assertArrayNotHasKey('gender', $db->inserted[0]['data']);
+        $this->assertArrayNotHasKey('note', $db->inserted[0]['data']);
         $this->assertArrayNotHasKey('member_id', $db->inserted[0]['data']);
     }
 
-    public function testCreateStoresNullNote(): void
+    public function testListOrdersPendingFirstThenNewest(): void
     {
-        $db = new CallRequestWpdbStub();
-        $repo = new WpdbCallRequestRepository($db);
-
-        $req = $repo->create('R', 'male', 'BS1', 'A', '07', null, 'a@x', 'apple', 5);
-
-        $this->assertNull($req->note);
-        $this->assertNull($db->inserted[0]['data']['note']);
-    }
-
-    public function testListOrdersByCreatedAtDescThenIdDesc(): void
-    {
-        // Stable secondary order matters for pagination across rows
-        // sharing a timestamp — same reasoning as the call-attempts list.
+        // Pending rows (completed_at IS NULL) sort first; within a group
+        // newest first, with id DESC stabilising shared timestamps.
         $db = new CallRequestWpdbStub();
         $repo = new WpdbCallRequestRepository($db);
         $repo->list(50, 0);
 
-        $this->assertStringContainsString('ORDER BY created_at DESC, id DESC', $db->queries[0]);
+        $this->assertStringContainsString(
+            'ORDER BY (completed_at IS NULL) DESC, created_at DESC, id DESC',
+            $db->queries[0],
+        );
     }
 
     public function testListClampsLimitAndOffset(): void
@@ -118,11 +110,10 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $db = new CallRequestWpdbStub();
         $db->nextResults = [
             [
-                'id' => 9, 'responder_name' => 'Resp', 'gender' => 'female',
-                'area' => 'BS5', 'caller_name' => 'Sam',
-                'caller_phone' => '07', 'note' => null,
+                'id' => 9, 'responder_name' => 'Resp', 'area' => 'BS5',
                 'viewer_email' => 'a@x', 'viewer_provider' => 'google',
-                'created_at' => 100,
+                'created_at' => 100, 'completed_at' => null,
+                'completed_by_member_id' => 0, 'completed_by_name' => '',
             ],
         ];
         $repo = new WpdbCallRequestRepository($db);
@@ -131,10 +122,9 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertSame(9, $rows[0]->id);
         $this->assertSame('Resp', $rows[0]->responderName);
-        $this->assertSame('female', $rows[0]->gender);
         $this->assertSame('BS5', $rows[0]->area);
-        $this->assertSame('Sam', $rows[0]->callerName);
-        $this->assertNull($rows[0]->note);
+        $this->assertFalse($rows[0]->isCompleted());
+        $this->assertSame('CR-000009', $rows[0]->serial());
     }
 
     public function testCountAllReturnsVar(): void
@@ -147,6 +137,16 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $this->assertStringContainsString('COUNT(*)', $db->queries[0]);
     }
 
+    public function testCountPendingFiltersOnNullCompletedAt(): void
+    {
+        $db = new CallRequestWpdbStub();
+        $db->nextVar = 4;
+        $repo = new WpdbCallRequestRepository($db);
+
+        $this->assertSame(4, $repo->countPending());
+        $this->assertStringContainsString('WHERE completed_at IS NULL', $db->queries[0]);
+    }
+
     public function testFindByIdReturnsNullOnMiss(): void
     {
         $db = new CallRequestWpdbStub();
@@ -156,24 +156,50 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $this->assertNull($repo->findById(99));
     }
 
-    public function testFindByIdHydratesNoteWhenPresent(): void
+    public function testFindByIdHydratesCompletedRow(): void
     {
         $db = new CallRequestWpdbStub();
         $db->nextRow = [
-            'id' => 3, 'responder_name' => 'Resp', 'gender' => 'non-binary',
-            'area' => 'Bath', 'caller_name' => 'Jo',
-            'caller_phone' => '0789', 'note' => 'leave a message',
+            'id' => 3, 'responder_name' => 'Resp', 'area' => 'Bath',
             'viewer_email' => 'a@x', 'viewer_provider' => 'apple',
-            'created_at' => 1_234_567,
+            'created_at' => 1_234_567, 'completed_at' => 1_234_999,
+            'completed_by_member_id' => 42, 'completed_by_name' => 'Jo M',
         ];
         $repo = new WpdbCallRequestRepository($db);
         $found = $repo->findById(3);
 
         $this->assertNotNull($found);
-        $this->assertSame('leave a message', $found->note);
-        $this->assertSame('Jo', $found->callerName);
-        $this->assertSame('non-binary', $found->gender);
         $this->assertSame('Bath', $found->area);
+        $this->assertTrue($found->isCompleted());
+        $this->assertSame(1_234_999, $found->completedAt);
+        $this->assertSame(42, $found->completedByMemberId);
+        $this->assertSame('Jo M', $found->completedByName);
+    }
+
+    public function testMarkCompletedUpdatesOnlyPendingRow(): void
+    {
+        $db = new CallRequestWpdbStub();
+        $db->queryReturn = 1;
+        $repo = new WpdbCallRequestRepository($db);
+
+        $this->assertTrue($repo->markCompleted(5, 42, 'Jo M', 2000));
+
+        $q = $db->queries[0];
+        $this->assertStringContainsString('UPDATE wp_reach_call_requests', $q);
+        $this->assertStringContainsString('completed_at = 2000', $q);
+        $this->assertStringContainsString('completed_by_member_id = 42', $q);
+        $this->assertStringContainsString("completed_by_name = 'Jo M'", $q);
+        // Idempotent: only a still-open row is touched.
+        $this->assertStringContainsString('WHERE id = 5 AND completed_at IS NULL', $q);
+    }
+
+    public function testMarkCompletedReturnsFalseWhenNothingUpdated(): void
+    {
+        $db = new CallRequestWpdbStub();
+        $db->queryReturn = 0;
+        $repo = new WpdbCallRequestRepository($db);
+
+        $this->assertFalse($repo->markCompleted(5, 42, 'Jo M', 2000));
     }
 
     public function testDeleteReturnsTrueWhenRowRemoved(): void
@@ -194,21 +220,5 @@ final class WpdbCallRequestRepositoryTest extends TestCase
         $repo = new WpdbCallRequestRepository($db);
 
         $this->assertFalse($repo->delete(5));
-    }
-
-    public function testPurgeDeletesOlderThanCutoffAndReturnsCount(): void
-    {
-        $db = new CallRequestWpdbStub();
-        $db->queryReturn = 3;
-        $repo = new WpdbCallRequestRepository($db);
-
-        $now    = 1_000_000;
-        $window = WpdbCallRequestRepository::RETENTION_DAYS * 86400;
-        $removed = $repo->purgeOlderThan($window, $now);
-
-        $this->assertSame(3, $removed);
-        $q = $db->queries[0];
-        $this->assertStringContainsString('DELETE FROM wp_reach_call_requests', $q);
-        $this->assertStringContainsString('created_at < ' . ($now - $window), $q);
     }
 }

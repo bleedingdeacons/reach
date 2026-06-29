@@ -147,6 +147,21 @@ final class SettingsPage
                             </p>
                         </td>
                     </tr>
+                    <tr>
+                        <th><label for="reach_call_request_email">Call request email</label></th>
+                        <td>
+                            <input type="email"
+                                   id="reach_call_request_email"
+                                   name="call_request_email"
+                                   value="<?php echo esc_attr($this->settings->getCallRequestEmail()); ?>"
+                                   class="regular-text"
+                                   placeholder="<?php echo esc_attr((string) get_option('admin_email')); ?>"
+                                   autocomplete="off">
+                            <p class="description">
+                                Where callback requests are emailed. Each <em>Request a callback</em> raised on the find page is sent here with the caller&rsquo;s name, phone, preferred 12th&#8209;Stepper and any note, plus a reference number &mdash; so the caller&rsquo;s details live in this inbox rather than in the database. Leave blank to use the site admin address (<code><?php echo esc_html((string) get_option('admin_email')); ?></code>).
+                            </p>
+                        </td>
+                    </tr>
                 </table>
 
                 <h2>Authentication</h2>
@@ -310,6 +325,14 @@ final class SettingsPage
             ? sanitize_text_field(wp_unslash($_POST['out_of_hours_end']))
             : '';
         $this->settings->setOutOfHours($ohStart, $ohEnd);
+
+        // Call-request notification address. setCallRequestEmail blanks
+        // anything that isn't a valid email (falling the getter back to
+        // the site admin address), so we only unslash and string-guard.
+        $callRequestEmail = isset($_POST['call_request_email']) && is_string($_POST['call_request_email'])
+            ? sanitize_text_field(wp_unslash($_POST['call_request_email']))
+            : '';
+        $this->settings->setCallRequestEmail($callRequestEmail);
 
         foreach (self::PROVIDERS as $provider) {
             $name = $provider['name'];
