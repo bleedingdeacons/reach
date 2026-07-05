@@ -12,12 +12,14 @@ use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
+use Reach\Auth\PasswordCredentialRepository;
 use Reach\Core\ReachServiceProvider;
 use Reach\Frontend\PageRouter;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
+use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
 use Psr\Container\ContainerInterface;
 use Unity\Core\Interfaces\Container;
@@ -80,6 +82,7 @@ class Plugin
 
         // REST controllers.
         self::$container->get(OAuthController::class)->register();
+        self::$container->get(PasswordAuthController::class)->register();
         self::$container->get(NearestMembersController::class)->register();
         self::$container->get(CallAttemptController::class)->register();
         self::$container->get(CallRequestController::class)->register();
@@ -131,6 +134,22 @@ class Plugin
             // Trusted re-checks the member is a telephone responder before access.
             return $members->findByEmail($current->email);
         }, 10, 1);
+
+        // GDPR erasure: a member's password credential is personal data, so
+        // purge it when the member is deleted/trashed. Unity's
+        // MemberChangeTracker fires unity/member_deleted with the member as
+        // it was at deletion, from which we take the email the row is keyed
+        // on. Inert if Unity never fires it (e.g. a direct DB delete).
+        $credentials = self::$container->get(PasswordCredentialRepository::class);
+        add_action('unity/member_deleted', static function ($postId, $member = null) use ($credentials) {
+            if ($member === null) {
+                return;
+            }
+            $email = strtolower(trim((string) $member->getPersonalEmail()));
+            if ($email !== '') {
+                $credentials->delete($email);
+            }
+        }, 10, 2);
 
         // Admin settings page.
         if (is_admin()) {

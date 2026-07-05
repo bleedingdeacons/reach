@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Plugin Name: Reach
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
- * Version: 1.6.38
+ * Version: 1.6.44
  * Requires at least: 6.1
  * Requires PHP: 8.1
  * Requires Plugins: scrutiny
@@ -155,6 +155,10 @@ register_activation_hook(__FILE__, function () {
     // schedule. Clear any purge event left by an earlier version.
     \Reach\CallRequests\WpdbCallRequestRepository::install($wpdb);
     wp_clear_scheduled_hook(\Reach\Plugin::PURGE_CRON_HOOK);
+
+    // Install/upgrade the password-credentials table (email + password
+    // sign-in). Idempotent dbDelta, so safe on every activation/upgrade.
+    \Reach\Auth\WpdbPasswordCredentialRepository::install($wpdb);
 });
 
 // Self-deactivate if Scrutiny gets deactivated while Reach is active —
