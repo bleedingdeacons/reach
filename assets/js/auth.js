@@ -49,9 +49,22 @@
         var loginPw     = document.getElementById('reach-login-password');
         var loginBtn    = document.getElementById('reach-login-submit');
         var loginStatus = document.getElementById('reach-login-status');
+        var loginError  = document.getElementById('reach-login-error');
+        var loginErrorBody = document.getElementById('reach-login-error-body');
+
+        // Definitive sign-in failures go in the error-tinted notice box;
+        // transient hints (empty fields, "Signing in…") stay inline.
+        function showLoginError(message) {
+            if (loginErrorBody) loginErrorBody.textContent = message;
+            if (loginError) loginError.hidden = false;
+        }
+        function hideLoginError() {
+            if (loginError) loginError.hidden = true;
+        }
 
         loginForm.addEventListener('submit', function (event) {
             event.preventDefault();
+            hideLoginError();
             var email = (loginEmail ? loginEmail.value : '').trim();
             var pw    = loginPw ? loginPw.value : '';
             if (!email || !pw) {
@@ -67,14 +80,31 @@
                         return;
                     }
                     setLoading(loginBtn, false);
+                    setStatus(loginStatus, '');
                     var msg = (resp.body && resp.body.message) || 'Email or password is incorrect.';
-                    setStatus(loginStatus, msg, 'error');
+                    showLoginError(msg);
                 })
                 .catch(function () {
                     setLoading(loginBtn, false);
-                    setStatus(loginStatus, 'Network error. Check your connection and try again.', 'error');
+                    setStatus(loginStatus, '');
+                    showLoginError('Network error. Check your connection and try again.');
                 });
         });
+
+        // Carry a typed email over to the reset page so the member doesn't
+        // have to retype it. Falls back to plain navigation when the field
+        // is empty (or JS is off — the link is a real href).
+        var resetLink = document.getElementById('reach-reset-link');
+        if (resetLink) {
+            resetLink.addEventListener('click', function (event) {
+                var email = (loginEmail ? loginEmail.value : '').trim();
+                if (!email) return;
+                event.preventDefault();
+                var base = resetLink.getAttribute('href');
+                var sep = base.indexOf('?') === -1 ? '?' : '&';
+                window.location = base + sep + 'email=' + encodeURIComponent(email);
+            });
+        }
     }
 
     // --- Request a reset link ------------------------------------------
@@ -91,21 +121,23 @@
                 setStatus(resetStatus, 'Enter your email address.', 'error');
                 return;
             }
-            setLoading(resetBtn, true);
+            // Disable to prevent a double-submit, but no spinner on this
+            // button — just a brief status line.
+            if (resetBtn) resetBtn.disabled = true;
             setStatus(resetStatus, 'Sending…');
             postJson(cfg.requestResetUrl, { email: email })
                 .then(function () {
                     // Always the same confirmation, whether or not the
-                    // address is registered — no account enumeration.
+                    // address is registered — no account enumeration. The
+                    // message lives in a pre-rendered green notice box; just
+                    // swap the form for it.
                     resetForm.hidden = true;
-                    setStatus(
-                        resetStatus,
-                        'If that email belongs to a Reach member, we’ve sent a link to set your password. Please check your inbox.',
-                        'success'
-                    );
+                    setStatus(resetStatus, '');
+                    var done = document.getElementById('reach-reset-done');
+                    if (done) done.hidden = false;
                 })
                 .catch(function () {
-                    setLoading(resetBtn, false);
+                    if (resetBtn) resetBtn.disabled = false;
                     setStatus(resetStatus, 'Network error. Check your connection and try again.', 'error');
                 });
         });

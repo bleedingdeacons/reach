@@ -20,6 +20,13 @@ if (!defined('ABSPATH')) {
 
 $requestResetUrl = esc_url(rest_url('reach/v1/auth/request-reset'));
 $signInUrl       = esc_url(home_url('/reach/signin'));
+
+// Pre-fill the email when carried over from the sign-in page's login field
+// (?email=…), so a member who typed it there doesn't retype it. sanitize_email
+// drops anything that isn't a plausible address.
+$prefillEmail = isset($_GET['email'])
+    ? sanitize_email(wp_unslash((string) $_GET['email']))
+    : '';
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
 <head>
@@ -44,6 +51,7 @@ $signInUrl       = esc_url(home_url('/reach/signin'));
                    id="reach-reset-email"
                    name="email"
                    class="reach-input"
+                   value="<?php echo esc_attr($prefillEmail); ?>"
                    autocomplete="username"
                    inputmode="email"
                    autocapitalize="none"
@@ -52,11 +60,17 @@ $signInUrl       = esc_url(home_url('/reach/signin'));
 
             <button type="submit" class="reach-btn reach-btn--primary" id="reach-reset-submit">
                 <span class="reach-btn__label">Send link</span>
-                <span class="reach-btn__spinner" aria-hidden="true"></span>
             </button>
         </form>
 
         <div id="reach-reset-status" class="reach-status" role="status" aria-live="polite"></div>
+
+        <?php // Shown (form hidden) once a request is sent — always the same,
+              // so it never reveals whether the address is registered. ?>
+        <div id="reach-reset-done" class="reach-notice reach-notice--success" role="status" hidden>
+            <p class="reach-notice__title">Check your inbox</p>
+            <p class="reach-notice__body">If your email has been set up as a Telephone Responder, we&rsquo;ve sent a link to set your password. If you don&rsquo;t receive one, please contact BADI Support to be added to the list, then sign in again.</p>
+        </div>
     </main>
 
     <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
@@ -68,6 +82,5 @@ $signInUrl       = esc_url(home_url('/reach/signin'));
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/auth.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
-    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>

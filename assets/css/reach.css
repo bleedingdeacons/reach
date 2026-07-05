@@ -547,6 +547,14 @@ html, body {
     line-height: 1.43;
 }
 
+/* Success variant — same banner, soft green tint. Used for the reset-page
+   "check your inbox" confirmation so it reads as a positive result rather
+   than the error-tinted default. */
+.reach-notice--success {
+    background: var(--m3-success-container);
+    color: var(--m3-on-success-container);
+}
+
 /* ── Result list (M3 list-item cards) ───────────────────────────── */
 
 .reach-results {

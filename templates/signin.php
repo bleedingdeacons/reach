@@ -58,8 +58,8 @@ $reachErrorCode = isset($_GET['reach_error'])
 if ($reachErrorCode !== '') {
     $reachNotices = [
         'not_eligible' => [
-            'title' => 'This email isn’t registered as a telephone responder.',
-            'body'  => 'We confirmed your email, but it isn’t on the telephone responder list. Please contact BADI Support.',
+            'title' => 'This email isn’t a registered telephone responder',
+            'body'  => 'If you are a telephone responder, please contact BADI Support to be added to the list, then sign in again.',
         ],
         'email_required' => [
             'title' => 'An email address is required',
@@ -75,6 +75,13 @@ if ($reachErrorCode !== '') {
         'body'  => 'Please try again, or use a different account if possible.',
     ];
 }
+
+// The eligibility failure (email proved out, but the person isn't a
+// telephone responder) is terminal for that account: showing the full set
+// of sign-in options again just invites the same failure. Give it a focused
+// page instead — the reset page's back-and-title layout with the message,
+// and no sign-in controls. Other errors stay inline and retryable.
+$reachBlocking = $reachNotice !== null && $reachErrorCode === 'not_eligible';
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
 <head>
@@ -90,6 +97,16 @@ if ($reachErrorCode !== '') {
 </head>
 <body class="reach-page reach-signin">
     <main class="reach-card">
+        <?php if ($reachBlocking): ?>
+        <header class="reach-header">
+            <a class="reach-back" href="<?php echo esc_url(home_url('/reach/signin')); ?>" aria-label="Back to sign in">Back</a>
+            <h1 class="reach-title">Reach</h1>
+        </header>
+        <div class="reach-notice" role="alert">
+            <p class="reach-notice__title"><?php echo esc_html($reachNotice['title']); ?></p>
+            <p class="reach-notice__body"><?php echo esc_html($reachNotice['body']); ?></p>
+        </div>
+        <?php else: ?>
         <h1 class="reach-title">Reach</h1>
         <p class="reach-subtitle">Sign in to confirm your email. We only use it to verify you&rsquo;re a telephone responder.</p>
 
@@ -100,40 +117,7 @@ if ($reachErrorCode !== '') {
             </div>
         <?php endif; ?>
 
-        <form id="reach-login-form" class="reach-form reach-login" novalidate>
-            <label class="reach-label" for="reach-login-email">Email</label>
-            <input type="email"
-                   id="reach-login-email"
-                   name="email"
-                   class="reach-input"
-                   autocomplete="username"
-                   inputmode="email"
-                   autocapitalize="none"
-                   spellcheck="false"
-                   required>
-
-            <label class="reach-label" for="reach-login-password">Password</label>
-            <input type="password"
-                   id="reach-login-password"
-                   name="password"
-                   class="reach-input"
-                   autocomplete="current-password"
-                   required>
-
-            <button type="submit" class="reach-btn reach-btn--primary" id="reach-login-submit">
-                <span class="reach-btn__label">Sign in</span>
-                <span class="reach-btn__spinner" aria-hidden="true"></span>
-            </button>
-        </form>
-        <div id="reach-login-status" class="reach-status" role="status" aria-live="polite"></div>
-
-        <p class="reach-signin__reset">
-            <a href="<?php echo $resetPageUrl; ?>">Forgot or set your password?</a>
-        </p>
-
         <?php if ($anyProviderConfigured): ?>
-        <div class="reach-divider"><span>or</span></div>
-
         <div class="reach-buttons">
             <?php if ($googleConfigured): ?>
                 <a class="reach-btn reach-btn--google" href="<?php echo esc_url(rest_url('reach/v1/oauth/start?provider=google')); ?>" rel="nofollow">
@@ -195,9 +179,49 @@ if ($reachErrorCode !== '') {
             <?php endif; ?>
 
         </div>
+        <div class="reach-divider"><span>or</span></div>
         <?php endif; ?>
 
+        <form id="reach-login-form" class="reach-form reach-login" novalidate>
+            <label class="reach-label" for="reach-login-email">Email</label>
+            <input type="email"
+                   id="reach-login-email"
+                   name="email"
+                   class="reach-input"
+                   autocomplete="username"
+                   inputmode="email"
+                   autocapitalize="none"
+                   spellcheck="false"
+                   required>
+
+            <label class="reach-label" for="reach-login-password">Password</label>
+            <input type="password"
+                   id="reach-login-password"
+                   name="password"
+                   class="reach-input"
+                   autocomplete="current-password"
+                   required>
+
+            <button type="submit" class="reach-btn reach-btn--primary" id="reach-login-submit">
+                <span class="reach-btn__label">Sign in</span>
+                <span class="reach-btn__spinner" aria-hidden="true"></span>
+            </button>
+        </form>
+        <div id="reach-login-status" class="reach-status" role="status" aria-live="polite"></div>
+
+        <?php // Failed sign-in (wrong password, locked, not eligible) shows here
+              // in the error-tinted notice box, revealed by auth.js. ?>
+        <div id="reach-login-error" class="reach-notice" role="alert" hidden>
+            <p class="reach-notice__title">We couldn&rsquo;t sign you in</p>
+            <p class="reach-notice__body" id="reach-login-error-body"></p>
+        </div>
+
+        <p class="reach-signin__reset">
+            <a id="reach-reset-link" href="<?php echo $resetPageUrl; ?>">Forgot or set your password?</a>
+        </p>
+
         <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email.</p>
+        <?php endif; ?>
     </main>
 
     <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
