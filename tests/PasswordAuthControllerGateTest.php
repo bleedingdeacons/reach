@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
+use Reach\Core\RateLimiter;
 use Reach\Rest\PasswordAuthController;
 use Reach\Session\SessionCookie;
 use Scrutiny\Audit\Interfaces\AuditLogger;
@@ -37,6 +38,9 @@ final class PasswordAuthControllerGateTest extends TestCase
     protected function setUp(): void
     {
         $GLOBALS['__reach_mail'] = [];
+        // Fresh transient store so the per-IP rate-limit counter doesn't
+        // carry between tests.
+        $GLOBALS['__reach_transients'] = [];
     }
 
     // --- eligibility gate -------------------------------------------------
@@ -159,7 +163,7 @@ final class PasswordAuthControllerGateTest extends TestCase
         $members = new PwTestMemberRepository($members);
         $auth    = new PasswordAuthenticator($repo, $members, new PasswordResetMailer(), new PasswordPolicy());
 
-        return new PasswordAuthController($auth, new SessionCookie(), $members, new NullAuditLogger());
+        return new PasswordAuthController($auth, new SessionCookie(), $members, new NullAuditLogger(), new RateLimiter());
     }
 
     /** Pull the raw reset token out of the ?token=… link in the last mail. */

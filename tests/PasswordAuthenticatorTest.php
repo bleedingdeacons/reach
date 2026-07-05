@@ -138,6 +138,21 @@ final class PasswordAuthenticatorTest extends TestCase
         $this->assertNull($repo->find('regular@example.com'));
     }
 
+    public function testBeginResetHonoursCooldownThenAllowsResendLater(): void
+    {
+        $repo = new InMemoryPasswordCredentialRepository();
+        $auth = $this->makeAuth($repo, [$this->member('user@example.com')]);
+
+        $auth->beginReset('user@example.com', 1000);
+        // A second request inside the cooldown window sends nothing.
+        $auth->beginReset('user@example.com', 1000 + PasswordAuthenticator::RESET_COOLDOWN_SECONDS - 1);
+        $this->assertCount(1, $GLOBALS['__reach_mail']);
+
+        // Past the cooldown, a resend is allowed.
+        $auth->beginReset('user@example.com', 1000 + PasswordAuthenticator::RESET_COOLDOWN_SECONDS + 1);
+        $this->assertCount(2, $GLOBALS['__reach_mail']);
+    }
+
     // --- complete reset ---------------------------------------------------
 
     public function testCompleteResetSetsPasswordIsSingleUseAndEnablesLogin(): void
