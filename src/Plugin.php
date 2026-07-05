@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
+use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
 use Reach\Core\ReachServiceProvider;
 use Reach\Frontend\PageRouter;
@@ -142,6 +143,7 @@ class Plugin
             // URL ("page goes nowhere").
             self::$container->get(CallAttemptsPage::class)->register();
             self::$container->get(CallRequestsPage::class)->register();
+            self::$container->get(MemberSearchPage::class)->register();
             self::$container->get(SettingsPage::class)->register();
         }
 

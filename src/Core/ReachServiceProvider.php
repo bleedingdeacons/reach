@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
+use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\ProviderRegistry;
@@ -172,6 +173,11 @@ final class ReachServiceProvider
             $c->get(CallRequestRepository::class),
             $c->get(AuditLogger::class),
             $c->get(MemberRepository::class),
+        ));
+
+        $container->register(MemberSearchPage::class, fn(ContainerInterface $c) => new MemberSearchPage(
+            $c->get(NearestMembersResolver::class),
+            $c->get(MemberViewFactory::class),
         ));
     }
 }
