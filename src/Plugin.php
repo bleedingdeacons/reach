@@ -10,9 +10,8 @@ if (!defined('ABSPATH')) {
 
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
+use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
-use Reach\CallRequests\CallRequestRepository;
-use Reach\CallRequests\WpdbCallRequestRepository;
 use Reach\Core\ReachServiceProvider;
 use Reach\Frontend\PageRouter;
 use Reach\Rest\CallAttemptController;
@@ -44,10 +43,11 @@ class Plugin
     use \Reach\Logger\HasLogger;
 
     /**
-     * WP-Cron hook that purges call requests past their retention
-     * window. Scheduled on activation (see reach.php) and re-ensured on
-     * every init so installs upgraded without re-activation still get
-     * the event. Cleared on deactivation.
+     * Legacy WP-Cron hook that used to purge call requests past a
+     * retention window. Call requests are now durable history with no
+     * caller PII, so nothing schedules this any more; the name is kept
+     * only so init() and the deactivation hook can clear any event left
+     * scheduled by an earlier version.
      */
     public const PURGE_CRON_HOOK = 'reach_purge_call_requests';
 
@@ -84,14 +84,12 @@ class Plugin
         self::$container->get(CallAttemptController::class)->register();
         self::$container->get(CallRequestController::class)->register();
 
-        // Retention: purge call requests older than the repository's
-        // window once a day. Registered outside is_admin so WP-Cron
-        // (which runs on front-end requests) can fire it, and the
-        // schedule is re-ensured here so an install upgraded in place —
-        // without re-running the activation hook — still gets the event.
-        add_action(self::PURGE_CRON_HOOK, [self::class, 'purgeExpiredCallRequests']);
-        if (!wp_next_scheduled(self::PURGE_CRON_HOOK)) {
-            wp_schedule_event(time() + DAY_IN_SECONDS, 'daily', self::PURGE_CRON_HOOK);
+        // Call requests are now durable history holding no caller PII, so
+        // the old daily retention purge is gone. Clear any event left
+        // scheduled by an earlier version so upgraded installs stop
+        // purging their request history.
+        if (wp_next_scheduled(self::PURGE_CRON_HOOK)) {
+            wp_clear_scheduled_hook(self::PURGE_CRON_HOOK);
         }
 
         // Everything under reach/v1 is per-member and authorised by the Reach
@@ -145,6 +143,7 @@ class Plugin
             // URL ("page goes nowhere").
             self::$container->get(CallAttemptsPage::class)->register();
             self::$container->get(CallRequestsPage::class)->register();
+            self::$container->get(MemberSearchPage::class)->register();
             self::$container->get(SettingsPage::class)->register();
         }
 
@@ -157,21 +156,6 @@ class Plugin
             throw new RuntimeException('Reach Plugin not initialized');
         }
         return self::$container;
-    }
-
-    /**
-     * Cron callback: delete call requests older than the repository's
-     * retention window. Resolves the repository from the container so
-     * the same $wpdb-backed implementation is used as everywhere else.
-     * No-op if the plugin somehow isn't initialised when cron fires.
-     */
-    public static function purgeExpiredCallRequests(): void
-    {
-        if (self::$container === null) {
-            return;
-        }
-        $repo = self::$container->get(CallRequestRepository::class);
-        $repo->purgeOlderThan(WpdbCallRequestRepository::RETENTION_DAYS * DAY_IN_SECONDS, time());
     }
 
     /**

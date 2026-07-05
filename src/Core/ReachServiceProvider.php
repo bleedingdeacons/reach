@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
+use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\ProviderRegistry;
@@ -23,6 +24,7 @@ use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
+use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\CallRequests\WpdbCallRequestRepository;
 use Reach\Frontend\PageRouter;
@@ -100,6 +102,9 @@ final class ReachServiceProvider
             global $wpdb;
             return new WpdbCallRequestRepository($wpdb);
         });
+        $container->register(CallRequestMailer::class, fn(ContainerInterface $c) => new CallRequestMailer(
+            $c->get(Settings::class),
+        ));
 
         // Geocoder + nearest-members resolver. The Geocoder interface
         // binds to the postcodes.io implementation; a test fake or a
@@ -146,6 +151,7 @@ final class ReachServiceProvider
             $c->get(CallRequestRepository::class),
             $c->get(CurrentSession::class),
             $c->get(MemberRepository::class),
+            $c->get(CallRequestMailer::class),
         ));
 
         // Frontend + admin.
@@ -167,6 +173,11 @@ final class ReachServiceProvider
             $c->get(CallRequestRepository::class),
             $c->get(AuditLogger::class),
             $c->get(MemberRepository::class),
+        ));
+
+        $container->register(MemberSearchPage::class, fn(ContainerInterface $c) => new MemberSearchPage(
+            $c->get(NearestMembersResolver::class),
+            $c->get(MemberViewFactory::class),
         ));
     }
 }

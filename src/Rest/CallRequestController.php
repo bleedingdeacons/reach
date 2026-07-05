@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\CallRequests\CallRequest;
+use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\Session\CurrentSession;
 use Unity\Members\Interfaces\MemberRepository;
@@ -49,9 +50,11 @@ use function rest_ensure_response;
  * attempt token any more — the request targets no particular member, so
  * there is nothing member-specific to authorise against.
  *
- * No audit entry is written: a request accesses no member personal data
- * (it carries the *caller's* details, stored only in the short-lived
- * call-requests table and purged after a few days).
+ * No audit entry is written here: the request accesses no *member*
+ * personal data. The caller's details are not stored either — they are
+ * emailed to the configured call-request address (see
+ * {@see CallRequestMailer}); only a non-identifying tracking row is kept
+ * so the admin "Call Requests" list can show a history.
  */
 final class CallRequestController
 {
@@ -77,6 +80,7 @@ final class CallRequestController
         private readonly CallRequestRepository $repository,
         private readonly CurrentSession $session,
         private readonly MemberRepository $members,
+        private readonly CallRequestMailer $mailer,
     ) {
     }
 
@@ -178,29 +182,53 @@ final class CallRequestController
         $area        = $this->cap($area, self::AREA_MAX_BYTES);
         $note        = $this->capNote($note);
 
+        $responderName = $this->responderName($session->email);
+
+        // Store the non-identifying tracking row first so we have an id
+        // (and hence a serial) to put in the email. The caller's name,
+        // phone, gender preference and note are deliberately NOT passed
+        // here — they only ever go in the email below.
         $callRequest = $this->repository->create(
-            $this->responderName($session->email),
-            $gender,
+            $responderName,
             $area,
-            $callerName,
-            $callerPhone,
-            $note,
             $session->email,
             $session->provider,
             $now,
         );
 
-        // No audit entry: a request accesses no member personal data —
-        // it carries the caller's details, stored only in the short-lived
-        // call-requests table and purged after a few days.
+        // Email the caller's details to the configured address. This is
+        // the system of record for the PII; the database holds none of
+        // it. If the mail can't be sent we must not leave an orphan
+        // tracking row whose caller details have been lost, so roll the
+        // row back and ask the responder to try again.
+        $sent = $this->mailer->send(
+            $callRequest->serial(),
+            $responderName,
+            $gender,
+            $area,
+            $callerName,
+            $callerPhone,
+            $note,
+            $now,
+        );
 
-        // Extension point for a future notifier (email/SMS). Inert
-        // unless something hooks it.
+        if (!$sent) {
+            $this->repository->delete($callRequest->id);
+            return new WP_Error(
+                'reach_call_request_not_sent',
+                'Could not send that request. Please try again in a moment.',
+                ['status' => 502]
+            );
+        }
+
+        // Extension point for a further notifier (e.g. SMS). Inert unless
+        // something hooks it. The record carries no caller PII.
         do_action('reach/call_request_created', $callRequest);
 
         return rest_ensure_response([
             'recorded'   => true,
             'id'         => $callRequest->id,
+            'reference'  => $callRequest->serial(),
             'created_at' => $callRequest->createdAt,
         ]);
     }
