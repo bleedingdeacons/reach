@@ -151,11 +151,13 @@ final class ReachServiceProvider
             $c->get(MemberRepository::class),
         ));
 
+        $container->register(RateLimiter::class, fn() => new RateLimiter());
         $container->register(PasswordAuthController::class, fn(ContainerInterface $c) => new PasswordAuthController(
             $c->get(PasswordAuthenticator::class),
             $c->get(SessionCookie::class),
             $c->get(MemberRepository::class),
             $c->get(AuditLogger::class),
+            $c->get(RateLimiter::class),
         ));
 
         $container->register(NearestMembersController::class, fn(ContainerInterface $c) => new NearestMembersController(

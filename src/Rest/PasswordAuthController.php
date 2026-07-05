@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordResetResult;
 use Reach\Auth\VerifiedIdentity;
+use Reach\Core\RateLimiter;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
 use Scrutiny\Audit\Interfaces\AuditLogger;
@@ -54,11 +55,20 @@ final class PasswordAuthController
 {
     public const NAMESPACE = 'reach/v1';
 
+    /** Per-IP login attempts allowed per window, and the window length. */
+    private const LOGIN_IP_MAX = 50;
+    private const LOGIN_IP_WINDOW = 15 * 60;
+
+    /** Per-IP reset requests allowed per window, and the window length. */
+    private const RESET_IP_MAX = 10;
+    private const RESET_IP_WINDOW = 60 * 60;
+
     public function __construct(
         private readonly PasswordAuthenticator $authenticator,
         private readonly SessionCookie $sessionCookie,
         private readonly MemberRepository $members,
         private readonly AuditLogger $auditLogger,
+        private readonly RateLimiter $rateLimiter,
     ) {
     }
 
@@ -121,6 +131,12 @@ final class PasswordAuthController
         $password = (string) $request->get_param('password');
         $now      = time();
 
+        // Coarse per-IP throttle in front of the per-account lockout, so a
+        // single source can't grind through many accounts (or hammer one).
+        if ($this->rateLimiter->overLimit('login:' . $this->rateLimiter->clientIp(), self::LOGIN_IP_MAX, self::LOGIN_IP_WINDOW)) {
+            return $this->tooManyAttempts();
+        }
+
         $identity = $this->authenticator->attemptLogin($email, $password, $now);
         if ($identity === null) {
             return $this->invalidCredentials();
@@ -148,10 +164,15 @@ final class PasswordAuthController
     {
         $email = (string) $request->get_param('email');
 
-        // beginReset is a silent no-op for anything but an eligible member,
-        // so this always returns the same thing regardless of whether a link
-        // was actually sent.
-        $this->authenticator->beginReset($email, time());
+        // Per-IP flood cap (on top of the per-email cooldown in beginReset).
+        // When exceeded we skip sending but still return the same response,
+        // so a flooder gets no signal and no email goes out.
+        if (!$this->rateLimiter->overLimit('reset:' . $this->rateLimiter->clientIp(), self::RESET_IP_MAX, self::RESET_IP_WINDOW)) {
+            // beginReset is a silent no-op for anything but an eligible member,
+            // so this always returns the same thing regardless of whether a
+            // link was actually sent.
+            $this->authenticator->beginReset($email, time());
+        }
 
         return new WP_REST_Response(['sent' => true], 200);
     }
@@ -247,6 +268,15 @@ final class PasswordAuthController
             'reach_invalid_credentials',
             'Email or password is incorrect.',
             ['status' => 401],
+        );
+    }
+
+    private function tooManyAttempts(): WP_Error
+    {
+        return new WP_Error(
+            'reach_rate_limited',
+            'Too many attempts. Please wait a little while and try again.',
+            ['status' => 429],
         );
     }
 

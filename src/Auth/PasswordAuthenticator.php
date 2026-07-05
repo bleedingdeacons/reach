@@ -58,6 +58,13 @@ final class PasswordAuthenticator
     /** How long an emailed reset link stays valid. */
     public const RESET_TTL_SECONDS = 60 * 60;
 
+    /**
+     * Minimum spacing between reset emails to the same address. A second
+     * request inside this window is a silent no-op, so a nuisance actor
+     * can't repeatedly flood a member's inbox with reset links.
+     */
+    public const RESET_COOLDOWN_SECONDS = 90;
+
     public function __construct(
         private readonly PasswordCredentialRepository $credentials,
         private readonly MemberRepository $members,
@@ -87,6 +94,9 @@ final class PasswordAuthenticator
         }
 
         if ($cred->isLocked($now)) {
+            // Burn the same time as a real verify so a locked account can't
+            // be told apart from a wrong password by response timing.
+            $this->burnTime($password);
             return null;
         }
 
@@ -128,6 +138,18 @@ final class PasswordAuthenticator
 
         if (!$this->isEligibleMember($email)) {
             return;
+        }
+
+        // Anti-flood: if a reset link was issued for this address within the
+        // cooldown window, don't send another. Still silent — the endpoint's
+        // response is identical whether or not a link was actually sent, so
+        // this leaks nothing about the account.
+        $existing = $this->credentials->find($email);
+        if ($existing !== null && $existing->resetTokenHash !== '') {
+            $issuedAt = $existing->resetExpiresAt - self::RESET_TTL_SECONDS;
+            if ($issuedAt > $now - self::RESET_COOLDOWN_SECONDS) {
+                return;
+            }
         }
 
         $rawToken  = $this->base64UrlEncode(random_bytes(32));
