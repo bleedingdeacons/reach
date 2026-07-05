@@ -180,6 +180,9 @@ final class InMemoryMemberRepository implements MemberRepository
         return null;
     }
     public function findAll(array $args = []): array { return $this->members; }
+    public function findTelephoneResponders(): array {
+        return array_values(array_filter($this->members, fn($m) => $m->isTelephoneResponder()));
+    }
     public function count(array $args = []): int { return count($this->members); }
     public function create(string $anonymousName): int { return 0; }
     public function save(Member $member): bool { return true; }

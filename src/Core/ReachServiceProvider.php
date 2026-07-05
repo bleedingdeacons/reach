@@ -14,12 +14,17 @@ use Reach\Admin\CallRequestsPage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
 use Reach\Auth\JwtVerifier;
+use Reach\Auth\PasswordAuthenticator;
+use Reach\Auth\PasswordCredentialRepository;
+use Reach\Auth\PasswordPolicy;
+use Reach\Auth\PasswordResetMailer;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\Providers\AppleProvider;
 use Reach\Auth\Providers\FacebookProvider;
 use Reach\Auth\Providers\GoogleProvider;
 use Reach\Auth\Providers\MicrosoftProvider;
 use Reach\Auth\StateStore;
+use Reach\Auth\WpdbPasswordCredentialRepository;
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
@@ -35,6 +40,7 @@ use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
+use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Scrutiny\Audit\Interfaces\AuditLogger;
@@ -89,6 +95,22 @@ final class ReachServiceProvider
             return $registry;
         });
 
+        // Email + password sign-in (the second auth path alongside OAuth).
+        // The credential store is bound by interface so the authenticator
+        // can be unit-tested against an in-memory fake.
+        $container->register(PasswordCredentialRepository::class, function () {
+            global $wpdb;
+            return new WpdbPasswordCredentialRepository($wpdb);
+        });
+        $container->register(PasswordResetMailer::class, fn() => new PasswordResetMailer());
+        $container->register(PasswordPolicy::class, fn() => new PasswordPolicy());
+        $container->register(PasswordAuthenticator::class, fn(ContainerInterface $c) => new PasswordAuthenticator(
+            $c->get(PasswordCredentialRepository::class),
+            $c->get(MemberRepository::class),
+            $c->get(PasswordResetMailer::class),
+            $c->get(PasswordPolicy::class),
+        ));
+
         // Call-attempt logging & responsiveness signal.
         $container->register(AttemptTokenMinter::class, fn() => new AttemptTokenMinter());
         $container->register(ResponsivenessScorer::class, fn() => new ResponsivenessScorer());
@@ -127,6 +149,13 @@ final class ReachServiceProvider
             $c->get(StateStore::class),
             $c->get(SessionCookie::class),
             $c->get(MemberRepository::class),
+        ));
+
+        $container->register(PasswordAuthController::class, fn(ContainerInterface $c) => new PasswordAuthController(
+            $c->get(PasswordAuthenticator::class),
+            $c->get(SessionCookie::class),
+            $c->get(MemberRepository::class),
+            $c->get(AuditLogger::class),
         ));
 
         $container->register(NearestMembersController::class, fn(ContainerInterface $c) => new NearestMembersController(

@@ -38,6 +38,8 @@ if (!defined('ARRAY_N')) {
 // In-memory transient + options store for tests.
 $GLOBALS['__reach_transients'] = [];
 $GLOBALS['__reach_options'] = [];
+// Outbound mail spool captured by the wp_mail() stub below.
+$GLOBALS['__reach_mail'] = [];
 $GLOBALS['__reach_salts'] = [
     'auth'      => 'test-auth-salt-' . str_repeat('x', 48),
     'logged_in' => 'test-login-salt-' . str_repeat('y', 48),
@@ -82,6 +84,25 @@ if (!function_exists('wp_json_encode')) {
 if (!function_exists('is_email')) {
     function is_email(string $value): bool {
         return (bool) filter_var($value, FILTER_VALIDATE_EMAIL);
+    }
+}
+if (!function_exists('get_bloginfo')) {
+    function get_bloginfo(string $show = ''): string {
+        return $GLOBALS['__reach_bloginfo'][$show] ?? '';
+    }
+}
+if (!function_exists('wp_mail')) {
+    // Spool sent mail so tests can assert on the reset link etc. Returns
+    // the value in $GLOBALS['__reach_mail_return'] (default true) so a send
+    // failure can be simulated.
+    function wp_mail($to, $subject, $message, $headers = '', $attachments = []): bool {
+        $GLOBALS['__reach_mail'][] = [
+            'to'      => $to,
+            'subject' => $subject,
+            'message' => $message,
+            'headers' => $headers,
+        ];
+        return $GLOBALS['__reach_mail_return'] ?? true;
     }
 }
 if (!function_exists('is_ssl')) {
@@ -235,11 +256,47 @@ interface MemberRepository
     public function findById(int $id): ?Member;
     public function findByEmail(string $email): ?Member;
     public function findAll(array $args = []): array;
+    public function findTelephoneResponders(): array;
     public function count(array $args = []): int;
     public function create(string $anonymousName): int;
     public function save(Member $member): bool;
     public function delete(int $id): bool;
     public function update(Member $member): bool;
+}
+PHP
+    );
+}
+
+// Scrutiny interfaces. NearestMembersController and PasswordAuthController
+// typehint Scrutiny\Audit\Interfaces\AuditLogger. Load it from a sibling
+// Scrutiny checkout (SCRUTINY_PATH overrides the default location), or fall
+// back to a minimal stub so the suite runs without Scrutiny checked out.
+$scrutinyPath   = getenv('SCRUTINY_PATH') ?: dirname(__DIR__, 2) . '/scrutiny';
+$auditInterface = $scrutinyPath . '/src/Audit/Interfaces/AuditLogger.php';
+if (file_exists($auditInterface)) {
+    require_once $auditInterface;
+} elseif (!interface_exists(\Scrutiny\Audit\Interfaces\AuditLogger::class)) {
+    eval(<<<'PHP'
+namespace Scrutiny\Audit\Interfaces;
+
+interface AuditLogger
+{
+    public const ACTION_VIEW = 'view';
+    public const ACTION_CREATE = 'create';
+    public const ACTION_UPDATE = 'update';
+    public const ACTION_DELETE = 'delete';
+    public const ACTION_EXPORT = 'export';
+    public const ACTION_IMPORT = 'import';
+    public const ACTION_CALL = 'call';
+    public const ACTION_MESSAGE = 'message';
+
+    public const ENTITY_MEMBER = 'member';
+    public const ENTITY_GROUP = 'group';
+    public const ENTITY_MEETING = 'meeting';
+    public const ENTITY_POSITION = 'position';
+
+    public function log(string $action, string $entityType, int $entityId, string $fieldName, string $detail = ''): void;
+    public function logBatch(string $action, string $entityType, int $entityId, array $fieldNames, string $detail = ''): void;
 }
 PHP
     );

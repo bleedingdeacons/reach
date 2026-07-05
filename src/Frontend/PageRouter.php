@@ -40,6 +40,8 @@ final class PageRouter
     public const HOME_SLUG = 'reach/home';
     public const SHIFTS_SLUG = 'reach/shifts';
     public const REQUEST_SLUG = 'reach/request';
+    public const RESET_SLUG = 'reach/reset';
+    public const SET_PASSWORD_SLUG = 'reach/set-password';
 
     public function __construct(
         private readonly CurrentSession $session,
@@ -89,6 +91,10 @@ final class PageRouter
         add_rewrite_rule('^reach/find/?$',   'index.php?' . self::QUERY_VAR . '=find',   'top');
         add_rewrite_rule('^reach/shifts/?$', 'index.php?' . self::QUERY_VAR . '=shifts', 'top');
         add_rewrite_rule('^reach/request/?$', 'index.php?' . self::QUERY_VAR . '=request', 'top');
+        // Password sign-in support pages. Public (not session-gated): a
+        // signed-out member must be able to reach them to set/reset a password.
+        add_rewrite_rule('^reach/reset/?$', 'index.php?' . self::QUERY_VAR . '=reset', 'top');
+        add_rewrite_rule('^reach/set-password/?$', 'index.php?' . self::QUERY_VAR . '=set-password', 'top');
     }
 
     /**
@@ -104,7 +110,7 @@ final class PageRouter
     public function renderPage(): void
     {
         $page = get_query_var(self::QUERY_VAR);
-        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'request', 'index'], true)) {
+        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'request', 'reset', 'set-password', 'index'], true)) {
             return;
         }
 
@@ -136,11 +142,13 @@ final class PageRouter
         // up theme chrome — Reach pages are intentionally standalone
         // mobile views, not theme-wrapped WordPress pages.
         $template = match ($page) {
-            'signin'  => REACH_PLUGIN_DIR . 'templates/signin.php',
-            'home'    => REACH_PLUGIN_DIR . 'templates/home.php',
-            'shifts'  => REACH_PLUGIN_DIR . 'templates/shifts.php',
-            'request' => REACH_PLUGIN_DIR . 'templates/request.php',
-            default   => REACH_PLUGIN_DIR . 'templates/find.php',
+            'signin'       => REACH_PLUGIN_DIR . 'templates/signin.php',
+            'home'         => REACH_PLUGIN_DIR . 'templates/home.php',
+            'shifts'       => REACH_PLUGIN_DIR . 'templates/shifts.php',
+            'request'      => REACH_PLUGIN_DIR . 'templates/request.php',
+            'reset'        => REACH_PLUGIN_DIR . 'templates/reset.php',
+            'set-password' => REACH_PLUGIN_DIR . 'templates/set-password.php',
+            default        => REACH_PLUGIN_DIR . 'templates/find.php',
         };
 
         $session = $this->session->get(); // available inside template

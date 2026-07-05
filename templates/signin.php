@@ -37,6 +37,15 @@ $appleStartUrl = esc_url(rest_url('reach/v1/oauth/apple/start'));
 $appleVerifyUrl = esc_url(rest_url('reach/v1/oauth/apple'));
 $homeUrl       = esc_url(home_url('/reach/home'));
 
+// Email + password sign-in (the second auth path). The form posts to the
+// REST login endpoint via fetch; the reset link starts the emailed
+// set/reset flow. Social buttons only render when a provider is actually
+// configured — password sign-in is always available, so an install with no
+// OAuth providers set up is still usable rather than a dead end.
+$loginUrl              = esc_url(rest_url('reach/v1/auth/login'));
+$resetPageUrl          = esc_url(home_url('/reach/reset'));
+$anyProviderConfigured = $googleConfigured || $microsoftConfigured || $appleConfigured || $facebookConfigured;
+
 // Friendly sign-in notices. When the OAuth callback can prove who you
 // are but can't let you in, it bounces back here with
 // ?reach_error=<code> rather than dumping a raw JSON error in the
@@ -90,6 +99,40 @@ if ($reachErrorCode !== '') {
                 <p class="reach-notice__body"><?php echo esc_html($reachNotice['body']); ?></p>
             </div>
         <?php endif; ?>
+
+        <form id="reach-login-form" class="reach-form reach-login" novalidate>
+            <label class="reach-label" for="reach-login-email">Email</label>
+            <input type="email"
+                   id="reach-login-email"
+                   name="email"
+                   class="reach-input"
+                   autocomplete="username"
+                   inputmode="email"
+                   autocapitalize="none"
+                   spellcheck="false"
+                   required>
+
+            <label class="reach-label" for="reach-login-password">Password</label>
+            <input type="password"
+                   id="reach-login-password"
+                   name="password"
+                   class="reach-input"
+                   autocomplete="current-password"
+                   required>
+
+            <button type="submit" class="reach-btn reach-btn--primary" id="reach-login-submit">
+                <span class="reach-btn__label">Sign in</span>
+                <span class="reach-btn__spinner" aria-hidden="true"></span>
+            </button>
+        </form>
+        <div id="reach-login-status" class="reach-status" role="status" aria-live="polite"></div>
+
+        <p class="reach-signin__reset">
+            <a href="<?php echo $resetPageUrl; ?>">Forgot or set your password?</a>
+        </p>
+
+        <?php if ($anyProviderConfigured): ?>
+        <div class="reach-divider"><span>or</span></div>
 
         <div class="reach-buttons">
             <?php if ($googleConfigured): ?>
@@ -151,16 +194,22 @@ if ($reachErrorCode !== '') {
                 </button>
             <?php endif; ?>
 
-            <?php if (!$googleConfigured && !$microsoftConfigured && !$appleConfigured && !$facebookConfigured): ?>
-                <p class="reach-error">Sign-in providers haven&rsquo;t been configured yet.</p>
-            <?php endif; ?>
         </div>
+        <?php endif; ?>
 
         <p class="reach-fineprint">By signing in you agree to be temporarily identified by your email.</p>
     </main>
 
     <?php $reachBuild = \Reach\Plugin::buildDate(); ?>
     <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
+
+    <script>
+        window.REACH_AUTH = {
+            loginUrl: <?php echo wp_json_encode($loginUrl); ?>,
+            homeUrl: <?php echo wp_json_encode($homeUrl); ?>
+        };
+    </script>
+    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/auth.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 
     <?php if ($appleConfigured): ?>
     <script>

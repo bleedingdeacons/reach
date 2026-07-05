@@ -478,6 +478,48 @@ html, body {
     font-size: calc(14px * var(--ts));
 }
 
+/* ── Email + password sign-in ────────────────────────────────────────
+   The login form, the "or" divider between it and the social buttons,
+   and the small helper / reset links. Reuses .reach-form, .reach-input
+   and .reach-btn; only the divider and a couple of link/hint styles are
+   new. */
+.reach-login {
+    margin-bottom: 8px;
+}
+
+.reach-signin__reset {
+    text-align: center;
+    margin: 0 0 20px;
+    font-size: calc(14px * var(--ts));
+}
+.reach-signin__reset a { color: var(--m3-primary); }
+
+/* "or" separator: a centred label with a hairline rule either side. */
+.reach-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 4px 0 20px;
+    color: var(--m3-on-surface-variant);
+    font-size: calc(12px * var(--ts));
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.reach-divider::before,
+.reach-divider::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--m3-outline);
+}
+
+.reach-hint {
+    margin: 4px 0 8px;
+    color: var(--m3-on-surface-variant);
+    font-size: calc(12px * var(--ts));
+    line-height: 1.5;
+}
+
 /*
  * .reach-notice = M3 error-container banner. Shown at the top of the
  * sign-in card when the OAuth callback bounced the user back here with

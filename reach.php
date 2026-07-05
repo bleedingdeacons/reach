@@ -155,6 +155,10 @@ register_activation_hook(__FILE__, function () {
     // schedule. Clear any purge event left by an earlier version.
     \Reach\CallRequests\WpdbCallRequestRepository::install($wpdb);
     wp_clear_scheduled_hook(\Reach\Plugin::PURGE_CRON_HOOK);
+
+    // Install/upgrade the password-credentials table (email + password
+    // sign-in). Idempotent dbDelta, so safe on every activation/upgrade.
+    \Reach\Auth\WpdbPasswordCredentialRepository::install($wpdb);
 });
 
 // Self-deactivate if Scrutiny gets deactivated while Reach is active —
