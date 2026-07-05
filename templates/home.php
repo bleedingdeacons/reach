@@ -25,6 +25,7 @@ $shiftsUrl      = esc_url(home_url('/reach/shifts'));
 $signOutUrl     = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl      = esc_url(home_url('/reach/signin'));
 $requestPageUrl = esc_url(home_url('/reach/request'));
+$findMeetingUrl = esc_url('https://www.alcoholics-anonymous.org.uk/find-a-meeting/#form');
 $shiftsEnabled  = defined('TRUSTED_VERSION');
 ?><!DOCTYPE html>
 <html lang="<?php echo esc_attr(get_bloginfo('language')); ?>">
@@ -54,6 +55,9 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
             <?php endif; ?>
             <a class="reach-btn" href="<?php echo $requestPageUrl; ?>">
                 <span>Request 12th Step</span>
+            </a>
+            <a class="reach-btn" href="<?php echo $findMeetingUrl; ?>" target="_blank" rel="noopener noreferrer">
+                <span>Find Meeting</span>
             </a>
         </nav>
 
