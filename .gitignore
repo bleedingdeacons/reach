@@ -1,3 +1,9 @@
+# Ignore the whole composer bin dir (binaries + the regenerated
+# .phpunit.result.cache) so an untracked cache file can't leave the working
+# tree looking dirty — which was tripping the version-bump "altered" check.
+/vendor/bin/
+.phpunit.result.cache
+
 /vendor/bin/php-parse
 /vendor/bin/php-parse.bat
 /vendor/bin/phpstan

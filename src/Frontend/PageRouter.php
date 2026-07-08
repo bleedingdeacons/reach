@@ -40,6 +40,7 @@ final class PageRouter
     public const HOME_SLUG = 'reach/home';
     public const SHIFTS_SLUG = 'reach/shifts';
     public const REQUEST_SLUG = 'reach/request';
+    public const LOOKUP_SLUG = 'reach/lookup';
     public const RESET_SLUG = 'reach/reset';
     public const SET_PASSWORD_SLUG = 'reach/set-password';
 
@@ -91,6 +92,7 @@ final class PageRouter
         add_rewrite_rule('^reach/find/?$',   'index.php?' . self::QUERY_VAR . '=find',   'top');
         add_rewrite_rule('^reach/shifts/?$', 'index.php?' . self::QUERY_VAR . '=shifts', 'top');
         add_rewrite_rule('^reach/request/?$', 'index.php?' . self::QUERY_VAR . '=request', 'top');
+        add_rewrite_rule('^reach/lookup/?$', 'index.php?' . self::QUERY_VAR . '=lookup', 'top');
         // Password sign-in support pages. Public (not session-gated): a
         // signed-out member must be able to reach them to set/reset a password.
         add_rewrite_rule('^reach/reset/?$', 'index.php?' . self::QUERY_VAR . '=reset', 'top');
@@ -110,7 +112,7 @@ final class PageRouter
     public function renderPage(): void
     {
         $page = get_query_var(self::QUERY_VAR);
-        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'request', 'reset', 'set-password', 'index'], true)) {
+        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'request', 'reset', 'set-password', 'index', 'lookup'], true)) {
             return;
         }
 
@@ -134,7 +136,7 @@ final class PageRouter
         // to go without us having to thread a `?return_to` through the
         // OAuth flow.
         // All the signed-in pages bounce to sign-in when there's no session.
-        if (in_array($page, ['home', 'find', 'shifts', 'request'], true) && !$this->session->isAuthenticated()) {
+        if (in_array($page, ['home', 'find', 'shifts', 'request', 'lookup'], true) && !$this->session->isAuthenticated()) {
             $page = 'signin';
         }
 
@@ -148,6 +150,7 @@ final class PageRouter
             'request'      => REACH_PLUGIN_DIR . 'templates/request.php',
             'reset'        => REACH_PLUGIN_DIR . 'templates/reset.php',
             'set-password' => REACH_PLUGIN_DIR . 'templates/set-password.php',
+            'lookup'       => REACH_PLUGIN_DIR . 'templates/lookup.php',
             default        => REACH_PLUGIN_DIR . 'templates/find.php',
         };
 

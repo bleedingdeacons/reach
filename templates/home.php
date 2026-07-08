@@ -21,6 +21,7 @@ if (!defined('ABSPATH')) {
 
 $email          = $session !== null ? $session->email : '';
 $findUrl        = esc_url(home_url('/reach/find'));
+$lookupUrl      = esc_url(home_url('/reach/lookup'));
 $shiftsUrl      = esc_url(home_url('/reach/shifts'));
 $signOutUrl     = esc_url(rest_url('reach/v1/oauth/signout'));
 $signInUrl      = esc_url(home_url('/reach/signin'));
@@ -47,6 +48,9 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
         <nav class="reach-menu">
             <a class="reach-btn reach-btn--primary" href="<?php echo $findUrl; ?>">
                 <span>Search</span>
+            </a>
+            <a class="reach-btn" href="<?php echo $lookupUrl; ?>">
+                <span>Lookup</span>
             </a>
             <?php if ($shiftsEnabled): ?>
                 <a class="reach-btn" href="<?php echo $shiftsUrl; ?>">
