@@ -99,7 +99,7 @@ $reachBlocking = $reachNotice !== null && $reachErrorCode === 'not_eligible';
     <main class="reach-card">
         <?php if ($reachBlocking): ?>
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo esc_url(home_url('/reach/signin')); ?>" aria-label="Back to sign in">Back</a>
+            <a class="reach-back" href="<?php echo esc_url(home_url('/reach/signin')); ?>" aria-label="Back to sign in">&lt;</a>
             <h1 class="reach-title">Reach</h1>
         </header>
         <div class="reach-notice" role="alert">

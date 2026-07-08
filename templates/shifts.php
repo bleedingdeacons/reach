@@ -36,7 +36,7 @@ $homeUrl    = esc_url(home_url('/reach/home'));
 <body class="reach-page reach-shifts">
     <main class="reach-card">
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">Back</a>
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lt;</a>
             <h1 class="reach-title">Shift sign-up</h1>
         </header>
         <p class="reach-subtitle">Choose a day, then sign up for an open shift.</p>

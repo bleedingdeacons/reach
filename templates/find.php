@@ -45,7 +45,7 @@ $homeUrl   = esc_url(home_url('/reach/home'));
 <body class="reach-page reach-find">
     <main class="reach-card">
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">Back</a>
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lt;</a>
             <h1 class="reach-title">Find 12th</h1>
         </header>
         <p class="reach-subtitle">Enter the caller&rsquo;s location to find the nearest available responder.</p>
