@@ -40,7 +40,7 @@ $prefillEmail = isset($_GET['email'])
 <body class="reach-page reach-reset">
     <main class="reach-card">
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo $signInUrl; ?>" aria-label="Back to sign in">Back</a>
+            <a class="reach-back" href="<?php echo $signInUrl; ?>" aria-label="Back to sign in">&lt;</a>
             <h1 class="reach-title">Set your password</h1>
         </header>
         <p class="reach-subtitle">Enter your Reach email and we&rsquo;ll send you a link to set or reset your password.</p>

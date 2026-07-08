@@ -47,7 +47,7 @@ if ($hasLookup) {
 <body class="reach-page reach-lookup">
     <main class="reach-card">
         <header class="reach-header">
-            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&larr;</a>
+            <a class="reach-back" href="<?php echo $homeUrl; ?>" aria-label="Back to menu">&lt;</a>
             <h1 class="reach-title">Lookup</h1>
         </header>
 
@@ -62,6 +62,5 @@ if ($hasLookup) {
     <p class="reach-buildstamp">v<?php echo esc_html(REACH_VERSION); ?><?php if ($reachBuild !== ''): ?> &middot; Build <?php echo esc_html($reachBuild); ?><?php endif; ?></p>
 
     <?php if ($hasLookup) { wp_print_scripts('lifelines-lookup'); } ?>
-    <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/textsize.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>
 </body>
 </html>

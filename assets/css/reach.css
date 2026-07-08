@@ -206,7 +206,7 @@ html, body {
     letter-spacing: 0;
 }
 
-/* Title row: back button at top-left, on the same line as the title. */
+/* Title row: title on the left, back button pushed to the top-right. */
 .reach-header {
     display: flex;
     align-items: center;
@@ -214,9 +214,13 @@ html, body {
     margin: 0 0 8px;
 }
 .reach-header .reach-title { margin: 0; }
-/* Same outlined treatment as the day navigator's Previous/Next buttons. */
+/* Same outlined treatment as the day navigator's Previous/Next buttons.
+   `order` + `margin-left: auto` place it at the top-right of the page, past
+   the title, on every Reach page. */
 .reach-back {
     flex: 0 0 auto;
+    order: 1;
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
