@@ -134,6 +134,85 @@ class PluginBuilder
         $this->checkRequirements();
     }
 
+
+    /**
+     * Stage a clean production vendor/ for inclusion in the archive.
+     *
+     * Runs `composer install --no-dev --optimize-autoloader` against a copy of
+     * composer.json / composer.lock in an isolated staging directory under
+     * build/, so the developer's working vendor/ -- which holds phpunit,
+     * phpstan and other test tooling -- is never mutated. Returns the absolute
+     * path to the staged vendor/, or null when there is nothing to ship (no
+     * composer.json, or no production dependencies).
+     *
+     * This replaces denylisting individual dev packages, which could only ever
+     * be as current as the last time someone remembered to update the list.
+     */
+    private function stageProductionVendor(): ?string
+    {
+        $composerFile = $this->pluginDir . DIRECTORY_SEPARATOR . 'composer.json';
+        if (!file_exists($composerFile)) {
+            $this->log("No composer.json - production archive will ship no vendor/");
+            return null;
+        }
+
+        $stagingDir = $this->buildDir . DIRECTORY_SEPARATOR . '.vendor-staging';
+        if (is_dir($stagingDir)) {
+            $this->deleteDirectory($stagingDir);
+        }
+        if (!is_dir($stagingDir) && !mkdir($stagingDir, 0755, true)) {
+            $this->error("Failed to create vendor staging directory: {$stagingDir}");
+            exit(1);
+        }
+
+        // Copy the dependency manifests so composer resolves the same set, and
+        // the exact locked versions when a lock file is present.
+        copy($composerFile, $stagingDir . DIRECTORY_SEPARATOR . 'composer.json');
+        $lockFile = $this->pluginDir . DIRECTORY_SEPARATOR . 'composer.lock';
+        if (file_exists($lockFile)) {
+            copy($lockFile, $stagingDir . DIRECTORY_SEPARATOR . 'composer.lock');
+        }
+
+        $command = sprintf(
+            'composer install --no-dev --optimize-autoloader --no-interaction --working-dir=%s 2>&1',
+            escapeshellarg($stagingDir)
+        );
+        $this->log("Staging production vendor (no-dev)...");
+
+        $output = [];
+        $returnCode = 0;
+        exec($command, $output, $returnCode);
+
+        if ($returnCode !== 0) {
+            $this->error("Composer (no-dev) install failed with code {$returnCode}");
+            foreach ($output as $line) {
+                $this->error("  " . $line);
+            }
+            exit(1);
+        }
+
+        $stagedVendor = $stagingDir . DIRECTORY_SEPARATOR . 'vendor';
+        if (!is_dir($stagedVendor)) {
+            // No production dependencies were installed - nothing to ship.
+            $this->log("No production dependencies - archive will ship no vendor/");
+            return null;
+        }
+
+        $this->log("Staged production vendor/ (no-dev) ready");
+        return $stagedVendor;
+    }
+
+    /**
+     * Remove the vendor staging directory left by stageProductionVendor().
+     */
+    private function cleanVendorStaging(): void
+    {
+        $stagingDir = $this->buildDir . DIRECTORY_SEPARATOR . '.vendor-staging';
+        if (is_dir($stagingDir)) {
+            $this->deleteDirectory($stagingDir);
+        }
+    }
+
     /**
      * Normalize path separators for cross-platform compatibility
      */
@@ -249,7 +328,12 @@ class PluginBuilder
         $this->syncBuildDate();
 
         // Create ZIP archive
-        $this->createZip($archiveName, $excludes);
+        // Stage a clean production vendor/ (no dev tooling) without touching
+        // the working vendor/ used for tests. Dev builds keep it as-is.
+        $stagedVendor = $type === 'dev' ? null : $this->stageProductionVendor();
+
+        $this->createZip($archiveName, $excludes, $stagedVendor);
+        $this->cleanVendorStaging();
 
         // Display file size
         $this->log("Archive created successfully: " . basename($archiveName));
@@ -297,7 +381,7 @@ class PluginBuilder
     /**
      * Create a ZIP archive
      */
-    private function createZip(string $archivePath, array $excludes): void
+    private function createZip(string $archivePath, array $excludes, ?string $stagedVendor = null): void
     {
         $zip = new ZipArchive();
 
@@ -328,6 +412,21 @@ class PluginBuilder
                     continue;
                 }
                 $zip->addFromString($zipPath, $contents);
+                $fileCount++;
+            }
+        }
+
+
+        // Inject the staged production vendor/ (no dev tooling) under the
+        // plugin's vendor/ path. The working vendor/ is excluded from the walk
+        // above, so this is the only vendor/ that reaches the archive.
+        if ($stagedVendor !== null && is_dir($stagedVendor)) {
+            foreach ($this->getFiles($stagedVendor, []) as $stagedFile) {
+                if (!is_file($stagedFile)) {
+                    continue;
+                }
+                $stagedRelative = str_replace('\\', '/', substr($stagedFile, strlen($stagedVendor) + 1));
+                $zip->addFile($stagedFile, $this->pluginName . '/vendor/' . $stagedRelative);
                 $fileCount++;
             }
         }
