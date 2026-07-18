@@ -1,7 +1,7 @@
 # Reach
 
 [![CI](https://github.com/bleedingdeacons/reach/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bleedingdeacons/reach/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-1.8.1-blue)
+![Version](https://img.shields.io/badge/version-1.8.3-blue)
 ![PHP](https://img.shields.io/badge/php-8.1%2B-777bb4)
 ![Licence](https://img.shields.io/badge/licence-MIT%20(Modified)-green)
 
