@@ -1,8 +1,11 @@
 # Reach
 
-Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, and a mobile-first finder UI.
+[![CI](https://github.com/bleedingdeacons/reach/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bleedingdeacons/reach/actions/workflows/ci.yml)
+![Version](https://img.shields.io/badge/version-1.8.1-blue)
+![PHP](https://img.shields.io/badge/php-8.1%2B-777bb4)
+![Licence](https://img.shields.io/badge/licence-MIT%20(Modified)-green)
 
-**Version:** 1.8.1
+Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, and a mobile-first finder UI.
 
 ## Requirements
 
