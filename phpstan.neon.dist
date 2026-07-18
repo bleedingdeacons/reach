@@ -1,0 +1,37 @@
+# Committed PHPStan config.
+#
+# phpstan.neon (no .dist) is gitignored and, if present, overrides this
+# file entirely — keep personal tweaks there. This .dist is what CI uses:
+# before it existed, CI ran PHPStan with no config at all, so the step
+# analysed nothing and reported nothing.
+#
+# scanDirectories makes the sibling plugins' symbols known without
+# analysing them. Without it PHPStan cannot see a single interface this
+# plugin implements, and reports every one as an "unknown class" — which
+# drowns real findings. CI checks these out alongside.
+
+includes:
+    - phpstan-baseline.neon
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 5
+    # Analyse as PHP 8.1 — the plugin's floor and the version CI runs.
+    # Without this PHPStan analyses using whatever PHP is executing it,
+    # so a developer on 8.5 and CI on 8.1 disagree and the committed
+    # baseline stops matching.
+    phpVersion: 80100
+    # An ignoreErrors pattern that stops matching is reported as an error by
+    # default, so a stale pattern would fail the gate — and whether a pattern
+    # matches depends on which sibling plugins and stubs are present, which
+    # differs between a developer's checkout and CI. Don't let that break the
+    # build; dead patterns are tidied when noticed, not enforced.
+    reportUnmatchedIgnoredErrors: false
+    paths:
+        - src
+    excludePaths:
+        - tests
+    scanDirectories:
+        - ../unity/src
+        - ../scrutiny/src
+        - ../sentinel/src
