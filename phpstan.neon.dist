@@ -16,6 +16,11 @@ includes:
 
 parameters:
     level: 5
+    # Analyse as PHP 8.1 — the plugin's floor and the version CI runs.
+    # Without this PHPStan analyses using whatever PHP is executing it,
+    # so a developer on 8.5 and CI on 8.1 disagree and the committed
+    # baseline stops matching.
+    phpVersion: 80100
     # An ignoreErrors pattern that stops matching is reported as an error by
     # default, so a stale pattern would fail the gate — and whether a pattern
     # matches depends on which sibling plugins and stubs are present, which
@@ -30,4 +35,3 @@ parameters:
         - ../unity/src
         - ../scrutiny/src
         - ../sentinel/src
-        - ../unity/vendor/psr/container/src
