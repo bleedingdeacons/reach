@@ -1,0 +1,41 @@
+parameters:
+	ignoreErrors:
+		-
+			message: "#^Method Reach\\\\Admin\\\\CallAttemptsPage\\:\\:detailUrl\\(\\) is unused\\.$#"
+			count: 1
+			path: src/Admin/CallAttemptsPage.php
+
+		-
+			message: "#^Constant Reach\\\\Admin\\\\SettingsPage\\:\\:OPTION_GROUP is unused\\.$#"
+			count: 1
+			path: src/Admin/SettingsPage.php
+
+		-
+			message: "#^Strict comparison using \\=\\=\\= between non\\-empty\\-array\\<int, bool\\|float\\|int\\|string\\> and array\\{\\} will always evaluate to false\\.$#"
+			count: 1
+			path: src/CallAttempts/WpdbCallAttemptRepository.php
+
+		-
+			message: "#^Constant REACH_PLUGIN_DIR not found\\.$#"
+			count: 8
+			path: src/Frontend/PageRouter.php
+
+		-
+			message: "#^Result of \\|\\| is always false\\.$#"
+			count: 1
+			path: src/Geocoding/PostcodesIoGeocoder.php
+
+		-
+			message: "#^Strict comparison using \\=\\=\\= between mixed and null will always evaluate to false\\.$#"
+			count: 2
+			path: src/Geocoding/PostcodesIoGeocoder.php
+
+		-
+			message: "#^Constant COOKIEPATH not found\\.$#"
+			count: 1
+			path: src/Session/SessionCookie.php
+
+		-
+			message: "#^Constant COOKIE_DOMAIN not found\\.$#"
+			count: 1
+			path: src/Session/SessionCookie.php

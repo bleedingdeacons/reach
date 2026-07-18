@@ -15,9 +15,42 @@ jobs:
     name: PHP 8.1
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        # This plugin and the siblings its PHPStan config scans are
+        # checked out side by side, mirroring a WordPress plugins/
+        # directory, so run everything from inside this one.
+        working-directory: reach
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: reach
+
+      - name: Checkout Unity
+        # Scanned by phpstan.neon.dist so cross-plugin symbols resolve.
+        uses: actions/checkout@v4
+        with:
+          repository: bleedingdeacons/unity
+          ref: main
+          path: unity
+
+      - name: Checkout Scrutiny
+        # Scanned by phpstan.neon.dist so cross-plugin symbols resolve.
+        uses: actions/checkout@v4
+        with:
+          repository: bleedingdeacons/scrutiny
+          ref: main
+          path: scrutiny
+
+      - name: Checkout Sentinel
+        # Scanned by phpstan.neon.dist so cross-plugin symbols resolve.
+        uses: actions/checkout@v4
+        with:
+          repository: bleedingdeacons/sentinel
+          ref: main
+          path: sentinel
 
       - name: Setup PHP 8.1
         uses: shivammathur/setup-php@v2
@@ -38,7 +71,7 @@ jobs:
           # Keyed on composer.json: composer.lock is untracked in several of
           # these repos, so it is not a reliable cache key across the suite.
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-php8.1-composer-${{ hashFiles('**/composer.json') }}
+          key: ${{ runner.os }}-php8.1-composer-${{ hashFiles('reach/composer.json') }}
           restore-keys: |
             ${{ runner.os }}-php8.1-composer-
 
@@ -72,6 +105,13 @@ jobs:
       - name: Build production archive
         # The build is what /bump ships, so a broken build must fail the PR.
         run: composer build:production
+
+      - name: PHPStan
+        # A gate. phpstan.neon.dist is committed so CI actually has a config
+        # — it previously ran with none at all, analysing nothing. Existing
+        # findings are grandfathered in phpstan-baseline.neon, so this fails
+        # only on new ones.
+        run: composer phpstan
 
       # --- Advisory --------------------------------------------------------
       # Reported but not yet enforced. Promote to a gate once a repo is green.
