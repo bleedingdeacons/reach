@@ -33,7 +33,7 @@
         "build:production": "php build.php build:production",
         "build:dev": "php build.php build:dev",
         "build:clean": "php build.php clean",
-        "phpstan": "phpstan analyse"
+        "phpstan": "phpstan analyse --memory-limit=1G"
     },
     "require-dev": {
         "phpstan/phpstan": "^2.0",
