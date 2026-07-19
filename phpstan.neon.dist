@@ -16,6 +16,13 @@ includes:
 
 parameters:
     level: 5
+    # PHPStan 2 proves a condition dead when PHPDoc says it cannot happen.
+    # In WordPress plugin code PHPDoc is aspirational: values arrive from
+    # get_field(), HTTP responses, scraped HTML and $_POST, none of which the
+    # annotation can guarantee. Trusting it would mean deleting defensive
+    # guards that are correct at runtime, so PHPDoc informs types but does not
+    # prove conditions. Native types are still checked normally.
+    treatPhpDocTypesAsCertain: false
     # Analyse as PHP 8.1 — the plugin's floor and the version CI runs.
     # Without this PHPStan analyses using whatever PHP is executing it,
     # so a developer on 8.5 and CI on 8.1 disagree and the committed

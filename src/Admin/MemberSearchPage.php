@@ -232,7 +232,7 @@ final class MemberSearchPage
                     // Prefer the pipe entry the resolver actually matched
                     // (e.g. "Kingswood" out of "Kingswood|Hanham") so the
                     // area shown is the one the distance refers to.
-                    $area = $scored?->matchedArea ?? $view->getArea();
+                    $area = $scored->matchedArea ?? $view->getArea();
                     ?>
                     <tr>
                         <td><?php echo $this->nameCell($view); ?></td>

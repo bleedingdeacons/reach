@@ -146,7 +146,8 @@ final class PasswordPolicy
         }
 
         foreach ($terms as $term) {
-            if ($term !== '' && str_contains($normalised, $term)) {
+            // Every term is non-empty by construction above.
+            if (str_contains($normalised, $term)) {
                 return true;
             }
         }
