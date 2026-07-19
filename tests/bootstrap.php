@@ -223,6 +223,19 @@ if (file_exists($memberInterface) && file_exists($repoInterface)) {
     require_once $repoInterface;
 } elseif (!interface_exists(\Unity\Members\Interfaces\Member::class)) {
     eval(<<<'PHP'
+namespace Unity\Members;
+
+enum ResponderCertification: string
+{
+    case None = 'None';
+    case Applied = 'Applied';
+    case InTraining = 'In Training';
+    case CertificationPending = 'Certification Pending';
+    case Certified = 'Certified';
+    case RecertificationRequired = 'Recertification Required';
+    case Denied = 'Denied';
+}
+
 namespace Unity\Members\Interfaces;
 
 interface Member
@@ -241,6 +254,7 @@ interface Member
     public function getMobileNumber(): string;
     public function isTwelfthStepper(): bool;
     public function isTelephoneResponder(): bool;
+    public function getResponderCertification(): \Unity\Members\ResponderCertification;
     public function getArea(): string;
     public function getAccepts(): array;
     public function isGdprAccepted(): bool;

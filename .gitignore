@@ -7,5 +7,6 @@
 # Regenerated on every run; an untracked cache file left the working tree
 # looking dirty, which was tripping the version-bump "altered" check.
 .phpunit.result.cache
+/.phpunit.cache/
 
 /build/

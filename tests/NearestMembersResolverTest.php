@@ -150,6 +150,7 @@ final class NearestMembersResolverTest extends TestCase
             public function getMobileNumber(): string { return ''; }
             public function isTwelfthStepper(): bool { return $this->twelfth; }
             public function isTelephoneResponder(): bool { return false; }
+            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
             public function getArea(): string { return $this->area; }
             public function getAccepts(): array { return $this->accepts; }
             public function isGdprAccepted(): bool { return true; }

@@ -28,6 +28,7 @@
         "sort-packages": true
     },
     "scripts": {
+        "test": "phpunit",
         "build": "php build.php build:production",
         "build:production": "php build.php build:production",
         "build:dev": "php build.php build:dev",

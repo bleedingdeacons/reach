@@ -303,6 +303,7 @@ final class NearestMembersControllerTest extends TestCase
             public function getMobileNumber(): string { return '+44 7700 900000'; }
             public function isTwelfthStepper(): bool { return $this->twelfth; }
             public function isTelephoneResponder(): bool { return false; }
+            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
             public function getArea(): string { return $this->area; }
             public function getAccepts(): array { return ['phone']; }
             public function isGdprAccepted(): bool { return true; }

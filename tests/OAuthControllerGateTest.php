@@ -246,6 +246,7 @@ final class OAuthControllerGateTest extends TestCase
             public function getMobileNumber(): string { return ''; }
             public function isTwelfthStepper(): bool { return $this->twelfth; }
             public function isTelephoneResponder(): bool { return $this->responder; }
+            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
             public function getArea(): string { return ''; }
             public function getAccepts(): array { return []; }
             public function isGdprAccepted(): bool { return true; }
