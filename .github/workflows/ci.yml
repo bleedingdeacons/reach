@@ -113,6 +113,13 @@ jobs:
         # only on new ones.
         run: composer phpstan
 
+      - name: PHPUnit
+        # A gate. There was no test step here at all and no phpunit config, so
+        # this plugin's 165 tests had never run in CI — which is how four
+        # Member test doubles came to be missing a method the Unity interface
+        # had gained.
+        run: composer test
+
       # --- Advisory --------------------------------------------------------
       # Reported but not yet enforced. Promote to a gate once a repo is green.
 

@@ -32,7 +32,14 @@ final class JwtVerifierTest extends TestCase
             'private_key_bits' => 2048,
             'private_key_type' => OPENSSL_KEYTYPE_RSA,
         ]);
-        $this->assertNotFalse($res, 'Failed to generate test RSA key');
+
+        // Skip rather than fail when the platform cannot generate a key at
+        // all. openssl_pkey_new() needs an openssl.cnf, which is absent on
+        // some Windows PHP builds; that is a missing local prerequisite, not
+        // a defect in the verifier. CI has one, so these still run there.
+        if ($res === false) {
+            self::markTestSkipped('openssl_pkey_new() unavailable: ' . (openssl_error_string() ?: 'unknown error'));
+        }
 
         openssl_pkey_export($res, $privateKey);
         $details = openssl_pkey_get_details($res);

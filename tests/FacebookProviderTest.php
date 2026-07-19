@@ -46,7 +46,12 @@ final class FacebookProviderTest extends TestCase
             'private_key_bits' => 2048,
             'private_key_type' => OPENSSL_KEYTYPE_RSA,
         ]);
-        $this->assertNotFalse($res, 'Failed to generate test RSA key');
+
+        // See JwtVerifierTest: skip when the platform has no openssl.cnf,
+        // rather than reporting a missing prerequisite as a failure.
+        if ($res === false) {
+            self::markTestSkipped('openssl_pkey_new() unavailable: ' . (openssl_error_string() ?: 'unknown error'));
+        }
 
         openssl_pkey_export($res, $privateKey);
         $details = openssl_pkey_get_details($res);
