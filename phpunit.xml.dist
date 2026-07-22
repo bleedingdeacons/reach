@@ -5,12 +5,16 @@
     There was none before, so `vendor/bin/phpunit` printed its help text and
     the suite could only be run by passing the bootstrap file and a path on
     the command line by hand. Nothing in CI ran it at all.
+
+    Schema is 9.6: the suite is pinned to PHPUnit ^9.6 (with wp_mock 1.1.1),
+    matching the rest of the plugin suite. Coverage include/exclude therefore
+    lives in <coverage>, not the 10.x <source> element.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
          bootstrap="tests/bootstrap.php"
          colors="true"
-         cacheDirectory=".phpunit.cache"
+         cacheResultFile=".phpunit.result.cache"
          executionOrder="depends,defects"
          failOnRisky="true"
          failOnWarning="true">
@@ -20,9 +24,19 @@
         </testsuite>
     </testsuites>
 
-    <source>
+    <coverage>
         <include>
             <directory suffix=".php">src</directory>
         </include>
-    </source>
+        <exclude>
+            <!--
+                Admin screens are thin WordPress render/callback glue (settings
+                fields, list tables, capability-gated page output). They are
+                exercised through WordPress at runtime rather than in unit
+                tests, so they are excluded from the coverage denominator — the
+                same call Integrity makes for its own src/Admin.
+            -->
+            <directory>src/Admin</directory>
+        </exclude>
+    </coverage>
 </phpunit>
