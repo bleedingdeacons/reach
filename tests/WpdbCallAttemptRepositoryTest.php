@@ -70,6 +70,44 @@ class WpdbStub
         $this->queries[] = (string) $sql;
         return $this->nextVar;
     }
+
+    /** @var array<int, array{table: string, where: array<string, mixed>}> */
+    public array $deletes = [];
+    public int|false $nextDeleteResult = 1;
+
+    public function delete($table, $where, $whereFormat = null): int|false
+    {
+        $this->deletes[] = ['table' => (string) $table, 'where' => (array) $where];
+        return $this->nextDeleteResult;
+    }
+
+    /** @var array<int, array{table: string, data: array<string, mixed>}> */
+    public array $inserted = [];
+    /** @var array<int, array{table: string, data: array<string, mixed>, where: array<string, mixed>}> */
+    public array $updated = [];
+    public int $insert_id = 0;
+    private int $autoId = 0;
+
+    public function insert($table, $data, $formats = null): int
+    {
+        $this->inserted[] = ['table' => (string) $table, 'data' => (array) $data];
+        $this->insert_id = ++$this->autoId;
+        return 1;
+    }
+
+    public function update($table, $data, $where, $dataFormats = null, $whereFormats = null): int
+    {
+        $this->updated[] = ['table' => (string) $table, 'data' => (array) $data, 'where' => (array) $where];
+        return 1;
+    }
+
+    public int|bool $nextQueryResult = 1;
+
+    public function query($sql): int|bool
+    {
+        $this->queries[] = (string) $sql;
+        return $this->nextQueryResult;
+    }
 }
 
 final class WpdbCallAttemptRepositoryTest extends TestCase

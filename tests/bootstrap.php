@@ -6,6 +6,18 @@ declare(strict_types=1);
  * Test bootstrap for Reach.
  */
 
+// Composer autoloader — brings in WP_Mock (10up/wp_mock 1.1.1), Mockery and
+// Patchwork. The suite is predominantly built on the hand-rolled WordPress
+// function stubs and in-memory fakes defined below (they keep the fast,
+// dependency-light unit tests the plugin has always had), but WP_Mock is
+// available for tests that want to assert on WordPress function calls
+// directly. Guarded so the suite still loads with a clear message if
+// `composer install` has not been run.
+$autoloader = dirname(__DIR__) . '/vendor/autoload.php';
+if (is_file($autoloader)) {
+    require_once $autoloader;
+}
+
 if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }
@@ -281,6 +293,43 @@ PHP
     );
 }
 
+// Unity container + member-view interfaces. ReachServiceProvider registers
+// its services against Unity\Core\Interfaces\Container, and a few admin-page
+// factories type-hint Unity\Members\Interfaces\MemberViewFactory. Load them
+// from the sibling Unity checkout, or fall back to minimal stubs.
+$containerInterface = $unityPath . '/src/Core/Interfaces/Container.php';
+if (file_exists($containerInterface)) {
+    require_once $containerInterface;
+} elseif (!interface_exists(\Unity\Core\Interfaces\Container::class)) {
+    eval(<<<'PHP'
+namespace Unity\Core\Interfaces;
+
+use Psr\Container\ContainerInterface;
+
+interface Container extends ContainerInterface
+{
+    public function register(string $id, callable $factory): void;
+    public function get(string $id): mixed;
+}
+PHP
+    );
+}
+
+$viewFactoryInterface = $unityPath . '/src/Members/Interfaces/MemberViewFactory.php';
+if (file_exists($viewFactoryInterface)) {
+    require_once $viewFactoryInterface;
+} elseif (!interface_exists(\Unity\Members\Interfaces\MemberViewFactory::class)) {
+    eval(<<<'PHP'
+namespace Unity\Members\Interfaces;
+
+interface MemberViewFactory
+{
+    public function createFromSource(array $sourceIds): array;
+}
+PHP
+    );
+}
+
 // Scrutiny interfaces. NearestMembersController and PasswordAuthController
 // typehint Scrutiny\Audit\Interfaces\AuditLogger. Load it from a sibling
 // Scrutiny checkout (SCRUTINY_PATH overrides the default location), or fall
@@ -316,6 +365,138 @@ PHP
     );
 }
 
+// Scrutiny\Privacy\PersonalDataFields. CallAttemptController references the
+// MOBILE_NUMBER field constant when auditing a call. Load from a sibling
+// Scrutiny checkout, or fall back to a minimal stub carrying the one constant
+// the controller uses.
+$privacyClass = ($scrutinyPath ?? (dirname(__DIR__, 2) . '/scrutiny'))
+    . '/src/Privacy/PersonalDataFields.php';
+if (file_exists($privacyClass)) {
+    require_once $privacyClass;
+} elseif (!class_exists(\Scrutiny\Privacy\PersonalDataFields::class)) {
+    eval(<<<'PHP'
+namespace Scrutiny\Privacy;
+
+class PersonalDataFields
+{
+    public const MOBILE_NUMBER = 'mobile_number';
+    public const PERSONAL_EMAIL = 'personal_email';
+}
+PHP
+    );
+}
+
+// Scrutiny\Privacy\PersonalDataPolicy. The Reach admin pages gate on its
+// VIEW_CAPABILITY constant. Stub the capability constants they reference.
+if (!class_exists(\Scrutiny\Privacy\PersonalDataPolicy::class)) {
+    eval(<<<'PHP'
+namespace Scrutiny\Privacy;
+
+class PersonalDataPolicy
+{
+    public const VIEW_CAPABILITY = 'scrutiny_view_personal_data';
+    public const EDIT_CAPABILITY = 'scrutiny_edit_personal_data';
+}
+PHP
+    );
+}
+
+// Additional WordPress function stubs used by the controllers, geocoder and
+// mailers under test. Each is guarded so a richer WordPress-loaded
+// environment supplies the real implementation instead.
+if (!function_exists('do_action')) {
+    // Spool fired actions so tests can assert an extension point ran.
+    $GLOBALS['__reach_actions'] = [];
+    function do_action(string $hook, mixed ...$args): void
+    {
+        $GLOBALS['__reach_actions'][] = ['hook' => $hook, 'args' => $args];
+    }
+}
+if (!function_exists('sanitize_text_field')) {
+    function sanitize_text_field($value): string
+    {
+        $value = is_string($value) ? $value : '';
+        // Collapse whitespace and strip tags — enough of WP's behaviour for
+        // the assertions the tests make.
+        $value = strip_tags($value);
+        $value = preg_replace('/[\r\n\t ]+/', ' ', $value) ?? '';
+        return trim($value);
+    }
+}
+if (!function_exists('sanitize_textarea_field')) {
+    function sanitize_textarea_field($value): string
+    {
+        // Like sanitize_text_field but keeps line breaks.
+        $value = is_string($value) ? $value : '';
+        return trim(strip_tags($value));
+    }
+}
+if (!function_exists('sanitize_key')) {
+    function sanitize_key($key): string
+    {
+        $key = is_string($key) ? strtolower($key) : '';
+        return preg_replace('/[^a-z0-9_\-]/', '', $key) ?? '';
+    }
+}
+if (!function_exists('absint')) {
+    function absint($value): int
+    {
+        return abs((int) $value);
+    }
+}
+if (!function_exists('esc_html')) {
+    function esc_html($text): string
+    {
+        return htmlspecialchars((string) $text, ENT_QUOTES);
+    }
+}
+if (!function_exists('esc_attr')) {
+    function esc_attr($text): string
+    {
+        return htmlspecialchars((string) $text, ENT_QUOTES);
+    }
+}
+if (!function_exists('esc_url')) {
+    function esc_url($url): string
+    {
+        return filter_var((string) $url, FILTER_SANITIZE_URL) ?: '';
+    }
+}
+if (!function_exists('esc_url_raw')) {
+    function esc_url_raw($url): string
+    {
+        return filter_var((string) $url, FILTER_SANITIZE_URL) ?: '';
+    }
+}
+if (!function_exists('wp_unslash')) {
+    function wp_unslash($value)
+    {
+        return is_string($value) ? stripslashes($value) : $value;
+    }
+}
+if (!function_exists('wp_safe_redirect')) {
+    // Record redirects so PageRouter tests can assert on the target without
+    // actually issuing headers.
+    $GLOBALS['__reach_redirects'] = [];
+    function wp_safe_redirect(string $location, int $status = 302): bool
+    {
+        $GLOBALS['__reach_redirects'][] = ['location' => $location, 'status' => $status];
+        return true;
+    }
+}
+if (!function_exists('wp_validate_redirect')) {
+    function wp_validate_redirect(string $location, string $fallback = ''): string
+    {
+        // Allow same-host and relative URLs; otherwise fall back — a coarse
+        // stand-in for WP's allowed-hosts check, enough for the tests.
+        if ($location === '' || str_starts_with($location, '/')) {
+            return $location !== '' ? $location : $fallback;
+        }
+        $host = parse_url($location, PHP_URL_HOST);
+        return $host === 'example.test' ? $location : $fallback;
+    }
+}
+
 // Minimal WP REST shims. The real classes ship with WordPress; we
 // only need enough surface area to exercise the REST controllers
 // directly from unit tests (parameter access, response construction,
@@ -333,6 +514,10 @@ if (!class_exists('WP_REST_Request')) {
         public function set_param(string $key, mixed $value): void
         {
             $this->params[$key] = $value;
+        }
+        public function get_route(): string
+        {
+            return (string) ($this->params['__route'] ?? '');
         }
     }
 }
@@ -375,14 +560,70 @@ if (!function_exists('rest_ensure_response')) {
 // register() bootstrap, which the unit tests do not exercise.
 // Stubs here just keep them callable in case a future test does.
 if (!function_exists('register_rest_route')) {
-    function register_rest_route(string $namespace, string $route, array $args = []): bool { return true; }
+    // Capture the registered route definitions so tests can assert on them
+    // and exercise the inline sanitize_callback / validate_callback closures.
+    $GLOBALS['__reach_routes'] = [];
+    function register_rest_route(string $namespace, string $route, array $args = []): bool
+    {
+        $GLOBALS['__reach_routes'][] = ['namespace' => $namespace, 'route' => $route, 'args' => $args];
+        return true;
+    }
 }
 if (!function_exists('add_action')) {
-    function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool { return true; }
+    // Record the callback so tests can fire a registered hook (e.g. a
+    // controller's rest_api_init handler, or Plugin's member_deleted closure).
+    $GLOBALS['__reach_hooks'] = [];
+    function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool
+    {
+        $GLOBALS['__reach_hooks'][$hook][] = $callback;
+        return true;
+    }
+}
+if (!function_exists('add_filter')) {
+    $GLOBALS['__reach_filters'] = [];
+    function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool
+    {
+        $GLOBALS['__reach_filters'][$hook][] = $callback;
+        return true;
+    }
+}
+if (!function_exists('is_admin')) {
+    // Flag-driven so a test can exercise the admin-only branch of Plugin::init.
+    function is_admin(): bool { return (bool) ($GLOBALS['__reach_is_admin'] ?? false); }
+}
+if (!function_exists('wp_next_scheduled')) {
+    function wp_next_scheduled(string $hook, array $args = []) { return $GLOBALS['__reach_cron'][$hook] ?? false; }
+}
+if (!function_exists('wp_clear_scheduled_hook')) {
+    function wp_clear_scheduled_hook(string $hook, array $args = []): int
+    {
+        unset($GLOBALS['__reach_cron'][$hook]);
+        return 0;
+    }
+}
+if (!function_exists('dbDelta')) {
+    // The Wpdb repositories call dbDelta() from their install() routines. The
+    // real one diffs and applies schema; tests only need to confirm install()
+    // reaches it without touching a database, so record the SQL and return.
+    $GLOBALS['__reach_dbdelta'] = [];
+    function dbDelta($queries = '', bool $execute = true): array
+    {
+        $GLOBALS['__reach_dbdelta'][] = $queries;
+        return [];
+    }
 }
 if (!function_exists('is_user_logged_in')) {
     function is_user_logged_in(): bool { return false; }
 }
 if (!function_exists('current_user_can')) {
     function current_user_can(string $capability, ...$args): bool { return false; }
+}
+
+// Bring WP_Mock online for the tests that use it. Done last, after every
+// hand-rolled stub above is already defined: WP_Mock only intercepts the
+// functions a test explicitly declares with WP_Mock::userFunction(), so the
+// plain stubs remain the default behaviour for everything else and the
+// existing fake-based tests are unaffected.
+if (class_exists(\WP_Mock::class)) {
+    \WP_Mock::bootstrap();
 }

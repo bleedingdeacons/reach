@@ -10,3 +10,7 @@
 /.phpunit.cache/
 
 /build/
+
+# Local coverage reports: `composer test:coverage` writes the HTML report
+# here, and CI writes the Clover report under build/. Neither belongs in git.
+/tests/coverage/
