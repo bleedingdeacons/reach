@@ -169,6 +169,24 @@ Redirect URIs to register with each provider:
 - Google / Microsoft / Facebook: `https://your-site.example/wp-json/reach/v1/oauth/callback`
 - Apple: `https://your-site.example/reach/signin` (used as the popup origin)
 
+## Testing
+
+Install the dev dependencies and run the suite from the plugin directory:
+
+```bash
+composer install
+```
+
+| Command | Description |
+|---|---|
+| `composer test` | Run the PHPUnit test suite |
+| `composer phpstan` | Run PHPStan static analysis |
+
+Line coverage is reported to [Coveralls](https://coveralls.io/github/bleedingdeacons/reach?branch=main)
+on every CI run — see the coverage badge at the top of this file.
+
+---
+
 ## License
 
 MIT (Modified). See `LICENSE`.
