@@ -14,6 +14,7 @@ use Reach\Auth\PasswordResetResult;
 use Reach\Auth\VerifiedIdentity;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
+use Unity\Members\ResponderCertification;
 
 /**
  * Unit tests for {@see PasswordAuthenticator} — the email + password
@@ -136,6 +137,35 @@ final class PasswordAuthenticatorTest extends TestCase
 
         $this->assertCount(0, $GLOBALS['__reach_mail']);
         $this->assertNull($repo->find('regular@example.com'));
+    }
+
+    public function testBeginResetIsSilentForUncertifiedResponder(): void
+    {
+        $repo = new InMemoryPasswordCredentialRepository();
+        // A telephone responder who is not yet certified is not eligible
+        // for Reach, so a reset request must be silently ignored.
+        $auth = $this->makeAuth($repo, [
+            $this->member('trainee@example.com', twelfth: false, responder: true, certification: ResponderCertification::Pending),
+        ]);
+
+        $auth->beginReset('trainee@example.com', 1000);
+
+        $this->assertCount(0, $GLOBALS['__reach_mail']);
+        $this->assertNull($repo->find('trainee@example.com'));
+    }
+
+    public function testBeginResetProceedsForCertifiedResponder(): void
+    {
+        $repo = new InMemoryPasswordCredentialRepository();
+        // A certified responder is eligible even without the 12th-stepper
+        // role, so the reset email must be sent.
+        $auth = $this->makeAuth($repo, [
+            $this->member('certified@example.com', twelfth: false, responder: true, certification: ResponderCertification::Certified),
+        ]);
+
+        $auth->beginReset('certified@example.com', 1000);
+
+        $this->assertCount(1, $GLOBALS['__reach_mail']);
     }
 
     public function testBeginResetHonoursCooldownThenAllowsResendLater(): void
@@ -269,9 +299,13 @@ final class PasswordAuthenticatorTest extends TestCase
         );
     }
 
-    private function member(string $email, bool $twelfth = true, bool $responder = false): Member
-    {
-        return new PwTestMember($email, $twelfth, $responder);
+    private function member(
+        string $email,
+        bool $twelfth = true,
+        bool $responder = false,
+        ResponderCertification $certification = ResponderCertification::None,
+    ): Member {
+        return new PwTestMember($email, $twelfth, $responder, certification: $certification);
     }
 
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
@@ -392,6 +426,7 @@ final class PwTestMember implements Member
         private bool $twelfth = true,
         private bool $responder = false,
         private int $id = 1,
+        private ResponderCertification $certification = ResponderCertification::None,
     ) {
     }
 
@@ -409,7 +444,7 @@ final class PwTestMember implements Member
     public function getMobileNumber(): string { return ''; }
     public function isTwelfthStepper(): bool { return $this->twelfth; }
     public function isTelephoneResponder(): bool { return $this->responder; }
-    public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
+    public function getResponderCertification(): ResponderCertification { return $this->certification; }
     public function getArea(): string { return ''; }
     public function getAccepts(): array { return []; }
     public function isGdprAccepted(): bool { return true; }

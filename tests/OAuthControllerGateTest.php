@@ -13,6 +13,7 @@ use Reach\Rest\OAuthController;
 use Reach\Session\SessionCookie;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
+use Unity\Members\ResponderCertification;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -90,17 +91,41 @@ final class OAuthControllerGateTest extends TestCase
         $this->assertNull($this->invokeGate($controller, $this->identity('twelfth@example.com')));
     }
 
-    public function testGateAcceptsTelephoneResponderMember(): void
+    public function testGateAcceptsCertifiedTelephoneResponderMember(): void
     {
-        // The whole reason this gate exists: a responder is not
-        // necessarily a 12th-stepper, but must still be allowed to sign
-        // in. If this test fails the gate has slipped back to a
-        // 12th-stepper-only check.
-        $member = $this->stubMember('responder@example.com', twelfth: false, responder: true);
+        // A responder is not necessarily a 12th-stepper, but a certified
+        // one must still be allowed to sign in. If this test fails the
+        // gate has slipped back to a 12th-stepper-only check.
+        $member = $this->stubMember(
+            'responder@example.com',
+            twelfth: false,
+            responder: true,
+            certification: ResponderCertification::Certified,
+        );
 
         $controller = $this->controllerWith(members: [$member]);
 
         $this->assertNull($this->invokeGate($controller, $this->identity('responder@example.com')));
+    }
+
+    public function testGateRejectsUncertifiedTelephoneResponderMember(): void
+    {
+        // A telephone responder who is not yet certified (still Pending)
+        // is not cleared for the helpline and must be turned away, even
+        // though the responder role itself is set.
+        $member = $this->stubMember(
+            'trainee@example.com',
+            twelfth: false,
+            responder: true,
+            certification: ResponderCertification::Pending,
+        );
+
+        $controller = $this->controllerWith(members: [$member]);
+
+        $result = $this->invokeGate($controller, $this->identity('trainee@example.com'));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_not_eligible', $result->get_error_code());
     }
 
     // --- anonymised-email refusal ----------------------------------------
@@ -224,13 +249,18 @@ final class OAuthControllerGateTest extends TestCase
         );
     }
 
-    private function stubMember(string $email, bool $twelfth, bool $responder): Member
-    {
-        return new class($email, $twelfth, $responder) implements Member {
+    private function stubMember(
+        string $email,
+        bool $twelfth,
+        bool $responder,
+        ResponderCertification $certification = ResponderCertification::None,
+    ): Member {
+        return new class($email, $twelfth, $responder, $certification) implements Member {
             public function __construct(
                 private string $email,
                 private bool $twelfth,
                 private bool $responder,
+                private ResponderCertification $certification,
             ) {}
             public function getId(): int { return 1; }
             public function getAnonymousName(): string { return 'Test'; }
@@ -246,7 +276,7 @@ final class OAuthControllerGateTest extends TestCase
             public function getMobileNumber(): string { return ''; }
             public function isTwelfthStepper(): bool { return $this->twelfth; }
             public function isTelephoneResponder(): bool { return $this->responder; }
-            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
+            public function getResponderCertification(): ResponderCertification { return $this->certification; }
             public function getArea(): string { return ''; }
             public function getAccepts(): array { return []; }
             public function isGdprAccepted(): bool { return true; }
