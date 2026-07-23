@@ -230,7 +230,14 @@ spl_autoload_register(function ($class) {
 $unityPath = getenv('UNITY_PATH') ?: dirname(__DIR__, 2) . '/unity';
 $memberInterface = $unityPath . '/src/Members/Interfaces/Member.php';
 $repoInterface   = $unityPath . '/src/Members/Interfaces/MemberRepository.php';
+$certificationEnum = $unityPath . '/src/Members/ResponderCertification.php';
 if (file_exists($memberInterface) && file_exists($repoInterface)) {
+    // Member.php type-hints ResponderCertification (getResponderCertification),
+    // so the real enum has to be loaded alongside the interface — it is a
+    // separate file and there is no Unity autoloader in the test runtime.
+    if (file_exists($certificationEnum)) {
+        require_once $certificationEnum;
+    }
     require_once $memberInterface;
     require_once $repoInterface;
 } elseif (!interface_exists(\Unity\Members\Interfaces\Member::class)) {

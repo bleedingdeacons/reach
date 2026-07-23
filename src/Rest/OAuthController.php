@@ -288,13 +288,19 @@ final class OAuthController
      * Gate sign-in on the member's role.
      *
      * Reach is for members who handle outreach calls — either as 12th-
-     * step volunteers or as telephone responders on the helpline. A
-     * verified identity whose email doesn't match any member, or
-     * matches a member with neither role, is rejected at the sign-in
-     * boundary so the session cookie is never minted. This keeps the
-     * downstream code (NearestMembersController, CallAttemptController)
-     * able to assume any authenticated session belongs to someone
-     * entitled to use Reach.
+     * step volunteers or as certified telephone responders on the
+     * helpline. A telephone responder must hold a current certification
+     * ({@see \Unity\Members\ResponderCertification::isCertified()}); one still working
+     * towards it (Applied, In Training, Pending) is not yet cleared and
+     * is turned away. A verified identity whose email doesn't match any
+     * member, matches a member with neither role, or matches an
+     * uncertified responder, is rejected at the sign-in boundary so the
+     * session cookie is never minted. This keeps the downstream code
+     * (NearestMembersController, CallAttemptController) able to assume
+     * any authenticated session belongs to someone entitled to use Reach.
+     *
+     * Kept in lockstep with the password path's
+     * {@see \Reach\Auth\PasswordAuthenticator::isEligibleMember()}.
      *
      * Returns null when sign-in may proceed, or a WP_Error suitable for
      * returning from the calling REST callback otherwise.
@@ -302,7 +308,10 @@ final class OAuthController
     private function assertMemberAllowed(VerifiedIdentity $identity): ?WP_Error
     {
         $member = $this->members->findByEmail($identity->email);
-        if ($member === null || (!$member->isTwelfthStepper() && !$member->isTelephoneResponder())) {
+        if ($member === null
+            || !($member->isTwelfthStepper()
+                || ($member->isTelephoneResponder()
+                    && $member->getResponderCertification()->isCertified()))) {
             return new WP_Error(
                 'reach_not_eligible',
                 'This account is not registered to use Reach. Please contact your intergroup if you believe this is in error.',
