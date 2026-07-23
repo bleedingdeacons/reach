@@ -242,10 +242,8 @@ enum ResponderCertification: string
     case None = 'None';
     case Applied = 'Applied';
     case InTraining = 'In Training';
-    case CertificationPending = 'Certification Pending';
+    case Pending = 'Pending';
     case Certified = 'Certified';
-    case RecertificationRequired = 'Recertification Required';
-    case Denied = 'Denied';
 }
 
 namespace Unity\Members\Interfaces;
