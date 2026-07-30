@@ -33,41 +33,49 @@ trait HasLogger
         return self::$loggerChannel;
     }
 
+    /** @param array<string, mixed> $context */
     public static function logEmergency(string $message, array $context = []): void
     {
         static::log()?->emergency($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logAlert(string $message, array $context = []): void
     {
         static::log()?->alert($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logCritical(string $message, array $context = []): void
     {
         static::log()?->critical($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logError(string $message, array $context = []): void
     {
         static::log()?->error($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logWarning(string $message, array $context = []): void
     {
         static::log()?->warning($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logNotice(string $message, array $context = []): void
     {
         static::log()?->notice($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logInfo(string $message, array $context = []): void
     {
         static::log()?->info($message, $context);
     }
 
+    /** @param array<string, mixed> $context */
     public static function logDebug(string $message, array $context = []): void
     {
         static::log()?->debug($message, $context);
