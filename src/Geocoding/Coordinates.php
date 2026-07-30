@@ -36,6 +36,9 @@ final class Coordinates
         }
     }
 
+    /**
+     * @return array{latitude: float, longitude: float}
+     */
     public function toArray(): array
     {
         return [

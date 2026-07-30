@@ -43,10 +43,3 @@ parameters:
         - ../scrutiny/src
         - ../sentinel/src
     ignoreErrors:
-        # Level 6 is enforced except for its iterable-value rule, which is
-        # being adopted incrementally: what remains is all bare `array`
-        # needing `array<K, V>`. Everything else level 6 checks — missing
-        # parameter and return types — is gated now. Delete this entry once
-        # this plugin reports zero, so the level can never quietly slip back.
-        -
-            identifier: missingType.iterableValue
