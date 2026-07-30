@@ -17,3 +17,9 @@
 
 # JetBrains IDE files
 .idea/
+
+# PHPStan
+# phpstan.neon (no .dist) is a local override that wins over the committed
+# phpstan.neon.dist outright — PHPStan takes the first file it finds and does
+# not merge them. Ignored so a personal tweak cannot be committed by accident.
+/phpstan.neon
