@@ -291,6 +291,8 @@ final class PostcodesIoGeocoder implements Geocoder
      * Pull lat/lng out of a postcodes.io result row. The field names are
      * identical across the postcode, outcode, and place endpoints
      * (`latitude` / `longitude`), so one helper covers all three.
+     *
+     * @param array<string, mixed> $result A decoded postcodes.io result row.
      */
     private function coordsFromResult(array $result): ?Coordinates
     {
@@ -316,6 +318,8 @@ final class PostcodesIoGeocoder implements Geocoder
      * Do an HTTP GET and decode JSON. Returns null on any error — network,
      * non-2xx, or invalid JSON — and logs at debug level so a routine
      * "postcode not found" 404 does not spam the log.
+     *
+     * @return array<string, mixed>|null The decoded body, or null on any error.
      */
     private function fetchJson(string $url): ?array
     {

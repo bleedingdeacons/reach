@@ -241,6 +241,9 @@ final class NearestMembersController
         ], 200);
     }
 
+    /**
+     * @return array{count: int, members: array<int, array<string, mixed>>}
+     */
     private function projectResponse(ResolutionResult $result): array
     {
         $now = time();

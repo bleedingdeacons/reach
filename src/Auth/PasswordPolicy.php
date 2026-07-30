@@ -114,7 +114,11 @@ final class PasswordPolicy
         return null;
     }
 
-    /** Convenience boolean form of {@see validate()}. */
+    /**
+     * Convenience boolean form of {@see validate()}.
+     *
+     * @param array{email?: string} $context
+     */
     public function isAcceptable(string $password, array $context = []): bool
     {
         return $this->validate($password, $context) === null;
@@ -125,6 +129,8 @@ final class PasswordPolicy
      * attacker would try early: the member's email (or its local-part) or
      * the site name. Terms shorter than 4 characters are ignored to avoid
      * rejecting passwords that merely happen to contain a short fragment.
+     *
+     * @param array{email?: string} $context
      */
     private function matchesContext(string $normalised, array $context): bool
     {

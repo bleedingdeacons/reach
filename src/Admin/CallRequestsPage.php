@@ -198,6 +198,8 @@ final class CallRequestsPage
      * stored name is the member's anonymous name when there is one; we
      * fall back to the WP display name (and 0 for the id) otherwise, so
      * the list always shows who actioned a request.
+     *
+     * @return array{int, string} The member id (0 when unmatched) and display name.
      */
     private function actingMember(): array
     {
