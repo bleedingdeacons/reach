@@ -191,9 +191,13 @@ final class WpdbCallAttemptRepository implements CallAttemptRepository
         $params[] = $limit;
         $params[] = $offset;
 
-        $rows = $params === []
-            ? $this->wpdb->get_results($sql, ARRAY_A)
-            : $this->wpdb->get_results($this->wpdb->prepare($sql, ...$params), ARRAY_A);
+        // Always prepared: the two appends above mean $params is never empty
+        // here, whatever buildWhere() returned, and $sql always carries the
+        // LIMIT/OFFSET placeholders they fill. This used to branch on
+        // `$params === []` and fall back to an unprepared get_results() —
+        // dead code that would have emitted literal "%d" into the query had
+        // it ever been reached.
+        $rows = $this->wpdb->get_results($this->wpdb->prepare($sql, ...$params), ARRAY_A);
 
         if (!is_array($rows)) {
             return [];
