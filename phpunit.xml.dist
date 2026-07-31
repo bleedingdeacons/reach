@@ -6,12 +6,16 @@
     the suite could only be run by passing the bootstrap file and a path on
     the command line by hand. Nothing in CI ran it at all.
 
-    Schema is 9.6: the suite is pinned to PHPUnit ^9.6 (with wp_mock 1.1.1),
-    matching the rest of the plugin suite. Coverage include/exclude therefore
-    lives in <coverage>, not the 10.x <source> element.
+    Schema is 10.5. Coverage include/exclude therefore lives in <source>,
+    not the 9.x <coverage> element.
+
+    It read 9.6 until wp_mock was dropped, and said so: the suite was "pinned
+    to PHPUnit ^9.6 (with wp_mock 1.1.1)". That pin came from wp_mock's own
+    require block, which names "phpunit/phpunit": "^9.6" and has no PHPUnit 10
+    branch — and Reach never called wp_mock at all.
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
          bootstrap="tests/bootstrap.php"
          colors="true"
          cacheResultFile=".phpunit.result.cache"
@@ -24,7 +28,7 @@
         </testsuite>
     </testsuites>
 
-    <coverage>
+    <source>
         <include>
             <directory suffix=".php">src</directory>
         </include>
@@ -38,5 +42,5 @@
             -->
             <directory>src/Admin</directory>
         </exclude>
-    </coverage>
+    </source>
 </phpunit>
