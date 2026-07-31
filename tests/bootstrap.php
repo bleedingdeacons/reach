@@ -6,13 +6,11 @@ declare(strict_types=1);
  * Test bootstrap for Reach.
  */
 
-// Composer autoloader — brings in WP_Mock (10up/wp_mock 1.1.1), Mockery and
-// Patchwork. The suite is predominantly built on the hand-rolled WordPress
-// function stubs and in-memory fakes defined below (they keep the fast,
-// dependency-light unit tests the plugin has always had), but WP_Mock is
-// available for tests that want to assert on WordPress function calls
-// directly. Guarded so the suite still loads with a clear message if
-// `composer install` has not been run.
+// Composer autoloader — brings in Mockery. The suite is built on the
+// hand-rolled WordPress function stubs and in-memory fakes defined below,
+// which keep the fast, dependency-light unit tests the plugin has always had.
+// Guarded so the suite still loads with a clear message if `composer install`
+// has not been run.
 $autoloader = dirname(__DIR__) . '/vendor/autoload.php';
 if (is_file($autoloader)) {
     require_once $autoloader;
@@ -624,11 +622,20 @@ if (!function_exists('current_user_can')) {
     function current_user_can(string $capability, ...$args): bool { return false; }
 }
 
-// Bring WP_Mock online for the tests that use it. Done last, after every
-// hand-rolled stub above is already defined: WP_Mock only intercepts the
-// functions a test explicitly declares with WP_Mock::userFunction(), so the
-// plain stubs remain the default behaviour for everything else and the
-// existing fake-based tests are unaffected.
-if (class_exists(\WP_Mock::class)) {
-    \WP_Mock::bootstrap();
-}
+// No mocking library is bootstrapped here, deliberately.
+//
+// WP_Mock used to be brought online at this point "for the tests that use
+// it" — but no test ever did: the only references to it in this repo were the
+// require-dev entry and the bootstrap call itself. The suite is built entirely
+// on the hand-rolled stubs above and the in-memory fakes, which is what keeps
+// it fast and dependency-light.
+//
+// That unused dependency was not free. 10up/wp_mock 1.1.1 declares
+// "phpunit/phpunit": "^9.6" in its own require block and has no PHPUnit 10
+// branch, so this repo's "^9.6|^10.0" always resolved to 9.6 — the suite was
+// held a major version back by a library it never called.
+//
+// If a test here ever does need to assert on WordPress function calls, the
+// suite-wide answer is bleedingdeacons/wp-mocks (Brain Monkey underneath).
+// Adding it would mean loading Patchwork before the stubs above, since
+// Patchwork cannot redefine a function whose file was included first.

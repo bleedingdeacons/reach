@@ -41,10 +41,9 @@
         "phpstan": "phpstan analyse --memory-limit=1G"
     },
     "require-dev": {
-        "10up/wp_mock": "1.1.1",
         "mockery/mockery": "^1.6",
         "phpstan/phpstan": "^2.0",
-        "phpunit/phpunit": "^9.6|^10.0",
+        "phpunit/phpunit": "^10.5",
         "psr/container": "^2.0",
         "szepeviktor/phpstan-wordpress": "^2.0"
     }
