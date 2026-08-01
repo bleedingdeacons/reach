@@ -17,6 +17,8 @@ use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';
 require_once __DIR__ . '/PasswordAuthControllerGateTest.php'; // NullAuditLogger
@@ -116,7 +118,7 @@ final class CallAttemptControllerTest extends ReachTestCase
         $repo  = new SpyCallAttemptRepository();
         $audit = new SpyAuditLogger();
         // The viewer resolves to a member (anonymous name 'Test', id 1).
-        $members = new PwTestMemberRepository([new PwTestMember('viewer@example.com', true, true, 1)]);
+        $members = new InMemoryMemberRepository([new MemberStub('viewer@example.com', true, true, 1)]);
         $controller = $this->makeController($repo, $audit, $members);
 
         $token = $this->minter->mint('viewer@example.com', 42, time());
@@ -157,7 +159,7 @@ final class CallAttemptControllerTest extends ReachTestCase
         $this->seedSession('ghost@example.com');
         $repo  = new SpyCallAttemptRepository();
         $audit = new SpyAuditLogger();
-        $controller = $this->makeController($repo, $audit, new PwTestMemberRepository([]));
+        $controller = $this->makeController($repo, $audit, new InMemoryMemberRepository([]));
 
         $token = $this->minter->mint('ghost@example.com', 7, time());
 
@@ -185,7 +187,7 @@ final class CallAttemptControllerTest extends ReachTestCase
             $this->minter,
             new CurrentSession(new SessionCookie()),
             $audit ?? new NullAuditLogger(),
-            $members ?? new PwTestMemberRepository([]),
+            $members ?? new InMemoryMemberRepository([]),
         );
     }
 

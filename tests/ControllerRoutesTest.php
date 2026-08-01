@@ -22,11 +22,16 @@ use Unity\Members\Interfaces\MemberViewFactory;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Unity\Testing\Doubles\FakeContainer;
+use Reach\Tests\Fixtures\FakeMemberViewFactory;
 
+// Doubles still defined at the bottom of other test files. Two entries have
+// gone from this list: the member stub and its repository now come from
+// Reach\Tests\Fixtures and Unity\Testing\Doubles, and the container and view
+// factory likewise — all of which autoload, so there is nothing to require.
 require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php';   // WpdbStub
-require_once __DIR__ . '/PasswordAuthenticatorTest.php';       // PwTestMember(Repository)
 require_once __DIR__ . '/PasswordAuthControllerGateTest.php';  // NullAuditLogger
-require_once __DIR__ . '/ContainerWiringTest.php';             // FakeContainer, FakeMemberViewFactory
 
 /**
  * Exercise the REST route wiring for every controller: register() hangs the
@@ -56,7 +61,7 @@ final class ControllerRoutesTest extends ReachTestCase
         $_COOKIE = [];
 
         $this->container = new FakeContainer([
-            MemberRepository::class  => new PwTestMemberRepository([]),
+            MemberRepository::class  => new InMemoryMemberRepository([]),
             AuditLogger::class       => new NullAuditLogger(),
             MemberViewFactory::class => new FakeMemberViewFactory(),
         ]);

@@ -19,6 +19,8 @@ use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 // Reuse the Member/MemberRepository fakes rather than redeclaring them.
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';
@@ -86,10 +88,10 @@ final class CallRequestControllerTest extends ReachTestCase
     {
         $this->seedSession('responder@example.com', 'google');
         $repo = new SpyCallRequestRepository();
-        // PwTestMember resolves getAnonymousName() to 'Test', so that is the
+        // MemberStub resolves getAnonymousName() to 'Test', so that is the
         // responder identifier stored on the (non-identifying) tracking row.
-        $members = new PwTestMemberRepository([
-            new PwTestMember('responder@example.com'),
+        $members = new InMemoryMemberRepository([
+            new MemberStub('responder@example.com'),
         ]);
         $settings = new Settings();
         $settings->setCallRequestEmail('ops@example.com');
@@ -181,7 +183,7 @@ final class CallRequestControllerTest extends ReachTestCase
         $settings->setCallRequestEmail('ops@example.com');
         // Empty member repo: no anonymous name to resolve, so the email is
         // stored as the responder identifier.
-        $controller = $this->makeController($repo, $settings, new PwTestMemberRepository([]));
+        $controller = $this->makeController($repo, $settings, new InMemoryMemberRepository([]));
 
         $controller->create($this->request([
             'gender'       => 'female',
@@ -204,7 +206,7 @@ final class CallRequestControllerTest extends ReachTestCase
         return new CallRequestController(
             $repo ?? new SpyCallRequestRepository(),
             new CurrentSession(new SessionCookie()),
-            $members ?? new PwTestMemberRepository([]),
+            $members ?? new InMemoryMemberRepository([]),
             new CallRequestMailer($settings),
         );
     }

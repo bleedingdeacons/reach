@@ -10,6 +10,8 @@ use Reach\Geocoding\Geocoder;
 use Reach\Resolution\NearestMembersResolver;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
  * Exercises the resolver against an in-memory fixture. Geocoder and
@@ -131,65 +133,16 @@ final class NearestMembersResolverTest extends ReachTestCase
 
     private function stubMember(int $id, string $name, bool $twelfth, array $accepts, string $area): Member
     {
-        return new class($id, $name, $twelfth, $accepts, $area) implements Member {
-            public function __construct(
-                private int $id, private string $name, private bool $twelfth,
-                private array $accepts, private string $area,
-            ) {}
-            public function getId(): int { return $this->id; }
-            public function getAnonymousName(): string { return $this->name; }
-            public function showAnonymousName(): bool { return true; }
-            public function showMemberProfile(): bool { return true; }
-            public function getAnonymousProfile(): string { return ''; }
-            public function getIntergroupPosition(): int { return 0; }
-            public function getIntergroupPositionRotation(): string { return ''; }
-            public function getHomeGroup(): int { return 0; }
-            public function isGSR(): bool { return false; }
-            public function getMeetingPO(): mixed { return null; }
-            public function getPersonalEmail(): string { return ''; }
-            public function getMobileNumber(): string { return ''; }
-            public function isTwelfthStepper(): bool { return $this->twelfth; }
-            public function isTelephoneResponder(): bool { return false; }
-            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
-            public function getArea(): string { return $this->area; }
-            public function getAccepts(): array { return $this->accepts; }
-            public function isGdprAccepted(): bool { return true; }
-            public function getGdprAcceptedAt(): string { return ''; }
-            public function getGdprAcceptanceVersion(): string { return ''; }
-            public function getGdprAcceptanceMethod(): string { return ''; }
-            public function getGdprAcceptanceStatement(): string { return ''; }
-            public function getUpdated(): string { return ''; }
-        };
+        return new MemberStub(
+            id: $id,
+            anonymousName: $name,
+            twelfthStepper: $twelfth,
+            area: $area,
+            accepts: $accepts,
+        );
     }
 }
 
-final class InMemoryMemberRepository implements MemberRepository
-{
-    public function __construct(private array $members) {}
-    public function findById(int $id): ?Member
-    {
-        foreach ($this->members as $m) {
-            if ($m->getId() === $id) return $m;
-        }
-        return null;
-    }
-    public function findByEmail(string $email): ?Member
-    {
-        foreach ($this->members as $m) {
-            if (strcasecmp($m->getPersonalEmail(), $email) === 0) return $m;
-        }
-        return null;
-    }
-    public function findAll(array $args = []): array { return $this->members; }
-    public function findTelephoneResponders(): array {
-        return array_values(array_filter($this->members, fn($m) => $m->isTelephoneResponder()));
-    }
-    public function count(array $args = []): int { return count($this->members); }
-    public function create(string $anonymousName): int { return 0; }
-    public function save(Member $member): bool { return true; }
-    public function delete(int $id): bool { return true; }
-    public function update(Member $member): bool { return true; }
-}
 
 final class StubGeocoder implements Geocoder
 {

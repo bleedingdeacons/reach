@@ -9,8 +9,10 @@ use Reach\Geocoding\Coordinates;
 use Reach\Resolution\NearestMembersResolver;
 use Reach\Resolution\ScoredMember;
 use Unity\Members\Interfaces\Member;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
-require_once __DIR__ . '/NearestMembersControllerTest.php'; // ControllerStubGeocoder, ControllerMemberRepository
+require_once __DIR__ . '/NearestMembersControllerTest.php'; // ControllerStubGeocoder, InMemoryMemberRepository
 
 /**
  * Behavioural cover for {@see NearestMembersResolver} beyond the base
@@ -40,7 +42,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
             $this->member(1, 'NEAR', ['female'], true),
             $this->member(2, 'MID', ['male'], true),
         ];
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         // Caller wants only members who accept female callers.
         $result = $resolver->resolve('BS1', ['Female'], 10);
@@ -56,7 +58,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
             $this->member(1, 'MID', ['female'], true),
             $this->member(2, 'NEAR', ['male'], true),
         ];
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         $result = $resolver->resolve('BS1', ['Female'], 10, null, true);
 
@@ -73,7 +75,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
     public function testEmptyFilterMakesEveryMemberPreferred(): void
     {
         $members = [$this->member(1, 'NEAR', [], true)];
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         $result = $resolver->resolve('BS1', [], 10);
         $this->assertTrue($result->members[0]->preferred);
@@ -84,7 +86,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
         // The member covers Kingswood|Hanham; the resolver attributes them to
         // whichever entry is closest to the origin and surfaces that string.
         $members = [$this->member(1, 'Kingswood|Hanham', [], true)];
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         $result = $resolver->resolve('BS1', [], 10);
 
@@ -98,7 +100,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
             $this->member(1, 'NEAR', [], true),
             $this->member(2, 'FAR', [], true),
         ];
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         // 10 km cap: NEAR (~1 km) stays, FAR (~22 km) is dropped.
         $result = $resolver->resolve('BS1', [], 10, 10.0);
@@ -113,7 +115,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
             $this->member(2, 'ATLANTIS', [], true),    // not in the geocoder
             $this->member(3, 'NEAR', [], true),        // fine
         ];
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         $result = $resolver->resolve('BS1', [], 10);
         $ids = array_map(static fn(ScoredMember $s) => $s->member->getId(), $result->members);
@@ -123,7 +125,7 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
     public function testNonTwelfthSteppersAreExcluded(): void
     {
         $members = [$this->member(1, 'NEAR', [], false)]; // not a 12th-stepper
-        $resolver = new NearestMembersResolver(new ControllerMemberRepository($members), $this->geocoder());
+        $resolver = new NearestMembersResolver(new InMemoryMemberRepository($members), $this->geocoder());
 
         $result = $resolver->resolve('BS1', [], 10);
         $this->assertCount(0, $result->members);
@@ -134,38 +136,13 @@ final class NearestMembersResolverExtraTest extends ReachTestCase
      */
     private function member(int $id, string $area, array $accepts, bool $twelfth): Member
     {
-        return new class ($id, $area, $accepts, $twelfth) implements Member {
-            /** @param array<int, string> $accepts */
-            public function __construct(
-                private int $id,
-                private string $area,
-                private array $accepts,
-                private bool $twelfth,
-            ) {
-            }
-            public function getId(): int { return $this->id; }
-            public function getAnonymousName(): string { return 'M' . $this->id; }
-            public function showAnonymousName(): bool { return true; }
-            public function showMemberProfile(): bool { return true; }
-            public function getAnonymousProfile(): string { return ''; }
-            public function getIntergroupPosition(): int { return 0; }
-            public function getIntergroupPositionRotation(): string { return ''; }
-            public function getHomeGroup(): int { return 0; }
-            public function isGSR(): bool { return false; }
-            public function getMeetingPO(): mixed { return null; }
-            public function getPersonalEmail(): string { return 'm' . $this->id . '@example.com'; }
-            public function getMobileNumber(): string { return ''; }
-            public function isTwelfthStepper(): bool { return $this->twelfth; }
-            public function isTelephoneResponder(): bool { return false; }
-            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
-            public function getArea(): string { return $this->area; }
-            public function getAccepts(): array { return $this->accepts; }
-            public function isGdprAccepted(): bool { return true; }
-            public function getGdprAcceptedAt(): string { return ''; }
-            public function getGdprAcceptanceVersion(): string { return ''; }
-            public function getGdprAcceptanceMethod(): string { return ''; }
-            public function getGdprAcceptanceStatement(): string { return ''; }
-            public function getUpdated(): string { return ''; }
-        };
+        return new MemberStub(
+            id: $id,
+            anonymousName: 'M' . $id,
+            personalEmail: 'm' . $id . '@example.com',
+            twelfthStepper: $twelfth,
+            area: $area,
+            accepts: $accepts,
+        );
     }
 }

@@ -17,6 +17,8 @@ use Unity\Members\Interfaces\Member;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 // Reuse the in-memory credential repo + member fakes from the authenticator
 // test rather than redeclaring them here.
@@ -56,19 +58,19 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
 
     public function testGateRejectsMemberWithNeitherRole(): void
     {
-        $controller = $this->controllerWith([new PwTestMember('regular@example.com', false, false)]);
+        $controller = $this->controllerWith([new MemberStub('regular@example.com', false, false)]);
         $this->assertNull($this->invokeGate($controller, 'regular@example.com'));
     }
 
     public function testGateAcceptsTwelfthStepper(): void
     {
-        $controller = $this->controllerWith([new PwTestMember('twelfth@example.com', true, false)]);
+        $controller = $this->controllerWith([new MemberStub('twelfth@example.com', true, false)]);
         $this->assertInstanceOf(Member::class, $this->invokeGate($controller, 'twelfth@example.com'));
     }
 
     public function testGateAcceptsTelephoneResponder(): void
     {
-        $controller = $this->controllerWith([new PwTestMember('responder@example.com', false, true)]);
+        $controller = $this->controllerWith([new MemberStub('responder@example.com', false, true)]);
         $this->assertInstanceOf(Member::class, $this->invokeGate($controller, 'responder@example.com'));
     }
 
@@ -76,7 +78,7 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
 
     public function testLoginReturnsGeneric401ForUnknownCredentials(): void
     {
-        $controller = $this->controllerWith([new PwTestMember('user@example.com')]);
+        $controller = $this->controllerWith([new MemberStub('user@example.com')]);
 
         $result = $controller->login(new WP_REST_Request([
             'email'    => 'user@example.com',
@@ -95,7 +97,7 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
         $repo = new InMemoryPasswordCredentialRepository();
         $repo->seedPassword('ex@example.com', 'correcthorse10');
         $controller = $this->controllerWith(
-            [new PwTestMember('ex@example.com', false, false)],
+            [new MemberStub('ex@example.com', false, false)],
             $repo,
         );
 
@@ -124,7 +126,7 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
 
     public function testSetPasswordRejectsWeakPassword(): void
     {
-        $controller = $this->controllerWith([new PwTestMember('user@example.com')]);
+        $controller = $this->controllerWith([new MemberStub('user@example.com')]);
 
         // Get a genuinely valid token via the reset request so it's the weak
         // password — not a bad token — that gets rejected (422, not 400).
@@ -143,7 +145,7 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
 
     public function testSetPasswordRejectsInvalidToken(): void
     {
-        $controller = $this->controllerWith([new PwTestMember('user@example.com')]);
+        $controller = $this->controllerWith([new MemberStub('user@example.com')]);
 
         $result = $controller->setPassword(new WP_REST_Request([
             'token'    => 'not-a-real-token',
@@ -163,7 +165,7 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
     private function controllerWith(array $members, ?InMemoryPasswordCredentialRepository $repo = null): PasswordAuthController
     {
         $repo    = $repo ?? new InMemoryPasswordCredentialRepository();
-        $members = new PwTestMemberRepository($members);
+        $members = new InMemoryMemberRepository($members);
         $auth    = new PasswordAuthenticator($repo, $members, new PasswordResetMailer(), new PasswordPolicy());
 
         return new PasswordAuthController($auth, new SessionCookie(), $members, new NullAuditLogger(), new RateLimiter());

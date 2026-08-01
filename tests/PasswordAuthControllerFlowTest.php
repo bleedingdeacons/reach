@@ -15,8 +15,10 @@ use Reach\Session\SessionCookie;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
-require_once __DIR__ . '/PasswordAuthenticatorTest.php';       // InMemoryPasswordCredentialRepository, PwTestMember(Repository)
+require_once __DIR__ . '/PasswordAuthenticatorTest.php';       // InMemoryPasswordCredentialRepository, MemberStub(Repository)
 require_once __DIR__ . '/PasswordAuthControllerGateTest.php';  // NullAuditLogger
 require_once __DIR__ . '/NearestMembersControllerTest.php';    // RecordingAuditLogger
 
@@ -47,7 +49,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
         $repo = new InMemoryPasswordCredentialRepository();
         $repo->seedPassword('user@example.com', 'correcthorse10');
         $audit = new RecordingAuditLogger();
-        $controller = $this->controller([new PwTestMember('user@example.com')], $repo, $audit);
+        $controller = $this->controller([new MemberStub('user@example.com')], $repo, $audit);
 
         $result = $controller->login(new WP_REST_Request([
             'email'    => 'user@example.com',
@@ -75,7 +77,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
 
         $repo = new InMemoryPasswordCredentialRepository();
         $repo->seedPassword('user@example.com', 'correcthorse10');
-        $controller = $this->controller([new PwTestMember('user@example.com')], $repo);
+        $controller = $this->controller([new MemberStub('user@example.com')], $repo);
 
         $result = $controller->login(new WP_REST_Request([
             'email'    => 'user@example.com',
@@ -95,7 +97,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
             $rl->overLimit('reset:203.0.113.9', 10, 60 * 60);
         }
 
-        $controller = $this->controller([new PwTestMember('user@example.com')]);
+        $controller = $this->controller([new MemberStub('user@example.com')]);
 
         $result = $controller->requestReset(new WP_REST_Request(['email' => 'user@example.com']));
 
@@ -108,7 +110,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
 
     public function testSetPasswordSuccessSignsEligibleMemberIn(): void
     {
-        $controller = $this->controller([new PwTestMember('user@example.com')]);
+        $controller = $this->controller([new MemberStub('user@example.com')]);
 
         // Get a genuine reset token via the request-reset flow.
         $controller->requestReset(new WP_REST_Request(['email' => 'user@example.com']));
@@ -137,7 +139,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
         ?\Scrutiny\Audit\Interfaces\AuditLogger $audit = null,
     ): PasswordAuthController {
         $repo    = $repo ?? new InMemoryPasswordCredentialRepository();
-        $memRepo = new PwTestMemberRepository($members);
+        $memRepo = new InMemoryMemberRepository($members);
         $auth    = new PasswordAuthenticator($repo, $memRepo, new PasswordResetMailer(), new PasswordPolicy());
 
         return new PasswordAuthController(

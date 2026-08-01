@@ -16,6 +16,8 @@ use Reach\Auth\VerifiedIdentity;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\ResponderCertification;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
  * Unit tests for {@see PasswordAuthenticator} — the email + password
@@ -296,7 +298,7 @@ final class PasswordAuthenticatorTest extends ReachTestCase
     {
         return new PasswordAuthenticator(
             $repo,
-            new PwTestMemberRepository($members),
+            new InMemoryMemberRepository($members),
             new PasswordResetMailer(),
             new PasswordPolicy(),
         );
@@ -308,7 +310,7 @@ final class PasswordAuthenticatorTest extends ReachTestCase
         bool $responder = false,
         ResponderCertification $certification = ResponderCertification::None,
     ): Member {
-        return new PwTestMember($email, $twelfth, $responder, certification: $certification);
+        return new MemberStub($email, $twelfth, $responder, responderCertification: $certification);
     }
 
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
@@ -418,85 +420,4 @@ final class InMemoryPasswordCredentialRepository implements PasswordCredentialRe
     }
 }
 
-/**
- * Minimal Member fake for the password tests. Distinct class name from the
- * other suites' fakes so all can coexist in one PHPUnit run.
- */
-final class PwTestMember implements Member
-{
-    public function __construct(
-        private string $email,
-        private bool $twelfth = true,
-        private bool $responder = false,
-        private int $id = 1,
-        private ResponderCertification $certification = ResponderCertification::None,
-    ) {
-    }
 
-    public function getId(): int { return $this->id; }
-    public function getAnonymousName(): string { return 'Test'; }
-    public function showAnonymousName(): bool { return true; }
-    public function showMemberProfile(): bool { return true; }
-    public function getAnonymousProfile(): string { return ''; }
-    public function getIntergroupPosition(): int { return 0; }
-    public function getIntergroupPositionRotation(): string { return ''; }
-    public function getHomeGroup(): int { return 0; }
-    public function isGSR(): bool { return false; }
-    public function getMeetingPO(): mixed { return null; }
-    public function getPersonalEmail(): string { return $this->email; }
-    public function getMobileNumber(): string { return ''; }
-    public function isTwelfthStepper(): bool { return $this->twelfth; }
-    public function isTelephoneResponder(): bool { return $this->responder; }
-    public function getResponderCertification(): ResponderCertification { return $this->certification; }
-    public function getArea(): string { return ''; }
-    public function getAccepts(): array { return []; }
-    public function isGdprAccepted(): bool { return true; }
-    public function getGdprAcceptedAt(): string { return ''; }
-    public function getGdprAcceptanceVersion(): string { return ''; }
-    public function getGdprAcceptanceMethod(): string { return ''; }
-    public function getGdprAcceptanceStatement(): string { return ''; }
-    public function getUpdated(): string { return ''; }
-}
-
-/**
- * Minimal MemberRepository fake for the password tests. Unique class name
- * so it can live alongside the other suites' member-repository fakes.
- */
-final class PwTestMemberRepository implements MemberRepository
-{
-    /** @param array<int, Member> $members */
-    public function __construct(private array $members)
-    {
-    }
-
-    public function findById(int $id): ?Member
-    {
-        foreach ($this->members as $m) {
-            if ($m->getId() === $id) {
-                return $m;
-            }
-        }
-        return null;
-    }
-
-    public function findByEmail(string $email): ?Member
-    {
-        foreach ($this->members as $m) {
-            if (strcasecmp($m->getPersonalEmail(), $email) === 0) {
-                return $m;
-            }
-        }
-        return null;
-    }
-
-    public function findAll(array $args = []): array { return $this->members; }
-    public function findTelephoneResponders(): array
-    {
-        return array_values(array_filter($this->members, fn($m) => $m->isTelephoneResponder()));
-    }
-    public function count(array $args = []): int { return count($this->members); }
-    public function create(string $anonymousName): int { return 0; }
-    public function save(Member $member): bool { return true; }
-    public function delete(int $id): bool { return true; }
-    public function update(Member $member): bool { return true; }
-}

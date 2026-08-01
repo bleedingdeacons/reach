@@ -67,125 +67,42 @@ spl_autoload_register(function ($class) {
     }
 });
 
-// Unity interfaces. The resolver and a few admin classes typehint
-// against Unity\Members\Interfaces\{Member, MemberRepository, ...}, so
-// the test suite needs those interfaces on the classpath.
+// Unity. The resolver, the controllers and several admin classes type-hint
+// Unity\Members\Interfaces\{Member, MemberRepository, MemberViewFactory} and
+// Unity\Core\Interfaces\Container, and the fixtures extend the test doubles
+// Unity ships at Unity\Testing\Doubles. A PSR-4 autoloader over the sibling
+// checkout covers all of it; UNITY_PATH overrides the default location.
 //
-// First choice: load them from a sibling Unity checkout. UNITY_PATH
-// overrides the default location.
-//
-// Fallback: define a minimal stub inline so the suite runs out of the
-// box for a contributor who doesn't have Unity checked out next door.
-// The stub mirrors the real Unity interface shape closely enough for
-// the resolver pipeline tests; tests that rely on richer Unity
-// behaviour should set UNITY_PATH.
+// This used to load three named interface files and, failing that, eval() a
+// hand-written copy of Member, MemberRepository, Container, MemberViewFactory
+// and ResponderCertification so the suite would run from a bare clone. That
+// fallback is gone. Its own comment described the failure mode it caused --
+// "tests that rely on richer Unity behaviour should set UNITY_PATH" -- and a
+// copy of a contract owned elsewhere, never exercised in CI (which always
+// checks Unity out), is exactly how this suite came to be broken before. It
+// could not supply the doubles in any case.
 $unityPath = getenv('UNITY_PATH') ?: dirname(__DIR__, 2) . '/unity';
-$memberInterface = $unityPath . '/src/Members/Interfaces/Member.php';
-$repoInterface   = $unityPath . '/src/Members/Interfaces/MemberRepository.php';
-$certificationEnum = $unityPath . '/src/Members/ResponderCertification.php';
-if (file_exists($memberInterface) && file_exists($repoInterface)) {
-    // Member.php type-hints ResponderCertification (getResponderCertification),
-    // so the real enum has to be loaded alongside the interface — it is a
-    // separate file and there is no Unity autoloader in the test runtime.
-    if (file_exists($certificationEnum)) {
-        require_once $certificationEnum;
+$unitySrc  = $unityPath . '/src';
+
+if (!is_dir($unitySrc)) {
+    fwrite(STDERR, PHP_EOL . 'ERROR: Unity plugin source not found at ' . $unitySrc . PHP_EOL
+        . "Reach is built on Unity's interfaces and test doubles, so the Unity plugin" . PHP_EOL
+        . 'must be checked out as a sibling directory (or UNITY_PATH set) for this' . PHP_EOL
+        . 'suite to run.' . PHP_EOL . PHP_EOL);
+    exit(1);
+}
+
+spl_autoload_register(static function (string $class) use ($unitySrc): void {
+    if (!str_starts_with($class, 'Unity\\')) {
+        return;
     }
-    require_once $memberInterface;
-    require_once $repoInterface;
-} elseif (!interface_exists(\Unity\Members\Interfaces\Member::class)) {
-    eval(<<<'PHP'
-namespace Unity\Members;
 
-enum ResponderCertification: string
-{
-    case None = 'None';
-    case Applied = 'Applied';
-    case InTraining = 'In Training';
-    case Pending = 'Pending';
-    case Certified = 'Certified';
-}
+    $file = $unitySrc . '/' . str_replace('\\', '/', substr($class, strlen('Unity\\'))) . '.php';
 
-namespace Unity\Members\Interfaces;
-
-interface Member
-{
-    public function getId(): int;
-    public function getAnonymousName(): string;
-    public function showAnonymousName(): bool;
-    public function showMemberProfile(): bool;
-    public function getAnonymousProfile(): string;
-    public function getIntergroupPosition(): int;
-    public function getIntergroupPositionRotation(): string;
-    public function getHomeGroup(): int;
-    public function isGSR(): bool;
-    public function getMeetingPO(): mixed;
-    public function getPersonalEmail(): string;
-    public function getMobileNumber(): string;
-    public function isTwelfthStepper(): bool;
-    public function isTelephoneResponder(): bool;
-    public function getResponderCertification(): \Unity\Members\ResponderCertification;
-    public function getArea(): string;
-    public function getAccepts(): array;
-    public function isGdprAccepted(): bool;
-    public function getGdprAcceptedAt(): string;
-    public function getGdprAcceptanceVersion(): string;
-    public function getGdprAcceptanceMethod(): string;
-    public function getGdprAcceptanceStatement(): string;
-    public function getUpdated(): string;
-}
-
-interface MemberRepository
-{
-    public function findById(int $id): ?Member;
-    public function findByEmail(string $email): ?Member;
-    public function findAll(array $args = []): array;
-    public function findTelephoneResponders(): array;
-    public function count(array $args = []): int;
-    public function create(string $anonymousName): int;
-    public function save(Member $member): bool;
-    public function delete(int $id): bool;
-    public function update(Member $member): bool;
-}
-PHP
-    );
-}
-
-// Unity container + member-view interfaces. ReachServiceProvider registers
-// its services against Unity\Core\Interfaces\Container, and a few admin-page
-// factories type-hint Unity\Members\Interfaces\MemberViewFactory. Load them
-// from the sibling Unity checkout, or fall back to minimal stubs.
-$containerInterface = $unityPath . '/src/Core/Interfaces/Container.php';
-if (file_exists($containerInterface)) {
-    require_once $containerInterface;
-} elseif (!interface_exists(\Unity\Core\Interfaces\Container::class)) {
-    eval(<<<'PHP'
-namespace Unity\Core\Interfaces;
-
-use Psr\Container\ContainerInterface;
-
-interface Container extends ContainerInterface
-{
-    public function register(string $id, callable $factory): void;
-    public function get(string $id): mixed;
-}
-PHP
-    );
-}
-
-$viewFactoryInterface = $unityPath . '/src/Members/Interfaces/MemberViewFactory.php';
-if (file_exists($viewFactoryInterface)) {
-    require_once $viewFactoryInterface;
-} elseif (!interface_exists(\Unity\Members\Interfaces\MemberViewFactory::class)) {
-    eval(<<<'PHP'
-namespace Unity\Members\Interfaces;
-
-interface MemberViewFactory
-{
-    public function createFromSource(array $sourceIds): array;
-}
-PHP
-    );
-}
+    if (is_file($file)) {
+        require_once $file;
+    }
+});
 
 // Scrutiny interfaces. NearestMembersController and PasswordAuthController
 // typehint Scrutiny\Audit\Interfaces\AuditLogger. Load it from a sibling
