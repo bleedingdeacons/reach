@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Core\Settings;
 
 /**
@@ -16,11 +17,13 @@ use Reach\Core\Settings;
  * wrong-key blob must decrypt to the empty string rather than leaking
  * anything or erroring.
  */
-final class SettingsSecretsTest extends TestCase
+final class SettingsSecretsTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_options'] = [];
+        parent::setUp();
+
+        WpState::$options = [];
     }
 
     public function testClientSecretRoundTripsThroughEncryption(): void
@@ -37,7 +40,7 @@ final class SettingsSecretsTest extends TestCase
         $settings->setClientSecret('google', 'super-secret-value');
 
         // Inspect the raw option row: the plaintext must not appear anywhere.
-        $stored = $GLOBALS['__reach_options'][Settings::OPTION_SECRETS] ?? [];
+        $stored = WpState::$options[Settings::OPTION_SECRETS] ?? [];
         $raw = json_encode($stored);
         $this->assertStringNotContainsString('super-secret-value', (string) $raw);
         $this->assertNotSame('', $stored['client_secret_google'] ?? '');
@@ -50,7 +53,7 @@ final class SettingsSecretsTest extends TestCase
         $settings->setClientSecret('google', '');
 
         $this->assertSame('', $settings->getClientSecret('google'));
-        $this->assertArrayNotHasKey('client_secret_google', $GLOBALS['__reach_options'][Settings::OPTION_SECRETS] ?? []);
+        $this->assertArrayNotHasKey('client_secret_google', WpState::$options[Settings::OPTION_SECRETS] ?? []);
     }
 
     public function testUnsetSecretReturnsEmptyString(): void
@@ -62,7 +65,7 @@ final class SettingsSecretsTest extends TestCase
     {
         // A too-short / garbage blob must be rejected by the length guard and
         // return '' rather than emitting an openssl warning or partial data.
-        $GLOBALS['__reach_options'][Settings::OPTION_SECRETS] = [
+        WpState::$options[Settings::OPTION_SECRETS] = [
             'client_secret_google' => base64_encode('too-short'),
         ];
 
@@ -77,12 +80,9 @@ final class SettingsSecretsTest extends TestCase
         // Rotating the auth salt (a WP recovery action) changes the derived
         // key, so previously stored secrets no longer decrypt — the intended
         // behaviour after a suspected breach.
-        $GLOBALS['__reach_salts']['auth'] = 'rotated-salt-' . str_repeat('z', 48);
+        $this->salts['auth'] = 'rotated-salt-' . str_repeat('z', 48);
 
         $this->assertSame('', $settings->getClientSecret('google'));
-
-        // Restore for other tests sharing the process.
-        $GLOBALS['__reach_salts']['auth'] = 'test-auth-salt-' . str_repeat('x', 48);
     }
 
     public function testProviderNameIsNormalisedForBothIdAndSecret(): void
@@ -115,7 +115,7 @@ final class SettingsSecretsTest extends TestCase
 
     public function testCallRequestEmailFallsBackToAdminEmailWhenUnset(): void
     {
-        $GLOBALS['__reach_options']['admin_email'] = 'admin@example.com';
+        WpState::$options['admin_email'] = 'admin@example.com';
         $this->assertSame('admin@example.com', (new Settings())->getCallRequestEmail());
     }
 
@@ -128,12 +128,12 @@ final class SettingsSecretsTest extends TestCase
 
     public function testInvalidCallRequestEmailIsStoredBlankAndFallsBack(): void
     {
-        $GLOBALS['__reach_options']['admin_email'] = 'admin@example.com';
+        WpState::$options['admin_email'] = 'admin@example.com';
         $settings = new Settings();
         $settings->setCallRequestEmail('not-an-email');
 
         // Invalid input is not stored, so the getter falls back to admin.
         $this->assertSame('admin@example.com', $settings->getCallRequestEmail());
-        $this->assertArrayNotHasKey('call_request_email', $GLOBALS['__reach_options'][Settings::OPTION_PUBLIC] ?? []);
+        $this->assertArrayNotHasKey('call_request_email', WpState::$options[Settings::OPTION_PUBLIC] ?? []);
     }
 }

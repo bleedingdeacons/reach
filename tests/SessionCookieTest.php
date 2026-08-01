@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
 
@@ -16,7 +16,7 @@ use Reach\Session\SessionCookie;
  * in a unit context; we exercise the signature path directly here.
  * The actual cookie I/O is thin enough to be left to integration.
  */
-final class SessionCookieTest extends TestCase
+final class SessionCookieTest extends ReachTestCase
 {
     public function testSignedTokenVerifies(): void
     {
@@ -86,5 +86,6 @@ final class SessionCookieTest extends TestCase
     protected function tearDown(): void
     {
         unset($_COOKIE[SessionCookie::COOKIE_NAME]);
+        parent::tearDown();
     }
 }

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\JwtVerifier;
 
 /**
@@ -17,7 +18,7 @@ use Reach\Auth\JwtVerifier;
  * expiry are each given their own negative-case test so a future
  * regression in any single check is caught immediately.
  */
-final class JwtVerifierTest extends TestCase
+final class JwtVerifierTest extends ReachTestCase
 {
     private string $privateKey = '';
     private string $jwks = '';
@@ -26,7 +27,9 @@ final class JwtVerifierTest extends TestCase
 
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
 
         $res = openssl_pkey_new([
             'private_key_bits' => 2048,
@@ -60,7 +63,7 @@ final class JwtVerifierTest extends TestCase
         // Stub wp_remote_get to return our JWKS for the test URL.
         $jwks = $this->jwks;
         $jwksUrl = $this->jwksUrl;
-        $GLOBALS['__reach_http_stub'] = static function (string $url) use ($jwks, $jwksUrl) {
+        $this->stubHttp(static function (string $url) use ($jwks, $jwksUrl) {
             if ($url !== $jwksUrl) {
                 return new \WP_Error('no_stub', 'No stub for ' . $url);
             }
@@ -68,7 +71,7 @@ final class JwtVerifierTest extends TestCase
                 'response' => ['code' => 200],
                 'body'     => $jwks,
             ];
-        };
+        });
     }
 
     public function testValidTokenVerifies(): void

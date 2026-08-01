@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\Providers\OAuthProvider;
 use Reach\Auth\StateStore;
@@ -43,14 +44,16 @@ use WP_REST_Response;
  *     stub provider so the detector + controller wiring is covered as
  *     a unit.
  */
-final class OAuthControllerGateTest extends TestCase
+final class OAuthControllerGateTest extends ReachTestCase
 {
     protected function setUp(): void
     {
+        parent::setUp();
+
         // Each test gets a fresh transient/option store so OAuth state
         // tokens issued here don't leak between tests.
-        $GLOBALS['__reach_transients'] = [];
-        $GLOBALS['__reach_options']    = [];
+        WpState::$transients = [];
+        WpState::$options    = [];
     }
 
     // --- eligibility gate -------------------------------------------------
@@ -63,7 +66,7 @@ final class OAuthControllerGateTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_not_eligible', $result->get_error_code());
-        $this->assertSame(403, $result->data['status'] ?? null);
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
     }
 
     public function testGateRejectsMemberWithNeitherRole(): void

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\CallAttemptRepository;
@@ -32,12 +32,14 @@ require_once __DIR__ . '/PasswordAuthControllerGateTest.php'; // NullAuditLogger
  * entry: the caller's anonymous name and the result — never their email or
  * provider, and never the free-text note.
  */
-final class CallAttemptControllerTest extends TestCase
+final class CallAttemptControllerTest extends ReachTestCase
 {
     private AttemptTokenMinter $minter;
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->minter = new AttemptTokenMinter();
         $_COOKIE = [];
     }
@@ -45,13 +47,14 @@ final class CallAttemptControllerTest extends TestCase
     protected function tearDown(): void
     {
         $_COOKIE = [];
+        parent::tearDown();
     }
 
     public function testPermissionCallbackRejectsWhenNoSession(): void
     {
         $result = $this->makeController()->permissionCallback();
         $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame(401, $result->data['status'] ?? null);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
     }
 
     public function testCreateRejectsInvalidAttemptToken(): void
@@ -67,7 +70,7 @@ final class CallAttemptControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_invalid_attempt_token', $result->get_error_code());
-        $this->assertSame(403, $result->data['status'] ?? null);
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
     }
 
     public function testCreateRejectsTokenMintedForADifferentMember(): void

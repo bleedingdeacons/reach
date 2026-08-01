@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Core\ReachServiceProvider;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
@@ -35,16 +36,23 @@ require_once __DIR__ . '/ContainerWiringTest.php';             // FakeContainer,
  * then invoking each declared callback covers that (otherwise untested) input
  * layer in one place, which is where a validation regression would hide.
  */
-final class ControllerRoutesTest extends TestCase
+final class ControllerRoutesTest extends ReachTestCase
 {
     private Container $container;
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $GLOBALS['wpdb'] = new WpdbStub();
-        $GLOBALS['__reach_hooks'] = [];
-        $GLOBALS['__reach_routes'] = [];
-        $GLOBALS['__reach_options'] = [];
+
+        // The controllers' register() hangs its route registration on
+        // rest_api_init; this test fires those callbacks by hand, so they have
+        // to be captured as they are added.
+        $this->captureAction('rest_api_init');
+
+        WpState::$restRoutes = [];
+        WpState::$options = [];
         $_COOKIE = [];
 
         $this->container = new FakeContainer([
@@ -69,12 +77,12 @@ final class ControllerRoutesTest extends TestCase
 
         // Each register() hung a rest_api_init callback; fire them to run the
         // registerRoutes() bodies and populate the captured route table.
-        $this->assertArrayHasKey('rest_api_init', $GLOBALS['__reach_hooks']);
-        foreach ($GLOBALS['__reach_hooks']['rest_api_init'] as $callback) {
+        $this->assertActionAdded('rest_api_init');
+        foreach ($this->actionCallbacks('rest_api_init') as $callback) {
             $callback();
         }
 
-        $routes = $GLOBALS['__reach_routes'];
+        $routes = WpState::$restRoutes;
         $this->assertNotEmpty($routes);
 
         // Reach registers everything under the reach/v1 namespace.
@@ -121,7 +129,7 @@ final class ControllerRoutesTest extends TestCase
         // No cookie ⇒ no session ⇒ 401.
         $denied = $controller->permissionCallback();
         $this->assertInstanceOf(WP_Error::class, $denied);
-        $this->assertSame(401, $denied->data['status'] ?? null);
+        $this->assertSame(401, $denied->get_error_data()['status'] ?? null);
 
         // Seed a session into the container's CurrentSession and re-check.
         $this->seedSession('user@example.com');

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
 use wpdb;
@@ -18,13 +18,15 @@ require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliase
  * the same member within the window overwrites rather than appends), the
  * forMembersSince() query, and the idempotent install() schema call.
  */
-final class WpdbCallAttemptRecordTest extends TestCase
+final class WpdbCallAttemptRecordTest extends ReachTestCase
 {
     private WpdbStub $wpdb;
     private WpdbCallAttemptRepository $repo;
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->wpdb = new WpdbStub();
         $this->repo = new WpdbCallAttemptRepository($this->wpdb);
         $GLOBALS['__reach_dbdelta'] = [];

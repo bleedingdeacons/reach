@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\AnonymisedEmailDetector;
 
 /**
@@ -17,7 +17,7 @@ use Reach\Auth\AnonymisedEmailDetector;
  * shape of Facebook relay we've seen, explicit falsehood on a handful
  * of real-world lookalikes that must keep working.
  */
-final class AnonymisedEmailDetectorTest extends TestCase
+final class AnonymisedEmailDetectorTest extends ReachTestCase
 {
     /**
      * @dataProvider relayCases

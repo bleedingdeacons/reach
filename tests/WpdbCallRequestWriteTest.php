@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\WpdbCallRequestRepository;
 
@@ -17,13 +17,15 @@ require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliase
  * including the legacy-PII column drop that removes caller personal data
  * left over from the pre-email schema on upgrade.
  */
-final class WpdbCallRequestWriteTest extends TestCase
+final class WpdbCallRequestWriteTest extends ReachTestCase
 {
     private WpdbStub $wpdb;
     private WpdbCallRequestRepository $repo;
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->wpdb = new WpdbStub();
         $this->repo = new WpdbCallRequestRepository($this->wpdb);
         $GLOBALS['__reach_dbdelta'] = [];

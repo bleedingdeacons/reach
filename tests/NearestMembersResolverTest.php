@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Geocoding\Coordinates;
 use Reach\Geocoding\Geocoder;
 use Reach\Resolution\NearestMembersResolver;
@@ -16,7 +16,7 @@ use Unity\Members\Interfaces\MemberRepository;
  * MemberRepository are both faked here — the goal is to lock down the
  * filter/sort/limit pipeline, not to test postcodes.io or WP_Query.
  */
-final class NearestMembersResolverTest extends TestCase
+final class NearestMembersResolverTest extends ReachTestCase
 {
     public function testReturnsTwelfthSteppersOnly(): void
     {

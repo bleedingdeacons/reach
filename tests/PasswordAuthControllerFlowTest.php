@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
@@ -30,12 +31,14 @@ require_once __DIR__ . '/NearestMembersControllerTest.php';    // RecordingAudit
  * signal); and completing a reset with a strong password auto-signs an
  * eligible member in.
  */
-final class PasswordAuthControllerFlowTest extends TestCase
+final class PasswordAuthControllerFlowTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_mail'] = [];
-        $GLOBALS['__reach_transients'] = [];
+        parent::setUp();
+
+        WpState::$mail = [];
+        WpState::$transients = [];
         $_SERVER['REMOTE_ADDR'] = '203.0.113.9';
     }
 
@@ -81,7 +84,7 @@ final class PasswordAuthControllerFlowTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_rate_limited', $result->get_error_code());
-        $this->assertSame(429, $result->data['status'] ?? null);
+        $this->assertSame(429, $result->get_error_data()['status'] ?? null);
     }
 
     public function testRequestResetSkipsSendWhenFloodLimitTrippedButStillAcknowledges(): void
@@ -100,7 +103,7 @@ final class PasswordAuthControllerFlowTest extends TestCase
         $this->assertSame(200, $result->get_status());
         $this->assertTrue($result->get_data()['sent']);
         // …but no email actually went out because the flood cap was hit.
-        $this->assertCount(0, $GLOBALS['__reach_mail']);
+        $this->assertCount(0, WpState::$mail);
     }
 
     public function testSetPasswordSuccessSignsEligibleMemberIn(): void
@@ -148,7 +151,7 @@ final class PasswordAuthControllerFlowTest extends TestCase
 
     private function tokenFromLastMail(): string
     {
-        $mail = $GLOBALS['__reach_mail'];
+        $mail = WpState::$mail;
         $this->assertNotEmpty($mail, 'expected a reset email to have been sent');
         $message = (string) end($mail)['message'];
         $this->assertSame(1, preg_match('/token=([A-Za-z0-9\-_]+)/', $message, $m));

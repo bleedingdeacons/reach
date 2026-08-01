@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
 use wpdb;
 
@@ -110,7 +110,7 @@ class WpdbStub
     }
 }
 
-final class WpdbCallAttemptRepositoryTest extends TestCase
+final class WpdbCallAttemptRepositoryTest extends ReachTestCase
 {
     public function testCountWithoutFiltersHasNoWhereClause(): void
     {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use InvalidArgumentException;
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\Base64Url;
 use Reach\Auth\Providers\OAuthProvider;
 use Reach\Auth\ProviderRegistry;
@@ -21,7 +21,7 @@ use Reach\Geocoding\Coordinates;
  * run, and they pin behaviour (range rejection, case-insensitive provider
  * lookup, serial formatting) that other classes quietly rely on.
  */
-final class ReachValueObjectsTest extends TestCase
+final class ReachValueObjectsTest extends ReachTestCase
 {
     // --- Coordinates ------------------------------------------------------
 

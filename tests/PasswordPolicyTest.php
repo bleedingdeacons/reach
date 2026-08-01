@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\PasswordPolicy;
 
 /**
@@ -12,12 +12,14 @@ use Reach\Auth\PasswordPolicy;
  * rules: length-based, no composition requirements, common and context
  * passwords rejected.
  */
-final class PasswordPolicyTest extends TestCase
+final class PasswordPolicyTest extends ReachTestCase
 {
     private PasswordPolicy $policy;
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->policy = new PasswordPolicy();
     }
 

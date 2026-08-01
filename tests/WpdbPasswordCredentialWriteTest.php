@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\WpdbPasswordCredentialRepository;
 
 require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliased to wpdb)
@@ -17,13 +17,15 @@ require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliase
  * (never seeds a row for an unknown email), and delete removes the credential
  * on GDPR erasure. The SQL each emits is asserted against the WpdbStub.
  */
-final class WpdbPasswordCredentialWriteTest extends TestCase
+final class WpdbPasswordCredentialWriteTest extends ReachTestCase
 {
     private WpdbStub $wpdb;
     private WpdbPasswordCredentialRepository $repo;
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->wpdb = new WpdbStub();
         $this->repo = new WpdbPasswordCredentialRepository($this->wpdb);
         $GLOBALS['__reach_dbdelta'] = [];

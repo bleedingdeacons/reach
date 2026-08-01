@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
@@ -32,21 +33,23 @@ require_once __DIR__ . '/PasswordAuthenticatorTest.php';
  * concrete (final) CurrentSession, so tests seed a genuine signed cookie and
  * read it back through a real SessionCookie rather than mocking the session.
  */
-final class CallRequestControllerTest extends TestCase
+final class CallRequestControllerTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_options'] = [];
-        $GLOBALS['__reach_actions'] = [];
-        $GLOBALS['__reach_mail'] = [];
-        unset($GLOBALS['__reach_mail_return']);
+        parent::setUp();
+
+        WpState::$options = [];
+        WpState::$mail = [];
+        WpState::$mailResult = true;
         $_COOKIE = [];
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__reach_mail_return']);
+        WpState::$mailResult = true;
         $_COOKIE = [];
+        parent::tearDown();
     }
 
     public function testPermissionCallbackRejectsWhenNoSession(): void
@@ -57,7 +60,7 @@ final class CallRequestControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_not_authenticated', $result->get_error_code());
-        $this->assertSame(401, $result->data['status'] ?? null);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
     }
 
     public function testPermissionCallbackAllowsWithSession(): void
@@ -76,7 +79,7 @@ final class CallRequestControllerTest extends TestCase
         $result = $controller->create($this->request());
 
         $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame(401, $result->data['status'] ?? null);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
     }
 
     public function testCreateRecordsTrackingRowAndMailsCallerDetails(): void
@@ -116,14 +119,14 @@ final class CallRequestControllerTest extends TestCase
 
         // The caller PII is what got mailed — the email is the system of
         // record for it, never the database.
-        $this->assertCount(1, $GLOBALS['__reach_mail']);
-        $message = (string) $GLOBALS['__reach_mail'][0]['message'];
+        $this->assertCount(1, WpState::$mail);
+        $message = (string) WpState::$mail[0]['message'];
         $this->assertStringContainsString('Sam', $message);
         $this->assertStringContainsString('07700 900123', $message);
-        $this->assertSame('ops@example.com', $GLOBALS['__reach_mail'][0]['to']);
+        $this->assertSame('ops@example.com', WpState::$mail[0]['to']);
 
         // Extension hook fired with the record (and no PII on it).
-        $this->assertSame('reach/call_request_created', $GLOBALS['__reach_actions'][0]['hook'] ?? null);
+        $this->assertActionFired('reach/call_request_created');
     }
 
     public function testCreateRollsBackTheRowWhenMailFails(): void
@@ -131,7 +134,7 @@ final class CallRequestControllerTest extends TestCase
         $this->seedSession('responder@example.com');
         $repo = new SpyCallRequestRepository();
         // wp_mail returns false → send() fails after the row was written.
-        $GLOBALS['__reach_mail_return'] = false;
+        WpState::$mailResult = false;
         $settings = new Settings();
         $settings->setCallRequestEmail('ops@example.com');
         $controller = $this->makeController($repo, $settings);
@@ -145,12 +148,12 @@ final class CallRequestControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_call_request_not_sent', $result->get_error_code());
-        $this->assertSame(502, $result->data['status'] ?? null);
+        $this->assertSame(502, $result->get_error_data()['status'] ?? null);
 
         // The orphan tracking row must have been deleted.
         $this->assertSame([1], $repo->deleted, 'the tracking row must be rolled back on mail failure');
         // No extension hook on the failure path.
-        $this->assertEmpty($GLOBALS['__reach_actions']);
+        $this->assertActionFiredTimes('reach/call_request_created', 0);
     }
 
     public function testCreateRejectsWhitespaceOnlyCallerDetails(): void
@@ -167,7 +170,7 @@ final class CallRequestControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_missing_caller_details', $result->get_error_code());
-        $this->assertSame(400, $result->data['status'] ?? null);
+        $this->assertSame(400, $result->get_error_data()['status'] ?? null);
     }
 
     public function testResponderNameFallsBackToEmailWhenNoMemberRecord(): void

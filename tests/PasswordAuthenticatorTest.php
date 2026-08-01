@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordCredential;
 use Reach\Auth\PasswordCredentialRepository;
@@ -26,11 +27,13 @@ use Unity\Members\ResponderCertification;
  * in-memory fake that mirrors the wpdb repository's UPDATE-only semantics
  * for failed-attempt recording (unknown emails never get a row).
  */
-final class PasswordAuthenticatorTest extends TestCase
+final class PasswordAuthenticatorTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_mail'] = [];
+        parent::setUp();
+
+        WpState::$mail = [];
     }
 
     // --- login ------------------------------------------------------------
@@ -107,8 +110,8 @@ final class PasswordAuthenticatorTest extends TestCase
 
         $auth->beginReset('user@example.com', 1000);
 
-        $this->assertCount(1, $GLOBALS['__reach_mail']);
-        $this->assertSame('user@example.com', $GLOBALS['__reach_mail'][0]['to']);
+        $this->assertCount(1, WpState::$mail);
+        $this->assertSame('user@example.com', WpState::$mail[0]['to']);
 
         $cred = $repo->find('user@example.com');
         $this->assertNotNull($cred);
@@ -123,7 +126,7 @@ final class PasswordAuthenticatorTest extends TestCase
 
         $auth->beginReset('nobody@example.com', 1000);
 
-        $this->assertCount(0, $GLOBALS['__reach_mail']);
+        $this->assertCount(0, WpState::$mail);
         $this->assertNull($repo->find('nobody@example.com'));
     }
 
@@ -135,7 +138,7 @@ final class PasswordAuthenticatorTest extends TestCase
 
         $auth->beginReset('regular@example.com', 1000);
 
-        $this->assertCount(0, $GLOBALS['__reach_mail']);
+        $this->assertCount(0, WpState::$mail);
         $this->assertNull($repo->find('regular@example.com'));
     }
 
@@ -150,7 +153,7 @@ final class PasswordAuthenticatorTest extends TestCase
 
         $auth->beginReset('trainee@example.com', 1000);
 
-        $this->assertCount(0, $GLOBALS['__reach_mail']);
+        $this->assertCount(0, WpState::$mail);
         $this->assertNull($repo->find('trainee@example.com'));
     }
 
@@ -165,7 +168,7 @@ final class PasswordAuthenticatorTest extends TestCase
 
         $auth->beginReset('certified@example.com', 1000);
 
-        $this->assertCount(1, $GLOBALS['__reach_mail']);
+        $this->assertCount(1, WpState::$mail);
     }
 
     public function testBeginResetHonoursCooldownThenAllowsResendLater(): void
@@ -176,11 +179,11 @@ final class PasswordAuthenticatorTest extends TestCase
         $auth->beginReset('user@example.com', 1000);
         // A second request inside the cooldown window sends nothing.
         $auth->beginReset('user@example.com', 1000 + PasswordAuthenticator::RESET_COOLDOWN_SECONDS - 1);
-        $this->assertCount(1, $GLOBALS['__reach_mail']);
+        $this->assertCount(1, WpState::$mail);
 
         // Past the cooldown, a resend is allowed.
         $auth->beginReset('user@example.com', 1000 + PasswordAuthenticator::RESET_COOLDOWN_SECONDS + 1);
-        $this->assertCount(2, $GLOBALS['__reach_mail']);
+        $this->assertCount(2, WpState::$mail);
     }
 
     // --- complete reset ---------------------------------------------------
@@ -311,7 +314,7 @@ final class PasswordAuthenticatorTest extends TestCase
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
     private function tokenFromLastMail(): string
     {
-        $mail = $GLOBALS['__reach_mail'];
+        $mail = WpState::$mail;
         $this->assertNotEmpty($mail, 'expected a reset email to have been sent');
         $message = (string) end($mail)['message'];
         $this->assertSame(1, preg_match('/token=([A-Za-z0-9\-_]+)/', $message, $m));

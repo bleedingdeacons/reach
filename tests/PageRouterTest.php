@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Frontend\PageRouter;
 
 /**
@@ -14,7 +14,7 @@ use Reach\Frontend\PageRouter;
  * decision is factored into the pure {@see PageRouter::landingPath()}
  * and asserted here.
  */
-final class PageRouterTest extends TestCase
+final class PageRouterTest extends ReachTestCase
 {
     public function testSignedInVisitorLandsOnHome(): void
     {

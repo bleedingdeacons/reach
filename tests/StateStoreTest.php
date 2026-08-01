@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\StateStore;
 
 /**
@@ -12,11 +13,13 @@ use Reach\Auth\StateStore;
  * Its non-negotiable behaviours: unknown state → null, valid state
  * → returns payload exactly once and then disappears.
  */
-final class StateStoreTest extends TestCase
+final class StateStoreTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
     }
 
     public function testIssueAndConsumeRoundTrip(): void

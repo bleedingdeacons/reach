@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\ResponsivenessScorer;
 
@@ -13,7 +13,7 @@ use Reach\CallAttempts\ResponsivenessScorer;
  * private constants in the scorer, so these tests are the closest we
  * get to a written-down spec.
  */
-final class ResponsivenessScorerTest extends TestCase
+final class ResponsivenessScorerTest extends ReachTestCase
 {
     private const NOW = 1_700_000_000;
 

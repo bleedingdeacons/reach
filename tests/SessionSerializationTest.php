@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Session\Session;
 
 /**
@@ -18,7 +18,7 @@ use Reach\Session\Session;
  *  - the `pem` key is omitted when not set, so the wire format
  *    doesn't gain weight for the common case.
  */
-final class SessionSerializationTest extends TestCase
+final class SessionSerializationTest extends ReachTestCase
 {
     public function testProviderEmailRoundTripsThroughArray(): void
     {

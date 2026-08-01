@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Geocoding\Coordinates;
 use Reach\Resolution\NearestMembersResolver;
 use Reach\Resolution\ScoredMember;
@@ -19,7 +19,7 @@ require_once __DIR__ . '/NearestMembersControllerTest.php'; // ControllerStubGeo
  * nearest entry, the max-distance cutoff, and the skip rules for members
  * with no area or an ungeocodable one.
  */
-final class NearestMembersResolverExtraTest extends TestCase
+final class NearestMembersResolverExtraTest extends ReachTestCase
 {
     private function geocoder(): ControllerStubGeocoder
     {

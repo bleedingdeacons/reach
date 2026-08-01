@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\JwtVerifier;
 
 /**
@@ -15,7 +16,7 @@ use Reach\Auth\JwtVerifier;
  * transport failure. These are the paths an attacker probes, so failing
  * closed on every one of them is the security contract under test.
  */
-final class JwtVerifierEdgeTest extends TestCase
+final class JwtVerifierEdgeTest extends ReachTestCase
 {
     private string $privateKey = '';
     private string $jwks = '';
@@ -26,7 +27,9 @@ final class JwtVerifierEdgeTest extends TestCase
 
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
 
         $res = openssl_pkey_new([
             'private_key_bits' => 2048,
@@ -51,7 +54,7 @@ final class JwtVerifierEdgeTest extends TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__reach_http_stub']);
+        parent::tearDown();
     }
 
     public function testMalformedTokenWithWrongSegmentCountIsRejected(): void
@@ -130,8 +133,8 @@ final class JwtVerifierEdgeTest extends TestCase
 
     public function testJwksNetworkErrorYieldsNull(): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $url, array $args = [])
-            => new \WP_Error('http_request_failed', 'down');
+        $this->stubHttp(static fn(string $url, array $args = [])
+            => new \WP_Error('http_request_failed', 'down'));
         $this->assertNull($this->verify($this->sign($this->baseClaims())));
     }
 
@@ -158,17 +161,17 @@ final class JwtVerifierEdgeTest extends TestCase
     private function serveJwks(string $jwks): void
     {
         $url = $this->jwksUrl;
-        $GLOBALS['__reach_http_stub'] = static function (string $u, array $args = []) use ($jwks, $url) {
+        $this->stubHttp(static function (string $u, array $args = []) use ($jwks, $url) {
             return str_starts_with($u, $url)
                 ? ['response' => ['code' => 200], 'body' => $jwks]
                 : new \WP_Error('no_stub', 'No stub for ' . $u);
-        };
+        });
     }
 
     /** @param array<string, mixed> $response */
     private function serveRaw(array $response): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $u, array $args = []) => $response;
+        $this->stubHttp(static fn(string $u, array $args = []) => $response);
     }
 
     /** @param array<string, mixed> $claims */

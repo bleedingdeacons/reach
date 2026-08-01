@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Core\Settings;
 
 /**
@@ -17,11 +18,13 @@ use Reach\Core\Settings;
  * admin form, but the Settings primitive needs to support either
  * choice, and we test the simple cases here).
  */
-final class SettingsTest extends TestCase
+final class SettingsTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_options'] = [];
+        parent::setUp();
+
+        WpState::$options = [];
     }
 
     public function testClientIdRoundTrip(): void
@@ -43,7 +46,7 @@ final class SettingsTest extends TestCase
         $settings = new Settings();
         $settings->setClientSecret('google', 'plaintext-secret');
 
-        $raw = $GLOBALS['__reach_options'][Settings::OPTION_SECRETS]['client_secret_google'];
+        $raw = WpState::$options[Settings::OPTION_SECRETS]['client_secret_google'];
         $this->assertNotSame('plaintext-secret', $raw);
         $this->assertStringNotContainsString('plaintext-secret', base64_decode($raw, true) ?: '');
     }
@@ -54,7 +57,7 @@ final class SettingsTest extends TestCase
         $settings->setClientSecret('google', 'plaintext-secret');
 
         // Rotate the auth salt — simulating an admin action.
-        $GLOBALS['__reach_salts']['auth'] = 'new-auth-salt-' . str_repeat('z', 48);
+        $this->salts['auth'] = 'new-auth-salt-' . str_repeat('z', 48);
 
         // Decryption with the new key must fail and return empty,
         // never raise — admins shouldn't see a fatal on a salt rotation.
@@ -71,7 +74,7 @@ final class SettingsTest extends TestCase
         $this->assertSame('', $settings->getClientSecret('google'));
         $this->assertArrayNotHasKey(
             'client_secret_google',
-            $GLOBALS['__reach_options'][Settings::OPTION_SECRETS] ?? []
+            WpState::$options[Settings::OPTION_SECRETS] ?? []
         );
     }
 }

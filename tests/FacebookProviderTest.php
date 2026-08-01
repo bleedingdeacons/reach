@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\Providers\FacebookProvider;
 use Reach\Core\Settings;
@@ -29,7 +30,7 @@ use Reach\Core\Settings;
  * RS256 signing, a fake JWKS served via the wp_remote_* stub. The
  * token endpoint is served by the same stub, dispatched by URL.
  */
-final class FacebookProviderTest extends TestCase
+final class FacebookProviderTest extends ReachTestCase
 {
     private string $privateKey = '';
     private string $jwks = '';
@@ -39,8 +40,10 @@ final class FacebookProviderTest extends TestCase
 
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
-        $GLOBALS['__reach_options'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
+        WpState::$options = [];
 
         $res = openssl_pkey_new([
             'private_key_bits' => 2048,
@@ -116,7 +119,7 @@ final class FacebookProviderTest extends TestCase
             'exp'            => time() + 3600,
         ]);
 
-        $this->stubHttp($idToken);
+        $this->stubFacebookEndpoints($idToken);
 
         $identity = $provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz');
 
@@ -145,7 +148,7 @@ final class FacebookProviderTest extends TestCase
 
         $capturedUrl = null;
         $capturedBody = null;
-        $this->stubHttp($idToken, $capturedUrl, $capturedBody);
+        $this->stubFacebookEndpoints($idToken, $capturedUrl, $capturedBody);
 
         $provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz');
 
@@ -188,7 +191,7 @@ final class FacebookProviderTest extends TestCase
             'exp'            => time() + 3600,
         ]);
 
-        $this->stubHttp($idToken);
+        $this->stubFacebookEndpoints($idToken);
 
         $identity = $provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz');
         $this->assertNull($identity);
@@ -209,7 +212,7 @@ final class FacebookProviderTest extends TestCase
             'exp'            => time() + 3600,
         ]);
 
-        $this->stubHttp($idToken);
+        $this->stubFacebookEndpoints($idToken);
 
         $this->assertNull($provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz'));
     }
@@ -229,7 +232,7 @@ final class FacebookProviderTest extends TestCase
             'exp'            => time() + 3600,
         ]);
 
-        $this->stubHttp($idToken);
+        $this->stubFacebookEndpoints($idToken);
 
         $this->assertNull($provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz'));
     }
@@ -254,7 +257,7 @@ final class FacebookProviderTest extends TestCase
             'exp'            => time() + 3600,
         ]);
 
-        $this->stubHttp($idToken);
+        $this->stubFacebookEndpoints($idToken);
 
         $identity = $provider->handleCallback('the-code', 'nonce-1', 'https://example.test/cb', 'verifier-xyz');
 
@@ -287,10 +290,10 @@ final class FacebookProviderTest extends TestCase
      *
      * @param array<string, mixed>|null $capturedBody
      */
-    private function stubHttp(string $idToken, ?string &$capturedUrl = null, ?array &$capturedBody = null): void
+    private function stubFacebookEndpoints(string $idToken, ?string &$capturedUrl = null, ?array &$capturedBody = null): void
     {
         $jwks = $this->jwks;
-        $GLOBALS['__reach_http_stub'] = static function (string $url, array $args = []) use ($jwks, $idToken, &$capturedUrl, &$capturedBody) {
+        $this->stubHttp(static function (string $url, array $args = []) use ($jwks, $idToken, &$capturedUrl, &$capturedBody) {
             if (str_starts_with($url, 'https://www.facebook.com/.well-known/oauth/openid/jwks/')) {
                 return ['response' => ['code' => 200], 'body' => $jwks];
             }
@@ -307,7 +310,7 @@ final class FacebookProviderTest extends TestCase
                 ];
             }
             return new \WP_Error('no_stub', 'No stub for ' . $url);
-        };
+        });
     }
 
     private function makeSettings(): Settings

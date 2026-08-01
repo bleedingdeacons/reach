@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallRequests\WpdbCallRequestRepository;
 
 // Reuse the wpdb stub (and the `wpdb` class alias) defined by the
@@ -51,7 +51,7 @@ final class CallRequestWpdbStub extends WpdbStub
     }
 }
 
-final class WpdbCallRequestRepositoryTest extends TestCase
+final class WpdbCallRequestRepositoryTest extends ReachTestCase
 {
     public function testCreateStoresOnlyTrackingDataAndReturnsModel(): void
     {
