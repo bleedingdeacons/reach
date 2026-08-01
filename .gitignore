@@ -4,6 +4,13 @@
 # source and a regenerated .phpunit.result.cache.
 /vendor/
 
+# composer.lock, likewise matching the rest of the suite. Reach and Trumpet
+# were the only two plugins tracking theirs; every other one ignores it, so CI
+# resolves dependencies from composer.json on each run. Keeping one plugin's
+# lock tracked pinned its dev tooling while the other sixteen floated, which is
+# the inconsistency this removes.
+composer.lock
+
 # Regenerated on every run; an untracked cache file left the working tree
 # looking dirty, which was tripping the version-bump "altered" check.
 .phpunit.result.cache
