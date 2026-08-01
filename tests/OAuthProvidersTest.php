@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\Providers\AppleProvider;
 use Reach\Auth\Providers\GoogleProvider;
@@ -21,7 +22,7 @@ use Reach\Core\Settings;
  * email_verified gate — plus the flow-shape guards (which methods throw for
  * the wrong flow).
  */
-final class OAuthProvidersTest extends TestCase
+final class OAuthProvidersTest extends ReachTestCase
 {
     private string $privateKey = '';
     private string $jwks = '';
@@ -41,8 +42,10 @@ final class OAuthProvidersTest extends TestCase
 
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
-        $GLOBALS['__reach_options'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
+        WpState::$options = [];
 
         $res = openssl_pkey_new([
             'private_key_bits' => 2048,
@@ -70,7 +73,7 @@ final class OAuthProvidersTest extends TestCase
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__reach_http_stub']);
+        parent::tearDown();
     }
 
     // --- Google -----------------------------------------------------------
@@ -129,24 +132,24 @@ final class OAuthProvidersTest extends TestCase
 
     public function testGoogleReturnsNullWhenTokenEndpointReturnsNon2xx(): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $url, array $args = [])
-            => ['response' => ['code' => 400], 'body' => '{"error":"invalid_grant"}'];
+        $this->stubHttp(static fn(string $url, array $args = [])
+            => ['response' => ['code' => 400], 'body' => '{"error":"invalid_grant"}']);
 
         $this->assertNull($this->google()->handleCallback('bad-code', 'no', 'https://example.test/cb'));
     }
 
     public function testGoogleReturnsNullWhenTokenResponseHasNoIdToken(): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $url, array $args = [])
-            => ['response' => ['code' => 200], 'body' => '{"access_token":"x"}'];
+        $this->stubHttp(static fn(string $url, array $args = [])
+            => ['response' => ['code' => 200], 'body' => '{"access_token":"x"}']);
 
         $this->assertNull($this->google()->handleCallback('code', 'no', 'https://example.test/cb'));
     }
 
     public function testGoogleReturnsNullOnNetworkError(): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $url, array $args = [])
-            => new \WP_Error('http_request_failed', 'boom');
+        $this->stubHttp(static fn(string $url, array $args = [])
+            => new \WP_Error('http_request_failed', 'boom'));
 
         $this->assertNull($this->google()->handleCallback('code', 'no', 'https://example.test/cb'));
     }
@@ -346,7 +349,7 @@ final class OAuthProvidersTest extends TestCase
     private function stub(string $jwksUrl, string $tokenUrl, string $idToken): void
     {
         $jwks = $this->jwks;
-        $GLOBALS['__reach_http_stub'] = static function (string $url, array $args = []) use ($jwks, $jwksUrl, $tokenUrl, $idToken) {
+        $this->stubHttp(static function (string $url, array $args = []) use ($jwks, $jwksUrl, $tokenUrl, $idToken) {
             if (str_starts_with($url, $jwksUrl)) {
                 return ['response' => ['code' => 200], 'body' => $jwks];
             }
@@ -354,19 +357,19 @@ final class OAuthProvidersTest extends TestCase
                 return ['response' => ['code' => 200], 'body' => (string) json_encode(['id_token' => $idToken])];
             }
             return new \WP_Error('no_stub', 'No stub for ' . $url);
-        };
+        });
     }
 
     /** Serve only the JWKS — for the client-side Apple flow (no token leg). */
     private function stubJwks(string $jwksUrl): void
     {
         $jwks = $this->jwks;
-        $GLOBALS['__reach_http_stub'] = static function (string $url, array $args = []) use ($jwks, $jwksUrl) {
+        $this->stubHttp(static function (string $url, array $args = []) use ($jwks, $jwksUrl) {
             if (str_starts_with($url, $jwksUrl)) {
                 return ['response' => ['code' => 200], 'body' => $jwks];
             }
             return new \WP_Error('no_stub', 'No stub for ' . $url);
-        };
+        });
     }
 
     /** @param array<string, mixed> $claims */

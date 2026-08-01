@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\CallAttempt;
@@ -43,7 +43,7 @@ use WP_REST_Response;
  * up a real signed cookie (CurrentSession). The reflection trick is
  * isolated to a single helper at the bottom of this file.
  */
-final class NearestMembersControllerTest extends TestCase
+final class NearestMembersControllerTest extends ReachTestCase
 {
     public function testHappySnapshotIncludesRequesterAnonymousNameInAuditDetail(): void
     {

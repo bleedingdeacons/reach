@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\Providers\OAuthProvider;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
@@ -29,13 +30,15 @@ require_once __DIR__ . '/PasswordAuthenticatorTest.php'; // PwTestMember(Reposit
  * fake provider stands in for a real OAuth provider so the controller logic
  * is tested in isolation from JWT verification (covered separately).
  */
-final class OAuthControllerTest extends TestCase
+final class OAuthControllerTest extends ReachTestCase
 {
     private StateStore $state;
 
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
         $this->state = new StateStore();
         $_COOKIE = [];
     }
@@ -43,6 +46,7 @@ final class OAuthControllerTest extends TestCase
     protected function tearDown(): void
     {
         $_COOKIE = [];
+        parent::tearDown();
     }
 
     // --- start ------------------------------------------------------------
@@ -54,7 +58,7 @@ final class OAuthControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_unknown_provider', $result->get_error_code());
-        $this->assertSame(400, $result->data['status'] ?? null);
+        $this->assertSame(400, $result->get_error_data()['status'] ?? null);
     }
 
     public function testStartRejectsClientSideProvider(): void
@@ -187,7 +191,7 @@ final class OAuthControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_signin_failed', $result->get_error_code());
-        $this->assertSame(401, $result->data['status'] ?? null);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
     }
 
     public function testAppleHappyPathIssuesSessionAndReturnsRedirectJson(): void
@@ -217,7 +221,7 @@ final class OAuthControllerTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_not_eligible', $result->get_error_code());
-        $this->assertSame(403, $result->data['status'] ?? null);
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
     }
 
     // --- appleStart / signout ---------------------------------------------

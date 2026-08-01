@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\AttemptTokenMinter;
 
 /**
@@ -13,7 +13,7 @@ use Reach\CallAttempts\AttemptTokenMinter;
  * token is integrity-only — these tests describe what "integrity"
  * means for this surface.
  */
-final class AttemptTokenMinterTest extends TestCase
+final class AttemptTokenMinterTest extends ReachTestCase
 {
     private const NOW = 1_700_000_000;
 

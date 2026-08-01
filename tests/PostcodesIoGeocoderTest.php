@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Geocoding\Coordinates;
 use Reach\Geocoding\PostcodesIoGeocoder;
 
@@ -18,17 +19,18 @@ use Reach\Geocoding\PostcodesIoGeocoder;
  * mode of the HTTP layer — all through the wp_remote_* stub in the bootstrap,
  * so no real network is touched.
  */
-final class PostcodesIoGeocoderTest extends TestCase
+final class PostcodesIoGeocoderTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
-        unset($GLOBALS['__reach_http_stub']);
+        parent::setUp();
+
+        WpState::$transients = [];
     }
 
     protected function tearDown(): void
     {
-        unset($GLOBALS['__reach_http_stub']);
+        parent::tearDown();
     }
 
     public function testBlankInputReturnsNullWithoutTouchingTheNetwork(): void
@@ -151,7 +153,7 @@ final class PostcodesIoGeocoderTest extends TestCase
         // Seed the transient with an out-of-range latitude so constructing
         // Coordinates throws and the geocoder falls through to a fresh lookup.
         $key = 'reach_geo_' . md5('|' . strtolower('BS1 4ST'));
-        $GLOBALS['__reach_transients'][$key] = ['lat' => 999.0, 'lng' => 0.0];
+        WpState::$transients[$key] = ['lat' => 999.0, 'lng' => 0.0];
 
         $this->stubByUrl(['/postcodes/BS14ST' => $this->resultBody(51.45, -2.59)]);
 
@@ -163,16 +165,16 @@ final class PostcodesIoGeocoderTest extends TestCase
 
     public function testNetworkErrorIsSwallowedAndReturnsNull(): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $url, array $args = [])
-            => new \WP_Error('http_request_failed', 'Connection timed out');
+        $this->stubHttp(static fn(string $url, array $args = [])
+            => new \WP_Error('http_request_failed', 'Connection timed out'));
 
         $this->assertNull((new PostcodesIoGeocoder())->geocode('BS1 4ST'));
     }
 
     public function testInvalidJsonBodyReturnsNull(): void
     {
-        $GLOBALS['__reach_http_stub'] = static fn(string $url, array $args = [])
-            => ['response' => ['code' => 200], 'body' => 'not-json-at-all'];
+        $this->stubHttp(static fn(string $url, array $args = [])
+            => ['response' => ['code' => 200], 'body' => 'not-json-at-all']);
 
         $this->assertNull((new PostcodesIoGeocoder())->geocode('BS1 4ST'));
     }
@@ -218,7 +220,7 @@ final class PostcodesIoGeocoderTest extends TestCase
     private function stubByUrl(array $map, int &$calls = 0, ?string $default = null): void
     {
         $default = $default ?? $this->notFound();
-        $GLOBALS['__reach_http_stub'] = static function (string $url, array $args = []) use ($map, &$calls, $default) {
+        $this->stubHttp(static function (string $url, array $args = []) use ($map, &$calls, $default) {
             foreach ($map as $needle => $body) {
                 if (str_contains($url, $needle)) {
                     $calls++;
@@ -226,7 +228,7 @@ final class PostcodesIoGeocoderTest extends TestCase
                 }
             }
             return ['response' => ['code' => 404], 'body' => $default];
-        };
+        });
     }
 
     private function resultBody(float $lat, float $lng): string

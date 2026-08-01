@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
@@ -33,14 +34,16 @@ require_once __DIR__ . '/PasswordAuthenticatorTest.php';
  * only on their non-cookie-issuing branches (rejections + the always-the-
  * same reset acknowledgement).
  */
-final class PasswordAuthControllerGateTest extends TestCase
+final class PasswordAuthControllerGateTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_mail'] = [];
+        parent::setUp();
+
+        WpState::$mail = [];
         // Fresh transient store so the per-IP rate-limit counter doesn't
         // carry between tests.
-        $GLOBALS['__reach_transients'] = [];
+        WpState::$transients = [];
     }
 
     // --- eligibility gate -------------------------------------------------
@@ -82,7 +85,7 @@ final class PasswordAuthControllerGateTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_invalid_credentials', $result->get_error_code());
-        $this->assertSame(401, $result->data['status'] ?? null);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
     }
 
     public function testLoginRejectsCorrectPasswordForIneligibleMember(): void
@@ -103,7 +106,7 @@ final class PasswordAuthControllerGateTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_not_eligible', $result->get_error_code());
-        $this->assertSame(403, $result->data['status'] ?? null);
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
     }
 
     public function testRequestResetAlwaysAcknowledgesRegardlessOfAccount(): void
@@ -116,7 +119,7 @@ final class PasswordAuthControllerGateTest extends TestCase
         $this->assertSame(200, $result->get_status());
         $this->assertTrue($result->get_data()['sent'] ?? null);
         // Nothing was actually emailed for a non-member.
-        $this->assertCount(0, $GLOBALS['__reach_mail']);
+        $this->assertCount(0, WpState::$mail);
     }
 
     public function testSetPasswordRejectsWeakPassword(): void
@@ -135,7 +138,7 @@ final class PasswordAuthControllerGateTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_weak_password', $result->get_error_code());
-        $this->assertSame(422, $result->data['status'] ?? null);
+        $this->assertSame(422, $result->get_error_data()['status'] ?? null);
     }
 
     public function testSetPasswordRejectsInvalidToken(): void
@@ -149,7 +152,7 @@ final class PasswordAuthControllerGateTest extends TestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_invalid_token', $result->get_error_code());
-        $this->assertSame(400, $result->data['status'] ?? null);
+        $this->assertSame(400, $result->get_error_data()['status'] ?? null);
     }
 
     // --- helpers ----------------------------------------------------------
@@ -169,7 +172,7 @@ final class PasswordAuthControllerGateTest extends TestCase
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
     private function tokenFromLastMail(): string
     {
-        $mail = $GLOBALS['__reach_mail'];
+        $mail = WpState::$mail;
         $this->assertNotEmpty($mail, 'expected a reset email to have been sent');
         $message = (string) end($mail)['message'];
         $this->assertSame(1, preg_match('/token=([A-Za-z0-9\-_]+)/', $message, $m));

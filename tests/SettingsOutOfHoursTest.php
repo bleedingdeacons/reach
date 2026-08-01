@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Core\Settings;
 
 /**
@@ -15,11 +16,13 @@ use Reach\Core\Settings;
  * epoch below is therefore built with gmmktime() so "now" is an exact,
  * timezone-free clock time and the assertions stay deterministic.
  */
-final class SettingsOutOfHoursTest extends TestCase
+final class SettingsOutOfHoursTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_options'] = [];
+        parent::setUp();
+
+        WpState::$options = [];
     }
 
     /** Epoch for a given UTC wall-clock time on a fixed reference day. */

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Reach\Tests\ReachTestCase;
 use Reach\Auth\WpdbPasswordCredentialRepository;
 
 // Reuse the shared wpdb stub (and the `wpdb` class alias) from the
@@ -37,7 +37,7 @@ final class CredentialWpdbStub extends WpdbStub
     }
 }
 
-final class WpdbPasswordCredentialRepositoryTest extends TestCase
+final class WpdbPasswordCredentialRepositoryTest extends ReachTestCase
 {
     public function testFindReturnsNullOnMiss(): void
     {

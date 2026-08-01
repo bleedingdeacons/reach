@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\TestCase;
+use BleedingDeacons\WpMocks\WpState;
+use Reach\Tests\ReachTestCase;
 use Reach\Core\RateLimiter;
 
 /**
  * Unit tests for {@see RateLimiter} — the transient-backed per-key throttle
  * guarding the login and request-reset endpoints.
  */
-final class RateLimiterTest extends TestCase
+final class RateLimiterTest extends ReachTestCase
 {
     protected function setUp(): void
     {
-        $GLOBALS['__reach_transients'] = [];
+        parent::setUp();
+
+        WpState::$transients = [];
     }
 
     public function testAllowsUpToTheLimitThenRefuses(): void
