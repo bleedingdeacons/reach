@@ -25,6 +25,10 @@ use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Unity\Testing\Doubles\FakeContainer;
+use Reach\Tests\Fixtures\FakeMemberViewFactory;
 
 // WpdbStub (aliased to wpdb) + the shared member/audit fakes.
 require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php';
@@ -146,12 +150,12 @@ final class ContainerWiringTest extends ReachTestCase
 
     public function testTrustedSignupFilterResolvesTheReachMemberFromSession(): void
     {
-        $members = new PwTestMemberRepository([new PwTestMember('member@example.com', true, true, 7)]);
+        $members = new InMemoryMemberRepository([new MemberStub('member@example.com', true, true, 7)]);
         Plugin::init($this->container($members));
         $filter = $this->filterCallbacks('trusted_signup_member')[0];
 
         // Already-resolved member is passed straight through.
-        $existing = new PwTestMember('other@example.com');
+        $existing = new MemberStub('other@example.com');
         $this->assertSame($existing, $filter($existing));
 
         // With no session cookie set, the filter can't resolve a member.
@@ -168,7 +172,7 @@ final class ContainerWiringTest extends ReachTestCase
         // credentials repo. The repo is the WpdbStub-backed real one, so the
         // assertion is simply that invoking the hook does not error.
         $callback(123, null);
-        $callback(123, new PwTestMember('gone@example.com'));
+        $callback(123, new MemberStub('gone@example.com'));
         $this->addToAssertionCount(1);
     }
 
@@ -199,7 +203,7 @@ final class ContainerWiringTest extends ReachTestCase
     private function container(?MemberRepository $members = null): FakeContainer
     {
         return new FakeContainer([
-            MemberRepository::class  => $members ?? new PwTestMemberRepository([]),
+            MemberRepository::class  => $members ?? new InMemoryMemberRepository([]),
             AuditLogger::class       => new NullAuditLogger(),
             MemberViewFactory::class => new FakeMemberViewFactory(),
         ]);
@@ -217,58 +221,4 @@ final class ContainerWiringTest extends ReachTestCase
     }
 }
 
-/**
- * Recording DI container implementing Unity's Container contract. Presets are
- * pre-built leaf services (MemberRepository, AuditLogger, MemberViewFactory);
- * everything else is resolved by running the registered factory once and
- * caching the result.
- */
-final class FakeContainer implements Container
-{
-    /** @var array<string, callable> */
-    private array $factories = [];
-    /** @var array<string, mixed> */
-    private array $instances;
 
-    /** @param array<string, mixed> $presets */
-    public function __construct(array $presets = [])
-    {
-        $this->instances = $presets;
-    }
-
-    public function register(string $id, callable $factory): void
-    {
-        $this->factories[$id] = $factory;
-    }
-
-    public function get(string $id): mixed
-    {
-        if (array_key_exists($id, $this->instances)) {
-            return $this->instances[$id];
-        }
-        if (isset($this->factories[$id])) {
-            return $this->instances[$id] = ($this->factories[$id])($this);
-        }
-        throw new RuntimeException('No service registered for ' . $id);
-    }
-
-    public function has(string $id): bool
-    {
-        return isset($this->factories[$id]) || array_key_exists($id, $this->instances);
-    }
-
-    /** @return array<int, string> */
-    public function registeredIds(): array
-    {
-        return array_keys($this->factories);
-    }
-}
-
-/** Minimal MemberViewFactory fake — the admin pages only store it. */
-final class FakeMemberViewFactory implements MemberViewFactory
-{
-    public function createFromSource(array $sourceIds): array
-    {
-        return [];
-    }
-}

@@ -22,6 +22,8 @@ use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
  * Unit tests for {@see NearestMembersController}.
@@ -213,7 +215,7 @@ final class NearestMembersControllerTest extends ReachTestCase
         AuditLogger $audit,
         string $sessionEmail,
     ): NearestMembersController {
-        $repo = new ControllerMemberRepository($members);
+        $repo = new InMemoryMemberRepository($members);
         // The stub geocoder knows the search origin 'BS1' and every
         // member's area string. 'nowhere' is deliberately absent so
         // testUnresolvableLocation can exercise the failure branch.
@@ -284,35 +286,13 @@ final class NearestMembersControllerTest extends ReachTestCase
         string $email,
         string $area,
     ): Member {
-        return new class($id, $name, $twelfth, $email, $area) implements Member {
-            public function __construct(
-                private int $id, private string $name, private bool $twelfth,
-                private string $email, private string $area,
-            ) {}
-            public function getId(): int { return $this->id; }
-            public function getAnonymousName(): string { return $this->name; }
-            public function showAnonymousName(): bool { return true; }
-            public function showMemberProfile(): bool { return true; }
-            public function getAnonymousProfile(): string { return ''; }
-            public function getIntergroupPosition(): int { return 0; }
-            public function getIntergroupPositionRotation(): string { return ''; }
-            public function getHomeGroup(): int { return 0; }
-            public function isGSR(): bool { return false; }
-            public function getMeetingPO(): mixed { return null; }
-            public function getPersonalEmail(): string { return $this->email; }
-            public function getMobileNumber(): string { return '+44 7700 900000'; }
-            public function isTwelfthStepper(): bool { return $this->twelfth; }
-            public function isTelephoneResponder(): bool { return false; }
-            public function getResponderCertification(): \Unity\Members\ResponderCertification { return \Unity\Members\ResponderCertification::None; }
-            public function getArea(): string { return $this->area; }
-            public function getAccepts(): array { return ['phone']; }
-            public function isGdprAccepted(): bool { return true; }
-            public function getGdprAcceptedAt(): string { return ''; }
-            public function getGdprAcceptanceVersion(): string { return ''; }
-            public function getGdprAcceptanceMethod(): string { return ''; }
-            public function getGdprAcceptanceStatement(): string { return ''; }
-            public function getUpdated(): string { return ''; }
-        };
+        return new MemberStub(
+            id: $id,
+            anonymousName: $name,
+            personalEmail: $email,
+            twelfthStepper: $twelfth,
+            area: $area,
+        );
     }
 }
 
@@ -341,41 +321,6 @@ final class RecordingAuditLogger implements AuditLogger
     }
 }
 
-/**
- * Test fake of MemberRepository. Distinct from
- * Reach\Tests\InMemoryMemberRepository (the one in
- * NearestMembersResolverTest) so the two files can coexist in the
- * same suite without a class-redeclaration collision.
- */
-final class ControllerMemberRepository implements MemberRepository
-{
-    /** @param array<int, Member> $members */
-    public function __construct(private array $members) {}
-
-    public function findById(int $id): ?Member
-    {
-        foreach ($this->members as $m) {
-            if ($m->getId() === $id) return $m;
-        }
-        return null;
-    }
-    public function findByEmail(string $email): ?Member
-    {
-        foreach ($this->members as $m) {
-            if (strcasecmp($m->getPersonalEmail(), $email) === 0) return $m;
-        }
-        return null;
-    }
-    public function findAll(array $args = []): array { return $this->members; }
-    public function findTelephoneResponders(): array {
-        return array_values(array_filter($this->members, fn($m) => $m->isTelephoneResponder()));
-    }
-    public function count(array $args = []): int { return count($this->members); }
-    public function create(string $anonymousName): int { return 0; }
-    public function save(Member $member): bool { return true; }
-    public function delete(int $id): bool { return true; }
-    public function update(Member $member): bool { return true; }
-}
 
 /**
  * Minimal CallAttemptRepository fake. The controller calls

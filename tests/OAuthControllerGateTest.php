@@ -18,6 +18,8 @@ use Unity\Members\ResponderCertification;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
  * Tests for the sign-in eligibility gate and the anonymised-email
@@ -248,7 +250,7 @@ final class OAuthControllerGateTest extends ReachTestCase
             $registry,
             new StateStore(),
             new SessionCookie(),
-            new GateTestMemberRepository($members),
+            new InMemoryMemberRepository($members),
         );
     }
 
@@ -258,37 +260,12 @@ final class OAuthControllerGateTest extends ReachTestCase
         bool $responder,
         ResponderCertification $certification = ResponderCertification::None,
     ): Member {
-        return new class($email, $twelfth, $responder, $certification) implements Member {
-            public function __construct(
-                private string $email,
-                private bool $twelfth,
-                private bool $responder,
-                private ResponderCertification $certification,
-            ) {}
-            public function getId(): int { return 1; }
-            public function getAnonymousName(): string { return 'Test'; }
-            public function showAnonymousName(): bool { return true; }
-            public function showMemberProfile(): bool { return true; }
-            public function getAnonymousProfile(): string { return ''; }
-            public function getIntergroupPosition(): int { return 0; }
-            public function getIntergroupPositionRotation(): string { return ''; }
-            public function getHomeGroup(): int { return 0; }
-            public function isGSR(): bool { return false; }
-            public function getMeetingPO(): mixed { return null; }
-            public function getPersonalEmail(): string { return $this->email; }
-            public function getMobileNumber(): string { return ''; }
-            public function isTwelfthStepper(): bool { return $this->twelfth; }
-            public function isTelephoneResponder(): bool { return $this->responder; }
-            public function getResponderCertification(): ResponderCertification { return $this->certification; }
-            public function getArea(): string { return ''; }
-            public function getAccepts(): array { return []; }
-            public function isGdprAccepted(): bool { return true; }
-            public function getGdprAcceptedAt(): string { return ''; }
-            public function getGdprAcceptanceVersion(): string { return ''; }
-            public function getGdprAcceptanceMethod(): string { return ''; }
-            public function getGdprAcceptanceStatement(): string { return ''; }
-            public function getUpdated(): string { return ''; }
-        };
+        return new MemberStub(
+            personalEmail: $email,
+            twelfthStepper: $twelfth,
+            telephoneResponder: $responder,
+            responderCertification: $certification,
+        );
     }
 }
 
@@ -317,43 +294,3 @@ final class GateStubProvider implements OAuthProvider
     }
 }
 
-/**
- * Minimal MemberRepository for the gate tests.
- *
- * Distinct class name from the other test fakes (ControllerMemberRepository,
- * InMemoryMemberRepository) so the three can coexist in one suite without
- * triggering a class-redeclaration error.
- */
-final class GateTestMemberRepository implements MemberRepository
-{
-    /** @param array<int, Member> $members */
-    public function __construct(private array $members) {}
-
-    public function findById(int $id): ?Member
-    {
-        foreach ($this->members as $m) {
-            if ($m->getId() === $id) {
-                return $m;
-            }
-        }
-        return null;
-    }
-    public function findByEmail(string $email): ?Member
-    {
-        foreach ($this->members as $m) {
-            if (strcasecmp($m->getPersonalEmail(), $email) === 0) {
-                return $m;
-            }
-        }
-        return null;
-    }
-    public function findAll(array $args = []): array { return $this->members; }
-    public function findTelephoneResponders(): array {
-        return array_values(array_filter($this->members, fn($m) => $m->isTelephoneResponder()));
-    }
-    public function count(array $args = []): int { return count($this->members); }
-    public function create(string $anonymousName): int { return 0; }
-    public function save(Member $member): bool { return true; }
-    public function delete(int $id): bool { return true; }
-    public function update(Member $member): bool { return true; }
-}

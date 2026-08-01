@@ -16,8 +16,10 @@ use Unity\Members\Interfaces\Member;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 
-require_once __DIR__ . '/PasswordAuthenticatorTest.php'; // PwTestMember(Repository)
+require_once __DIR__ . '/PasswordAuthenticatorTest.php'; // MemberStub(Repository)
 
 /**
  * Tests for {@see OAuthController} — the authentication surface itself.
@@ -121,7 +123,7 @@ final class OAuthControllerTest extends ReachTestCase
         $identity = new VerifiedIdentity('nobody@example.com', 'google', 'sub-1');
         $registry = $this->registryWith('google', identity: $identity);
         // Member with neither outreach role.
-        $members = new PwTestMemberRepository([new PwTestMember('nobody@example.com', false, false)]);
+        $members = new InMemoryMemberRepository([new MemberStub('nobody@example.com', false, false)]);
         $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
 
         $result = $this->controller($registry, $members)
@@ -213,7 +215,7 @@ final class OAuthControllerTest extends ReachTestCase
     {
         $identity = new VerifiedIdentity('apple-user@icloud.com', 'apple', 'sub-a');
         $registry = $this->registryWith('apple', identity: $identity, serverSide: false);
-        $members = new PwTestMemberRepository([new PwTestMember('apple-user@icloud.com', false, false)]);
+        $members = new InMemoryMemberRepository([new MemberStub('apple-user@icloud.com', false, false)]);
         $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
 
         $result = $this->controller($registry, $members)
@@ -245,13 +247,13 @@ final class OAuthControllerTest extends ReachTestCase
 
     // --- helpers ----------------------------------------------------------
 
-    private function controller(ProviderRegistry $registry, ?PwTestMemberRepository $members = null): OAuthController
+    private function controller(ProviderRegistry $registry, ?InMemoryMemberRepository $members = null): OAuthController
     {
         return new OAuthController(
             $registry,
             $this->state,
             new SessionCookie(),
-            $members ?? new PwTestMemberRepository([]),
+            $members ?? new InMemoryMemberRepository([]),
         );
     }
 
@@ -262,10 +264,10 @@ final class OAuthControllerTest extends ReachTestCase
         return $registry;
     }
 
-    private function membersWith(string $email): PwTestMemberRepository
+    private function membersWith(string $email): InMemoryMemberRepository
     {
-        // Default PwTestMember is a 12th-stepper, so it passes the gate.
-        return new PwTestMemberRepository([new PwTestMember($email)]);
+        // Default MemberStub is a 12th-stepper, so it passes the gate.
+        return new InMemoryMemberRepository([new MemberStub($email)]);
     }
 
     private function provider(string $name, bool $serverSide = true, ?VerifiedIdentity $identity = null): OAuthProvider
