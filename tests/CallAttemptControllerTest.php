@@ -19,9 +19,10 @@ use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';
-require_once __DIR__ . '/PasswordAuthControllerGateTest.php'; // NullAuditLogger
+require_once __DIR__ . '/PasswordAuthControllerGateTest.php'; // SpyAuditLogger
 
 /**
  * Tests for {@see CallAttemptController}.
@@ -186,7 +187,7 @@ final class CallAttemptControllerTest extends ReachTestCase
             $repo ?? new SpyCallAttemptRepository(),
             $this->minter,
             new CurrentSession(new SessionCookie()),
-            $audit ?? new NullAuditLogger(),
+            $audit ?? new SpyAuditLogger(),
             $members ?? new InMemoryMemberRepository([]),
         );
     }
@@ -244,18 +245,3 @@ final class SpyCallAttemptRepository implements CallAttemptRepository
     }
 }
 
-/** Captures logBatch() calls for assertions on the audit shape. */
-final class SpyAuditLogger implements AuditLogger
-{
-    /** @var array<int, array<string, mixed>> */
-    public array $batches = [];
-
-    public function log(string $action, string $entityType, int $entityId, string $fieldName, string $detail = ''): void
-    {
-    }
-
-    public function logBatch(string $action, string $entityType, int $entityId, array $fieldNames, string $detail = ''): void
-    {
-        $this->batches[] = compact('action', 'entityType', 'entityId', 'fieldNames', 'detail');
-    }
-}

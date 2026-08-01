@@ -19,6 +19,7 @@ use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
 // Reuse the in-memory credential repo + member fakes from the authenticator
 // test rather than redeclaring them here.
@@ -168,7 +169,7 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
         $members = new InMemoryMemberRepository($members);
         $auth    = new PasswordAuthenticator($repo, $members, new PasswordResetMailer(), new PasswordPolicy());
 
-        return new PasswordAuthController($auth, new SessionCookie(), $members, new NullAuditLogger(), new RateLimiter());
+        return new PasswordAuthController($auth, new SessionCookie(), $members, new SpyAuditLogger(), new RateLimiter());
     }
 
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
@@ -193,14 +194,3 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
     }
 }
 
-/** No-op AuditLogger for tests that don't assert on audit output. */
-final class NullAuditLogger implements AuditLogger
-{
-    public function log(string $action, string $entityType, int $entityId, string $fieldName, string $detail = ''): void
-    {
-    }
-
-    public function logBatch(string $action, string $entityType, int $entityId, array $fieldNames, string $detail = ''): void
-    {
-    }
-}

@@ -17,10 +17,11 @@ use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';       // InMemoryPasswordCredentialRepository, MemberStub(Repository)
-require_once __DIR__ . '/PasswordAuthControllerGateTest.php';  // NullAuditLogger
-require_once __DIR__ . '/NearestMembersControllerTest.php';    // RecordingAuditLogger
+require_once __DIR__ . '/PasswordAuthControllerGateTest.php';  // SpyAuditLogger
+require_once __DIR__ . '/NearestMembersControllerTest.php';    // SpyAuditLogger
 
 /**
  * Success-path and throttle cover for {@see PasswordAuthController},
@@ -48,7 +49,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
     {
         $repo = new InMemoryPasswordCredentialRepository();
         $repo->seedPassword('user@example.com', 'correcthorse10');
-        $audit = new RecordingAuditLogger();
+        $audit = new SpyAuditLogger();
         $controller = $this->controller([new MemberStub('user@example.com')], $repo, $audit);
 
         $result = $controller->login(new WP_REST_Request([
@@ -146,7 +147,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
             $auth,
             new SessionCookie(),
             $memRepo,
-            $audit ?? new NullAuditLogger(),
+            $audit ?? new SpyAuditLogger(),
             new RateLimiter(),
         );
     }
