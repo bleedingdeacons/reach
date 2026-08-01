@@ -104,76 +104,41 @@ spl_autoload_register(static function (string $class) use ($unitySrc): void {
     }
 });
 
-// Scrutiny interfaces. NearestMembersController and PasswordAuthController
-// typehint Scrutiny\Audit\Interfaces\AuditLogger. Load it from a sibling
-// Scrutiny checkout (SCRUTINY_PATH overrides the default location), or fall
-// back to a minimal stub so the suite runs without Scrutiny checked out.
-$scrutinyPath   = getenv('SCRUTINY_PATH') ?: dirname(__DIR__, 2) . '/scrutiny';
-$auditInterface = $scrutinyPath . '/src/Audit/Interfaces/AuditLogger.php';
-if (file_exists($auditInterface)) {
-    require_once $auditInterface;
-} elseif (!interface_exists(\Scrutiny\Audit\Interfaces\AuditLogger::class)) {
-    eval(<<<'PHP'
-namespace Scrutiny\Audit\Interfaces;
+// Scrutiny. The controllers type-hint Scrutiny\Audit\Interfaces\AuditLogger
+// and read constants off Scrutiny\Privacy\{PersonalDataFields,
+// PersonalDataPolicy}, and the tests audit through the spy Scrutiny ships at
+// Scrutiny\Testing\Doubles. A PSR-4 autoloader over the sibling checkout
+// covers all of it; SCRUTINY_PATH overrides the default location.
+//
+// This used to load AuditLogger by name and, failing that, eval() a
+// hand-written copy of it plus PersonalDataFields and PersonalDataPolicy, so
+// the suite would run from a bare clone. Those are gone for the same reason
+// the Unity ones went: a copy of a contract owned elsewhere, never exercised
+// in CI (which always checks Scrutiny out), is how a suite goes green against
+// a contract that has since moved. They could not supply the spy in any case.
+$scrutinyPath = getenv('SCRUTINY_PATH') ?: dirname(__DIR__, 2) . '/scrutiny';
+$scrutinySrc  = $scrutinyPath . '/src';
 
-interface AuditLogger
-{
-    public const ACTION_VIEW = 'view';
-    public const ACTION_CREATE = 'create';
-    public const ACTION_UPDATE = 'update';
-    public const ACTION_DELETE = 'delete';
-    public const ACTION_EXPORT = 'export';
-    public const ACTION_IMPORT = 'import';
-    public const ACTION_CALL = 'call';
-    public const ACTION_MESSAGE = 'message';
-
-    public const ENTITY_MEMBER = 'member';
-    public const ENTITY_GROUP = 'group';
-    public const ENTITY_MEETING = 'meeting';
-    public const ENTITY_POSITION = 'position';
-
-    public function log(string $action, string $entityType, int $entityId, string $fieldName, string $detail = ''): void;
-    public function logBatch(string $action, string $entityType, int $entityId, array $fieldNames, string $detail = ''): void;
-}
-PHP
-    );
+if (!is_dir($scrutinySrc)) {
+    fwrite(STDERR, PHP_EOL . 'ERROR: Scrutiny plugin source not found at ' . $scrutinySrc . PHP_EOL
+        . "Reach is built on Scrutiny's audit contract and test doubles, so the" . PHP_EOL
+        . 'Scrutiny plugin must be checked out as a sibling directory (or' . PHP_EOL
+        . 'SCRUTINY_PATH set) for this suite to run.' . PHP_EOL . PHP_EOL);
+    exit(1);
 }
 
-// Scrutiny\Privacy\PersonalDataFields. CallAttemptController references the
-// MOBILE_NUMBER field constant when auditing a call. Load from a sibling
-// Scrutiny checkout, or fall back to a minimal stub carrying the one constant
-// the controller uses.
-$privacyClass = ($scrutinyPath ?? (dirname(__DIR__, 2) . '/scrutiny'))
-    . '/src/Privacy/PersonalDataFields.php';
-if (file_exists($privacyClass)) {
-    require_once $privacyClass;
-} elseif (!class_exists(\Scrutiny\Privacy\PersonalDataFields::class)) {
-    eval(<<<'PHP'
-namespace Scrutiny\Privacy;
+spl_autoload_register(static function (string $class) use ($scrutinySrc): void {
+    if (!str_starts_with($class, 'Scrutiny' . chr(92))) {
+        return;
+    }
 
-class PersonalDataFields
-{
-    public const MOBILE_NUMBER = 'mobile_number';
-    public const PERSONAL_EMAIL = 'personal_email';
-}
-PHP
-    );
-}
+    $file = $scrutinySrc . '/'
+        . str_replace(chr(92), '/', substr($class, strlen('Scrutiny' . chr(92)))) . '.php';
 
-// Scrutiny\Privacy\PersonalDataPolicy. The Reach admin pages gate on its
-// VIEW_CAPABILITY constant. Stub the capability constants they reference.
-if (!class_exists(\Scrutiny\Privacy\PersonalDataPolicy::class)) {
-    eval(<<<'PHP'
-namespace Scrutiny\Privacy;
-
-class PersonalDataPolicy
-{
-    public const VIEW_CAPABILITY = 'scrutiny_view_personal_data';
-    public const EDIT_CAPABILITY = 'scrutiny_edit_personal_data';
-}
-PHP
-    );
-}
+    if (is_file($file)) {
+        require_once $file;
+    }
+});
 
 // dbDelta() is the one WordPress function still defined here: it lives in
 // wp-admin/includes rather than the loaded core, so no shared stub group

@@ -24,6 +24,7 @@ use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
 /**
  * Unit tests for {@see NearestMembersController}.
@@ -62,7 +63,7 @@ final class NearestMembersControllerTest extends ReachTestCase
             email: 'carol@example.com', area: 'BS1 1AC',
         );
 
-        $audit = new RecordingAuditLogger();
+        $audit = new SpyAuditLogger();
         $response = $this->controllerWith(
             members: [$requester, $exposedA, $exposedB],
             audit: $audit,
@@ -131,7 +132,7 @@ final class NearestMembersControllerTest extends ReachTestCase
             email: 'bob@example.com', area: 'BS1 1AB',
         );
 
-        $audit = new RecordingAuditLogger();
+        $audit = new SpyAuditLogger();
         $this->controllerWith(
             members: [$officer, $exposed],
             audit: $audit,
@@ -158,7 +159,7 @@ final class NearestMembersControllerTest extends ReachTestCase
             email: 'bob@example.com', area: 'BS1 1AB',
         );
 
-        $audit = new RecordingAuditLogger();
+        $audit = new SpyAuditLogger();
         $this->controllerWith(
             members: [$exposed],
             audit: $audit,
@@ -191,7 +192,7 @@ final class NearestMembersControllerTest extends ReachTestCase
             email: 'bob@example.com', area: 'BS1 1AB',
         );
 
-        $audit = new RecordingAuditLogger();
+        $audit = new SpyAuditLogger();
         $result = $this->controllerWith(
             members: [$exposed],
             audit: $audit,
@@ -296,30 +297,6 @@ final class NearestMembersControllerTest extends ReachTestCase
     }
 }
 
-/**
- * Captures every audit-log call for later inspection.
- *
- * Implements both log() and logBatch() faithfully — logBatch fans out
- * into per-field rows the same way the production GdprAuditLogger does,
- * so tests can assert on the field-level entries directly.
- */
-final class RecordingAuditLogger implements AuditLogger
-{
-    /** @var array<int, array{action: string, entityType: string, entityId: int, fieldName: string, detail: string}> */
-    public array $entries = [];
-
-    public function log(string $action, string $entityType, int $entityId, string $fieldName, string $detail = ''): void
-    {
-        $this->entries[] = compact('action', 'entityType', 'entityId', 'fieldName', 'detail');
-    }
-
-    public function logBatch(string $action, string $entityType, int $entityId, array $fieldNames, string $detail = ''): void
-    {
-        foreach ($fieldNames as $fieldName) {
-            $this->log($action, $entityType, $entityId, $fieldName, $detail);
-        }
-    }
-}
 
 
 /**

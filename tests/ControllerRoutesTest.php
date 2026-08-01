@@ -25,13 +25,14 @@ use WP_REST_Response;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
-// Doubles still defined at the bottom of other test files. Two entries have
-// gone from this list: the member stub and its repository now come from
-// Reach\Tests\Fixtures and Unity\Testing\Doubles, and the container and view
-// factory likewise — all of which autoload, so there is nothing to require.
+// One double still defined at the bottom of another test file. This list had
+// four entries; the member stub, its repository, the container and the view
+// factory now come from Reach\Tests\Fixtures and Unity\Testing\Doubles, and
+// the audit spy from Scrutiny\Testing\Doubles — all of which autoload, so
+// there is nothing to require for any of them.
 require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php';   // WpdbStub
-require_once __DIR__ . '/PasswordAuthControllerGateTest.php';  // NullAuditLogger
 
 /**
  * Exercise the REST route wiring for every controller: register() hangs the
@@ -62,7 +63,7 @@ final class ControllerRoutesTest extends ReachTestCase
 
         $this->container = new FakeContainer([
             MemberRepository::class  => new InMemoryMemberRepository([]),
-            AuditLogger::class       => new NullAuditLogger(),
+            AuditLogger::class       => new SpyAuditLogger(),
             MemberViewFactory::class => new FakeMemberViewFactory(),
         ]);
         (new ReachServiceProvider())->register($this->container);

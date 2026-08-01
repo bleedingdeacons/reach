@@ -29,11 +29,12 @@ use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
 // WpdbStub (aliased to wpdb) + the shared member/audit fakes.
 require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php';
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';
-require_once __DIR__ . '/PasswordAuthControllerGateTest.php'; // NullAuditLogger
+require_once __DIR__ . '/PasswordAuthControllerGateTest.php'; // SpyAuditLogger
 
 /**
  * Cover the dependency-injection wiring: {@see ReachServiceProvider}, which
@@ -204,7 +205,7 @@ final class ContainerWiringTest extends ReachTestCase
     {
         return new FakeContainer([
             MemberRepository::class  => $members ?? new InMemoryMemberRepository([]),
-            AuditLogger::class       => new NullAuditLogger(),
+            AuditLogger::class       => new SpyAuditLogger(),
             MemberViewFactory::class => new FakeMemberViewFactory(),
         ]);
     }
