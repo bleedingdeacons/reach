@@ -4,13 +4,6 @@
 # source and a regenerated .phpunit.result.cache.
 /vendor/
 
-# composer.lock, likewise matching the rest of the suite. Reach and Trumpet
-# were the only two plugins tracking theirs; every other one ignores it, so CI
-# resolves dependencies from composer.json on each run. Keeping one plugin's
-# lock tracked pinned its dev tooling while the other sixteen floated, which is
-# the inconsistency this removes.
-composer.lock
-
 # Regenerated on every run; an untracked cache file left the working tree
 # looking dirty, which was tripping the version-bump "altered" check.
 .phpunit.result.cache
@@ -30,3 +23,11 @@ composer.lock
 # phpstan.neon.dist outright — PHPStan takes the first file it finds and does
 # not merge them. Ignored so a personal tweak cannot be committed by accident.
 /phpstan.neon
+
+# composer.lock is COMMITTED, deliberately - do not add it here.
+#
+# It was ignored across the whole suite until 2026-08-02. That made CI
+# resolve dependencies afresh on every run, so the tool versions a build
+# used were whatever had been published that morning, and Dependabot could
+# only see releases falling outside the composer.json constraints. A
+# PHPStan patch that broke the committed baseline was invisible to both.
