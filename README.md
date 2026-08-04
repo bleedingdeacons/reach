@@ -13,7 +13,7 @@ Public-facing front end for finding 12th-step members. Email-verified sign-in vi
 
 - WordPress 6.1+
 - PHP 8.1+ with `openssl` and `json`
-- [Unity](https://github.com/thebleedingdeacons/unity) and [Scrutiny](https://github.com/thebleedingdeacons/scrutiny) must be active
+- [Unity](https://github.com/bleedingdeacons/unity) and [Scrutiny](https://github.com/bleedingdeacons/scrutiny) must be active
 
 Reach hooks into Unity on `unity/loaded` and uses Unity's `MemberRepository` to source members. Every member surfaced is audit-logged through Scrutiny with the requesting visitor's verified email attached, so a regulator can answer "which Reach user saw this member's mobile, and when" from Scrutiny's audit table.
 
