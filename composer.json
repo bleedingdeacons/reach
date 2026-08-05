@@ -44,6 +44,8 @@
         "build:production": "php build.php build:production",
         "build:dev": "php build.php build:dev",
         "build:clean": "php build.php clean",
+        "phpcs": "phpcs --standard=.phpcs.xml.dist",
+        "phpcs:fix": "phpcbf --standard=.phpcs.xml.dist",
         "phpstan": "phpstan analyse --memory-limit=1G"
     },
     "require-dev": {
@@ -52,6 +54,7 @@
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^10.5",
         "psr/container": "^2.0",
+        "squizlabs/php_codesniffer": "^4.0",
         "szepeviktor/phpstan-wordpress": "^2.0"
     }
 }
