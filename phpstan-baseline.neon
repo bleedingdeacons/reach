@@ -1,16 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: "#^Method Reach\\\\Admin\\\\CallAttemptsPage\\:\\:detailUrl\\(\\) is unused\\.$#"
-			count: 1
-			path: src/Admin/CallAttemptsPage.php
-
-		-
-			message: "#^Constant Reach\\\\Admin\\\\SettingsPage\\:\\:OPTION_GROUP is unused\\.$#"
-			count: 1
-			path: src/Admin/SettingsPage.php
-
-		-
 			message: "#^Strict comparison using \\=\\=\\= between non\\-empty\\-array\\<int, bool\\|float\\|int\\|string\\> and array\\{\\} will always evaluate to false\\.$#"
 			count: 1
 			path: src/CallAttempts/WpdbCallAttemptRepository.php

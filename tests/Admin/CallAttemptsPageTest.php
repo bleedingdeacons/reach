@@ -186,6 +186,28 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     /**
+     * The detail screen has no sidebar entry — it's registered with an empty
+     * parent — so this link is the only way in. Without it, renderDetail() and
+     * the note it alone displays are unreachable from the UI.
+     *
+     * @test
+     */
+    public function each_rows_time_links_to_that_attempts_detail_screen(): void
+    {
+        $page = $this->page(
+            attempts: new RecordingCallAttemptRepository([$this->attempt(id: 5)]),
+        );
+
+        $this->assertStringContainsString(
+            '<a href="https://example.test/wp-admin/admin.php?'
+                . 'page=' . CallAttemptsPage::PAGE_SLUG . '-detail&id=5">'
+                . date('Y-m-d H:i', $this->createdAt())
+                . '</a>',
+            $this->render($page, 'renderList'),
+        );
+    }
+
+    /**
      * @test
      * @dataProvider outcomes
      */

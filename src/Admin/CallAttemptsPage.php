@@ -127,6 +127,8 @@ final class CallAttemptsPage
 
         // Detail view: same capability, hidden from the menu (passing
         // null as the parent slug registers it without a sidebar link).
+        // It isn't a destination you browse to — you get there by
+        // clicking a row's "When" cell on the list (see renderList()).
         add_submenu_page(
             '',
             'Call attempt',
@@ -144,6 +146,11 @@ final class CallAttemptsPage
      * or share a specific view. No POSTs anywhere on this page —
      * read-only is enforced by the absence of mutation handlers,
      * not by client-side button hiding.
+     *
+     * Each row's "When" cell links to {@see renderDetail()}, which is
+     * the only surface showing an attempt's free-text note. That link
+     * is the sole route to the detail screen — it's registered as a
+     * hidden submenu with no sidebar entry of its own.
      */
     public function renderList(): void
     {
@@ -195,7 +202,11 @@ final class CallAttemptsPage
                     <?php else: foreach ($rows as $row): ?>
                         <?php $memberView = $resolved[$row->memberId] ?? null; ?>
                         <tr>
-                            <td style="white-space: nowrap;"><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
+                            <td style="white-space: nowrap;">
+                                <a href="<?php echo esc_url($this->detailUrl($row->id)); ?>"><?php
+                                    echo esc_html($this->formatTime($row->createdAt));
+                                ?></a>
+                            </td>
                             <td><?php echo $this->responderCell($row->viewerEmail); ?></td>
                             <td><?php echo $this->memberCell($memberView); ?></td>
                             <td><?php echo esc_html($this->outcomeLabel($row->outcome)); ?></td>
@@ -336,6 +347,9 @@ final class CallAttemptsPage
      * Detail view for one attempt. Shows everything stored, including
      * the free-text note (which never leaves this surface — it isn't
      * sent to other Reach users and isn't included in audit-log detail).
+     *
+     * Reached from the list view's "When" column; there is no menu
+     * entry for it.
      */
     public function renderDetail(): void
     {
