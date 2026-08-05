@@ -144,6 +144,10 @@ jobs:
       # --- Advisory --------------------------------------------------------
       # Reported but not yet enforced. Promote to a gate once a repo is green.
 
+      - name: PHPCS (advisory)
+        run: composer phpcs
+        continue-on-error: true
+
       - name: Upload coverage to Coveralls (advisory)
         # Reports a coverage number; does not gate the build. The Clover report
         # is produced by the PHPUnit step above. This action runs from the repo
