@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 /**
  * Plugin Name: Reach
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
@@ -16,6 +14,8 @@ declare(strict_types=1);
  * Contact: thebleedingdeacons@gmail.com
  * License: MIT (Modified)
  */
+
+declare(strict_types=1);
 
 if (!defined('ABSPATH')) {
     exit;
@@ -67,12 +67,13 @@ spl_autoload_register(function ($class) {
  * @return \Psr\Container\ContainerInterface
  * @throws \RuntimeException If Reach is not initialized
  */
-function reach(): \Psr\Container\ContainerInterface {
+function reach(): \Psr\Container\ContainerInterface
+{
     return \Reach\Plugin::getContainer();
 }
 
 // Initialize after Unity is loaded.
-add_action('unity/loaded', function($container) {
+add_action('unity/loaded', function ($container) {
     try {
         // Scrutiny provides the AuditLogger used by the nearest-members
         // controller (one entry per exposed member) and the call-attempt
@@ -90,18 +91,16 @@ add_action('unity/loaded', function($container) {
         \Reach\Plugin::init($container);
 
         do_action('reach/loaded', \Reach\Plugin::getContainer());
-
     } catch (\Exception $e) {
         function_exists('wp_log')
             ? wp_log('reach')->error('Reach Plugin Initialization Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
             : error_log('Reach Plugin Initialization Error: ' . $e->getMessage());
 
         if (is_admin()) {
-            add_action('admin_notices', function() use ($e) {
+            add_action('admin_notices', function () use ($e) {
                 echo '<div class="notice notice-error is-dismissible"><p><strong>Reach Plugin Error:</strong> ' . esc_html($e->getMessage()) . '</p></div>';
             });
         }
-
     } catch (\Throwable $e) {
         function_exists('wp_log')
             ? wp_log('reach')->critical('Reach Plugin Fatal Error: ' . $e->getMessage(), ['exception' => $e->getMessage(), 'trace' => $e->getTraceAsString()])
@@ -163,10 +162,10 @@ register_activation_hook(__FILE__, function () {
 
 // Self-deactivate if Scrutiny gets deactivated while Reach is active —
 // Reach can't honour its audit-logging promise without Scrutiny.
-add_action('admin_init', function() {
+add_action('admin_init', function () {
     if (is_plugin_active(plugin_basename(__FILE__)) && !function_exists('scrutiny')) {
         deactivate_plugins(plugin_basename(__FILE__));
-        add_action('admin_notices', function() {
+        add_action('admin_notices', function () {
             echo '<div class="notice notice-error"><p><strong>Reach has been deactivated:</strong> The Scrutiny plugin is required for GDPR audit logging but is not active.</p></div>';
         });
     }
