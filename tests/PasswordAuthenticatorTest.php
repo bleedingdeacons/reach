@@ -419,5 +419,3 @@ final class InMemoryPasswordCredentialRepository implements PasswordCredentialRe
         unset($this->rows[$email]);
     }
 }
-
-

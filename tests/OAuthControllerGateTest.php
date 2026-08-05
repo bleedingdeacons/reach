@@ -276,10 +276,18 @@ final class OAuthControllerGateTest extends ReachTestCase
  */
 final class GateStubProvider implements OAuthProvider
 {
-    public function __construct(private VerifiedIdentity $identity) {}
+    public function __construct(private VerifiedIdentity $identity)
+    {
+    }
 
-    public function name(): string { return $this->identity->provider; }
-    public function isServerSide(): bool { return true; }
+    public function name(): string
+    {
+        return $this->identity->provider;
+    }
+    public function isServerSide(): bool
+    {
+        return true;
+    }
     public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
     {
         return 'https://provider.example/authorize';
@@ -293,4 +301,3 @@ final class GateStubProvider implements OAuthProvider
         return null;
     }
 }
-

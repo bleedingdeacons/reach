@@ -103,7 +103,8 @@ class Plugin
         // results, sign-in redirects — could otherwise be cached and served to
         // the next visitor. Force no-store across the namespace.
         add_filter('rest_post_dispatch', static function ($response, $server, $request) {
-            if ($response instanceof \WP_REST_Response
+            if (
+                $response instanceof \WP_REST_Response
                 && $request instanceof \WP_REST_Request
                 && str_starts_with(ltrim((string) $request->get_route(), '/'), OAuthController::NAMESPACE)
             ) {

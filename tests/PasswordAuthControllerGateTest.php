@@ -193,4 +193,3 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
         return $result;
     }
 }
-

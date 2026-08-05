@@ -140,11 +140,12 @@ final class CallRequestsPage
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($rows === []): ?>
+                    <?php if ($rows === []) : ?>
                         <tr>
                             <td colspan="6">No call requests yet.</td>
                         </tr>
-                    <?php else: foreach ($rows as $row): ?>
+                    <?php else :
+                        foreach ($rows as $row) : ?>
                         <tr>
                             <td><code><?php echo esc_html($row->serial()); ?></code></td>
                             <td style="white-space: nowrap;"><?php echo esc_html($this->formatTime($row->createdAt)); ?></td>
@@ -153,7 +154,8 @@ final class CallRequestsPage
                             <td><?php echo $this->statusCell($row); ?></td>
                             <td><?php $this->renderAction($row, $page); ?></td>
                         </tr>
-                    <?php endforeach; endif; ?>
+                        <?php endforeach;
+                    endif; ?>
                 </tbody>
             </table>
 
@@ -323,13 +325,13 @@ final class CallRequestsPage
                     <?php echo (int) $total; ?> item<?php echo $total === 1 ? '' : 's'; ?>
                 </span>
                 <span class="pagination-links">
-                    <?php if ($page > 1): ?>
+                    <?php if ($page > 1) : ?>
                         <a class="prev-page button" href="<?php echo $link($page - 1); ?>">&lsaquo; Prev</a>
                     <?php endif; ?>
                     <span class="paging-input">
                         Page <?php echo (int) $page; ?> of <?php echo (int) $totalPages; ?>
                     </span>
-                    <?php if ($page < $totalPages): ?>
+                    <?php if ($page < $totalPages) : ?>
                         <a class="next-page button" href="<?php echo $link($page + 1); ?>">Next &rsaquo;</a>
                     <?php endif; ?>
                 </span>

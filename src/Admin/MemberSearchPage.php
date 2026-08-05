@@ -127,7 +127,7 @@ final class MemberSearchPage
             </p>
 
             <?php $this->renderForm($location, $accepts); ?>
-            <?php if ($searched): ?>
+            <?php if ($searched) : ?>
                 <?php $this->renderResults($location, $accepts); ?>
             <?php endif; ?>
         </div>
@@ -153,7 +153,7 @@ final class MemberSearchPage
 
                 <span>
                     Accepts calls from<br>
-                    <?php foreach (self::GENDERS as $value => $label): ?>
+                    <?php foreach (self::GENDERS as $value => $label) : ?>
                         <label style="margin-right: 12px; white-space: nowrap;">
                             <input type="checkbox" name="accepts[]"
                                    value="<?php echo esc_attr($value); ?>"
@@ -222,18 +222,19 @@ final class MemberSearchPage
                 </tr>
             </thead>
             <tbody>
-                <?php if ($views === []): ?>
+                <?php if ($views === []) : ?>
                     <tr>
                         <td colspan="5">No 12th-steppers match this search.</td>
                     </tr>
-                <?php else: foreach ($views as $view): ?>
-                    <?php
-                    $scored = $scoredById[$view->getId()] ?? null;
-                    // Prefer the pipe entry the resolver actually matched
-                    // (e.g. "Kingswood" out of "Kingswood|Hanham") so the
-                    // area shown is the one the distance refers to.
-                    $area = $scored->matchedArea ?? $view->getArea();
-                    ?>
+                <?php else :
+                    foreach ($views as $view) : ?>
+                                            <?php
+                                            $scored = $scoredById[$view->getId()] ?? null;
+                                        // Prefer the pipe entry the resolver actually matched
+                                        // (e.g. "Kingswood" out of "Kingswood|Hanham") so the
+                                        // area shown is the one the distance refers to.
+                                            $area = $scored->matchedArea ?? $view->getArea();
+                                            ?>
                     <tr>
                         <td><?php echo $this->nameCell($view); ?></td>
                         <td><?php echo esc_html($area); ?></td>
@@ -243,7 +244,8 @@ final class MemberSearchPage
                         <td><?php echo esc_html($this->acceptsLabel($view->getAccepts())); ?></td>
                         <td><?php echo $this->mobileCell($view->getMobileNumber()); ?></td>
                     </tr>
-                <?php endforeach; endif; ?>
+                    <?php endforeach;
+                endif; ?>
             </tbody>
         </table>
         <?php

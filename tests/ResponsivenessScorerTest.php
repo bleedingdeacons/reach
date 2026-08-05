@@ -55,7 +55,10 @@ final class ResponsivenessScorerTest extends ReachTestCase
         $attempts = [];
         for ($i = 0; $i < 5; $i++) {
             $attempts[] = $this->attempt(
-                1, 'alice@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - ($i * 1000)
+                1,
+                'alice@example.com',
+                CallAttempt::OUTCOME_NO_ANSWER,
+                self::NOW - ($i * 1000)
             );
         }
         $scorer = new ResponsivenessScorer();
@@ -119,9 +122,9 @@ final class ResponsivenessScorerTest extends ReachTestCase
         $attempts = [
             $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 5000),
             $this->attempt(1, 'b@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 4000),
-            $this->attempt(1, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER,    self::NOW - 3000),
-            $this->attempt(1, 'd@example.com', CallAttempt::OUTCOME_NO_ANSWER,    self::NOW - 2000),
-            $this->attempt(1, 'e@example.com', CallAttempt::OUTCOME_NO_ANSWER,    self::NOW - 1000),
+            $this->attempt(1, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
+            $this->attempt(1, 'd@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
+            $this->attempt(1, 'e@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
         ];
         $scorer = new ResponsivenessScorer();
         $this->assertSame(

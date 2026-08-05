@@ -71,13 +71,15 @@ final class ControllerRoutesTest extends ReachTestCase
 
     public function testEveryControllerRegistersRoutesAndArgumentCallbacksHold(): void
     {
-        foreach ([
+        foreach (
+            [
             OAuthController::class,
             PasswordAuthController::class,
             NearestMembersController::class,
             CallAttemptController::class,
             CallRequestController::class,
-        ] as $class) {
+            ] as $class
+        ) {
             $this->container->get($class)->register();
         }
 

@@ -308,10 +308,12 @@ final class OAuthController
     private function assertMemberAllowed(VerifiedIdentity $identity): ?WP_Error
     {
         $member = $this->members->findByEmail($identity->email);
-        if ($member === null
+        if (
+            $member === null
             || !($member->isTwelfthStepper()
                 || ($member->isTelephoneResponder()
-                    && $member->getResponderCertification()->isCertified()))) {
+                    && $member->getResponderCertification()->isCertified()))
+        ) {
             return new WP_Error(
                 'reach_not_eligible',
                 'This account is not registered to use Reach. Please contact your intergroup if you believe this is in error.',

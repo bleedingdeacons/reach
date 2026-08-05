@@ -86,10 +86,10 @@ final class PageRouter
     {
         // Bare entry point. Anchored to end so it never shadows the
         // /reach/signin and /reach/find rules above it.
-        add_rewrite_rule('^reach/?$',        'index.php?' . self::QUERY_VAR . '=index',  'top');
+        add_rewrite_rule('^reach/?$', 'index.php?' . self::QUERY_VAR . '=index', 'top');
         add_rewrite_rule('^reach/signin/?$', 'index.php?' . self::QUERY_VAR . '=signin', 'top');
-        add_rewrite_rule('^reach/home/?$',   'index.php?' . self::QUERY_VAR . '=home',   'top');
-        add_rewrite_rule('^reach/find/?$',   'index.php?' . self::QUERY_VAR . '=find',   'top');
+        add_rewrite_rule('^reach/home/?$', 'index.php?' . self::QUERY_VAR . '=home', 'top');
+        add_rewrite_rule('^reach/find/?$', 'index.php?' . self::QUERY_VAR . '=find', 'top');
         add_rewrite_rule('^reach/shifts/?$', 'index.php?' . self::QUERY_VAR . '=shifts', 'top');
         add_rewrite_rule('^reach/request/?$', 'index.php?' . self::QUERY_VAR . '=request', 'top');
         add_rewrite_rule('^reach/lookup/?$', 'index.php?' . self::QUERY_VAR . '=lookup', 'top');

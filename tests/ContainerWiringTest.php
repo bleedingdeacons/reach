@@ -221,5 +221,3 @@ final class ContainerWiringTest extends ReachTestCase
         }
     }
 }
-
-
