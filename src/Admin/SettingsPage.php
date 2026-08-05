@@ -34,7 +34,9 @@ use Reach\Core\Settings;
  */
 final class SettingsPage
 {
-    private const OPTION_GROUP = 'reach_settings_group';
+    // No OPTION_GROUP constant: registerSettings() deliberately doesn't
+    // use the Settings API (the secret fields need custom merge logic),
+    // so there is no option group to register anything against.
     private const PAGE_SLUG = 'reach-settings';
     private const CAPABILITY = 'manage_options';
 
