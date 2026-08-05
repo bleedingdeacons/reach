@@ -24,13 +24,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: reach
 
       - name: Checkout Unity
         # Scanned by phpstan.neon.dist so cross-plugin symbols resolve.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bleedingdeacons/unity
           ref: main
@@ -38,7 +38,7 @@ jobs:
 
       - name: Checkout Scrutiny
         # Scanned by phpstan.neon.dist so cross-plugin symbols resolve.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bleedingdeacons/scrutiny
           ref: main
@@ -46,7 +46,7 @@ jobs:
 
       - name: Checkout Sentinel
         # Scanned by phpstan.neon.dist so cross-plugin symbols resolve.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bleedingdeacons/sentinel
           ref: main
@@ -68,7 +68,7 @@ jobs:
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           # Keyed on composer.json: composer.lock is untracked in several of
           # these repos, so it is not a reliable cache key across the suite.
