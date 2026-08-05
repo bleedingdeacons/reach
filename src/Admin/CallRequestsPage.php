@@ -172,6 +172,22 @@ final class CallRequestsPage
         }
         check_admin_referer(self::COMPLETE_ACTION);
 
+        wp_safe_redirect($this->completeFromRequest());
+        exit;
+    }
+
+    /**
+     * Apply the "Completed" POST and return where the browser goes next.
+     *
+     * Split out of {@see handleComplete()} so it can be driven in a test:
+     * everything above is a guard, everything below is
+     * `wp_safe_redirect(); exit;`, and the `exit` takes the test runner
+     * with it. Behaviour is unchanged — this is the same body, in the
+     * same order, with the redirect target returned rather than passed
+     * straight to wp_safe_redirect().
+     */
+    private function completeFromRequest(): string
+    {
         $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
         if ($id > 0) {
             [$memberId, $memberName] = $this->actingMember();
@@ -186,8 +202,8 @@ final class CallRequestsPage
         }
 
         $page = isset($_POST['paged']) ? max(1, (int) $_POST['paged']) : 1;
-        wp_safe_redirect($this->listUrl($page, ['completed' => '1']));
-        exit;
+
+        return $this->listUrl($page, ['completed' => '1']);
     }
 
     /**

@@ -29,18 +29,25 @@
     </testsuites>
 
     <source>
+        <!--
+            There is deliberately no <exclude> here.
+
+            src/Admin used to be excluded, on the grounds that admin screens
+            are thin WordPress render/callback glue exercised through wp-admin
+            at runtime rather than in unit tests. Amber disproves that — it
+            covers its whole src/Admin on this same tooling — and these four
+            screens are the personal-data surface of a public finder, so the
+            capability gates on them are exactly the code that most wants a
+            test. tests/Admin covers them; Integrity did the same first
+            (bleedingdeacons/integrity#42).
+
+            Excluding a directory does not just hide it from the report, it
+            takes it out of the denominator, so an untested admin layer read as
+            a higher percentage than a tested one. Anything added under src/
+            from here counts.
+        -->
         <include>
             <directory suffix=".php">src</directory>
         </include>
-        <exclude>
-            <!--
-                Admin screens are thin WordPress render/callback glue (settings
-                fields, list tables, capability-gated page output). They are
-                exercised through WordPress at runtime rather than in unit
-                tests, so they are excluded from the coverage denominator — the
-                same call Integrity makes for its own src/Admin.
-            -->
-            <directory>src/Admin</directory>
-        </exclude>
     </source>
 </phpunit>

@@ -309,6 +309,26 @@ final class SettingsPage
         }
         check_admin_referer('reach_save_settings');
 
+        $this->saveFromRequest();
+
+        // The page moved from "Settings → Reach" (options-general.php)
+        // to "Reach → Authentication" (admin.php) when the top-level
+        // Reach menu was introduced. Redirect target must match.
+        wp_safe_redirect(add_query_arg(['page' => self::PAGE_SLUG, 'updated' => '1'], admin_url('admin.php')));
+        exit;
+    }
+
+    /**
+     * Write the submitted form into {@see Settings}.
+     *
+     * Split out of {@see handleSave()} so it can be driven in a test:
+     * everything above it is a guard and everything below is
+     * `wp_safe_redirect(); exit;`, and the `exit` takes the test runner
+     * with it. Behaviour is unchanged — the same body in the same order,
+     * with the redirect left behind in the caller.
+     */
+    private function saveFromRequest(): void
+    {
         // Find-page settings.
         $placeBias = isset($_POST['place_bias']) && is_string($_POST['place_bias'])
             ? sanitize_text_field(wp_unslash($_POST['place_bias']))
@@ -365,11 +385,5 @@ final class SettingsPage
             }
             // Empty + no remove flag → leave existing secret untouched.
         }
-
-        // The page moved from "Settings → Reach" (options-general.php)
-        // to "Reach → Authentication" (admin.php) when the top-level
-        // Reach menu was introduced. Redirect target must match.
-        wp_safe_redirect(add_query_arg(['page' => self::PAGE_SLUG, 'updated' => '1'], admin_url('admin.php')));
-        exit;
     }
 }
