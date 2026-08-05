@@ -177,7 +177,8 @@ final class PasswordAuthenticator
 
         $tokenHash = hash('sha256', $rawToken);
         $cred = $this->credentials->findByResetTokenHash($tokenHash);
-        if ($cred === null
+        if (
+            $cred === null
             || !$cred->hasValidResetToken($now)
             || !hash_equals($cred->resetTokenHash, $tokenHash)
         ) {

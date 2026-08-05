@@ -256,7 +256,7 @@ final class SettingsPage
                     })();
                 </script>
 
-                <?php foreach (self::PROVIDERS as $provider): ?>
+                <?php foreach (self::PROVIDERS as $provider) : ?>
                     <h3><?php echo esc_html($provider['label']); ?></h3>
                     <table class="form-table">
                         <tr>
@@ -270,7 +270,7 @@ final class SettingsPage
                                        autocomplete="off">
                             </td>
                         </tr>
-                        <?php if ($provider['name'] !== 'apple'): ?>
+                        <?php if ($provider['name'] !== 'apple') : ?>
                         <tr>
                             <th><label for="reach_client_secret_<?php echo esc_attr($provider['name']); ?>">Client Secret</label></th>
                             <td>
@@ -282,7 +282,7 @@ final class SettingsPage
                                        placeholder="<?php echo $hasSecret ? '•••••••• (saved — leave blank to keep)' : ''; ?>"
                                        class="regular-text"
                                        autocomplete="new-password">
-                                <?php if ($hasSecret): ?>
+                                <?php if ($hasSecret) : ?>
                                     <p>
                                         <label>
                                             <input type="checkbox"

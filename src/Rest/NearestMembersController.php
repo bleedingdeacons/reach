@@ -135,7 +135,9 @@ final class NearestMembersController
                         'items'             => ['type' => 'string'],
                         'default'           => [],
                         'sanitize_callback' => static function ($v) {
-                            if (!is_array($v)) return [];
+                            if (!is_array($v)) {
+                                return [];
+                            }
                             return array_values(array_filter(array_map(
                                 static fn($item) => is_string($item) ? sanitize_text_field($item) : '',
                                 $v

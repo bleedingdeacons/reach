@@ -23,7 +23,7 @@ final class NearestMembersResolverTest extends ReachTestCase
     public function testReturnsTwelfthSteppersOnly(): void
     {
         $repo = new InMemoryMemberRepository([
-            $this->stubMember(1, 'A', true,  ['phone'], 'BS1 1AA'),
+            $this->stubMember(1, 'A', true, ['phone'], 'BS1 1AA'),
             $this->stubMember(2, 'B', false, ['phone'], 'BS1 1AB'), // not a 12th-stepper
         ]);
         $geo = new StubGeocoder([
@@ -42,8 +42,8 @@ final class NearestMembersResolverTest extends ReachTestCase
     public function testFiltersByAcceptsCaseInsensitively(): void
     {
         $repo = new InMemoryMemberRepository([
-            $this->stubMember(1, 'A', true, ['Phone'],    'BS1 1AA'),
-            $this->stubMember(2, 'B', true, ['email'],   'BS1 1AB'),
+            $this->stubMember(1, 'A', true, ['Phone'], 'BS1 1AA'),
+            $this->stubMember(2, 'B', true, ['email'], 'BS1 1AB'),
             $this->stubMember(3, 'C', true, ['text', 'phone'], 'BS1 1AC'),
         ]);
         $geo = new StubGeocoder([
@@ -147,7 +147,9 @@ final class NearestMembersResolverTest extends ReachTestCase
 final class StubGeocoder implements Geocoder
 {
     /** @param array<string, Coordinates> $entries */
-    public function __construct(private array $entries) {}
+    public function __construct(private array $entries)
+    {
+    }
     public function geocode(string $area): ?Coordinates
     {
         return $this->entries[$area] ?? null;

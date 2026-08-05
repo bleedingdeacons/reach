@@ -51,16 +51,25 @@ final class NearestMembersControllerTest extends ReachTestCase
     public function testHappySnapshotIncludesRequesterAnonymousNameInAuditDetail(): void
     {
         $requester = $this->stubMember(
-            id: 1, name: 'Alice K.', twelfth: true,
-            email: 'alice@example.com', area: 'BS1 1AA',
+            id: 1,
+            name: 'Alice K.',
+            twelfth: true,
+            email: 'alice@example.com',
+            area: 'BS1 1AA',
         );
         $exposedA = $this->stubMember(
-            id: 2, name: 'Bob T.', twelfth: true,
-            email: 'bob@example.com', area: 'BS1 1AB',
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
         );
         $exposedB = $this->stubMember(
-            id: 3, name: 'Carol M.', twelfth: true,
-            email: 'carol@example.com', area: 'BS1 1AC',
+            id: 3,
+            name: 'Carol M.',
+            twelfth: true,
+            email: 'carol@example.com',
+            area: 'BS1 1AC',
         );
 
         $audit = new SpyAuditLogger();
@@ -124,12 +133,18 @@ final class NearestMembersControllerTest extends ReachTestCase
         // identifier across the search → call lifecycle. The raw
         // email still never leaks.
         $officer = $this->stubMember(
-            id: 1, name: 'Intergroup Officer', twelfth: false,
-            email: 'officer@example.com', area: 'BS1 1AA',
+            id: 1,
+            name: 'Intergroup Officer',
+            twelfth: false,
+            email: 'officer@example.com',
+            area: 'BS1 1AA',
         );
         $exposed = $this->stubMember(
-            id: 2, name: 'Bob T.', twelfth: true,
-            email: 'bob@example.com', area: 'BS1 1AB',
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
         );
 
         $audit = new SpyAuditLogger();
@@ -155,8 +170,11 @@ final class NearestMembersControllerTest extends ReachTestCase
         // email) but no Unity member record matches. The audit row
         // must not contain the unmatched email anywhere in detail.
         $exposed = $this->stubMember(
-            id: 2, name: 'Bob T.', twelfth: true,
-            email: 'bob@example.com', area: 'BS1 1AB',
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
         );
 
         $audit = new SpyAuditLogger();
@@ -188,8 +206,11 @@ final class NearestMembersControllerTest extends ReachTestCase
         // accidentally introducing a leak in a future refactor where
         // the audit step gets pulled in front of the location check.)
         $exposed = $this->stubMember(
-            id: 2, name: 'Bob T.', twelfth: true,
-            email: 'bob@example.com', area: 'BS1 1AB',
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
         );
 
         $audit = new SpyAuditLogger();
@@ -326,8 +347,14 @@ final class NoopCallAttemptRepository implements CallAttemptRepository
     {
         return [];
     }
-    public function countWhere(array $filters): int { return 0; }
-    public function findById(int $id): ?CallAttempt { return null; }
+    public function countWhere(array $filters): int
+    {
+        return 0;
+    }
+    public function findById(int $id): ?CallAttempt
+    {
+        return null;
+    }
 }
 
 /**
@@ -337,7 +364,9 @@ final class NoopCallAttemptRepository implements CallAttemptRepository
 final class ControllerStubGeocoder implements Geocoder
 {
     /** @param array<string, Coordinates> $entries */
-    public function __construct(private array $entries) {}
+    public function __construct(private array $entries)
+    {
+    }
     public function geocode(string $area): ?Coordinates
     {
         return $this->entries[$area] ?? null;

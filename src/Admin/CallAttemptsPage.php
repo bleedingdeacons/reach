@@ -195,12 +195,13 @@ final class CallAttemptsPage
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($rows === []): ?>
+                    <?php if ($rows === []) : ?>
                         <tr>
                             <td colspan="4">No call attempts match these filters.</td>
                         </tr>
-                    <?php else: foreach ($rows as $row): ?>
-                        <?php $memberView = $resolved[$row->memberId] ?? null; ?>
+                    <?php else :
+                        foreach ($rows as $row) : ?>
+                            <?php $memberView = $resolved[$row->memberId] ?? null; ?>
                         <tr>
                             <td style="white-space: nowrap;">
                                 <a href="<?php echo esc_url($this->detailUrl($row->id)); ?>"><?php
@@ -211,7 +212,8 @@ final class CallAttemptsPage
                             <td><?php echo $this->memberCell($memberView); ?></td>
                             <td><?php echo esc_html($this->outcomeLabel($row->outcome)); ?></td>
                         </tr>
-                    <?php endforeach; endif; ?>
+                        <?php endforeach;
+                    endif; ?>
                 </tbody>
             </table>
 
@@ -374,10 +376,10 @@ final class CallAttemptsPage
         <div class="wrap">
             <h1>Call attempt</h1>
 
-            <?php if ($attempt === null): ?>
+            <?php if ($attempt === null) : ?>
                 <p>That call attempt could not be found.</p>
                 <p><a href="<?php echo esc_url($this->listUrl()); ?>">&larr; Back to call attempts</a></p>
-            <?php else: ?>
+            <?php else : ?>
                 <table class="form-table" role="presentation">
                     <tbody>
                         <tr>
@@ -403,9 +405,9 @@ final class CallAttemptsPage
                         <tr>
                             <th scope="row">Note</th>
                             <td>
-                                <?php if ($attempt->note === null || $attempt->note === ''): ?>
+                                <?php if ($attempt->note === null || $attempt->note === '') : ?>
                                     <em>None</em>
-                                <?php else: ?>
+                                <?php else : ?>
                                     <pre style="white-space: pre-wrap; margin: 0;"><?php
                                         echo esc_html($attempt->note);
                                     ?></pre>
@@ -537,7 +539,7 @@ final class CallAttemptsPage
                     Outcome<br>
                     <select name="outcome">
                         <option value="">Any</option>
-                        <?php foreach (CallAttempt::OUTCOMES as $opt): ?>
+                        <?php foreach (CallAttempt::OUTCOMES as $opt) : ?>
                             <option value="<?php echo esc_attr($opt); ?>"
                                 <?php selected($filters['outcome'], $opt); ?>>
                                 <?php echo esc_html($this->outcomeLabel($opt)); ?>
@@ -591,13 +593,13 @@ final class CallAttemptsPage
                     <?php echo (int) $total; ?> item<?php echo $total === 1 ? '' : 's'; ?>
                 </span>
                 <span class="pagination-links">
-                    <?php if ($page > 1): ?>
+                    <?php if ($page > 1) : ?>
                         <a class="prev-page button" href="<?php echo $link($page - 1); ?>">&lsaquo; Prev</a>
                     <?php endif; ?>
                     <span class="paging-input">
                         Page <?php echo (int) $page; ?> of <?php echo (int) $totalPages; ?>
                     </span>
-                    <?php if ($page < $totalPages): ?>
+                    <?php if ($page < $totalPages) : ?>
                         <a class="next-page button" href="<?php echo $link($page + 1); ?>">Next &rsaquo;</a>
                     <?php endif; ?>
                 </span>

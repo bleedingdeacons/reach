@@ -244,4 +244,3 @@ final class SpyCallAttemptRepository implements CallAttemptRepository
         return null;
     }
 }
-
