@@ -32,9 +32,24 @@ final class WpdbPasswordCredentialRepository implements PasswordCredentialReposi
     {
     }
 
+    /**
+     * @return literal-string
+     *
+     * wpdb::prepare() only accepts a literal-string query, and every query in
+     * this class interpolates this table name. PHPStan types $wpdb->prefix as
+     * a plain string so it cannot derive that on its own — the annotation
+     * asserts it. It holds: the prefix comes from wp-config.php and the suffix
+     * is a class constant, so no part of this is reachable from user input.
+     */
     public static function tableName(wpdb $wpdb): string
     {
-        return $wpdb->prefix . self::TABLE_SUFFIX;
+        // Asserted on the prefix rather than on the concatenation: PHPStan
+        // infers the joined string as non-falsy-string, which literal-string
+        // is not a subtype of, so a @var on the result is rejected outright.
+        /** @var literal-string $prefix */
+        $prefix = $wpdb->prefix;
+
+        return $prefix . self::TABLE_SUFFIX;
     }
 
     /**

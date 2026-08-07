@@ -28,9 +28,18 @@ final class WpdbCallRequestRepository implements CallRequestRepository
     {
     }
 
+    /**
+     * @return literal-string
+     *
+     * See WpdbPasswordCredentialRepository::tableName() on why the assertion
+     * is needed and why it holds.
+     */
     public static function tableName(wpdb $wpdb): string
     {
-        return $wpdb->prefix . self::TABLE_SUFFIX;
+        /** @var literal-string $prefix */
+        $prefix = $wpdb->prefix;
+
+        return $prefix . self::TABLE_SUFFIX;
     }
 
     /**
