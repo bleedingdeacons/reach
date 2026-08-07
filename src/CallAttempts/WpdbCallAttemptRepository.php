@@ -38,9 +38,18 @@ final class WpdbCallAttemptRepository implements CallAttemptRepository
     {
     }
 
+    /**
+     * @return literal-string
+     *
+     * See WpdbPasswordCredentialRepository::tableName() on why the assertion
+     * is needed and why it holds.
+     */
     public static function tableName(wpdb $wpdb): string
     {
-        return $wpdb->prefix . self::TABLE_SUFFIX;
+        /** @var literal-string $prefix */
+        $prefix = $wpdb->prefix;
+
+        return $prefix . self::TABLE_SUFFIX;
     }
 
     /**
@@ -243,7 +252,11 @@ final class WpdbCallAttemptRepository implements CallAttemptRepository
      * arithmetically honest — the same predicate must drive both.
      *
      * @param array<string, mixed> $filters
-     * @return array{0: string, 1: array<int, scalar>}
+     * @return array{0: literal-string, 1: array<int, scalar>}
+     *         The clause is literal by construction — every fragment below is
+     *         a hard-coded string and no filter value reaches it, they all go
+     *         into the bound params. Saying so keeps the queries that splice
+     *         it acceptable to wpdb::prepare(), which wants a literal-string.
      */
     private function buildWhere(array $filters): array
     {
