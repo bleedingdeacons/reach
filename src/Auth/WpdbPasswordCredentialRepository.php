@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use LogicException;
 use wpdb;
 
 use function dbDelta;
@@ -23,6 +24,15 @@ use function dbDelta;
  * Writes use INSERT … ON DUPLICATE KEY UPDATE so the first password
  * reset for a member (who has no row yet) and every later change go
  * through the same code path, keyed on the email primary key.
+ *
+ * Every write here guards wpdb::prepare() against null, which is why the
+ * SQL goes into a local before reaching query() rather than being nested
+ * inline. prepare() returns null only when the query carries no
+ * placeholders or the arguments do not match them — a coding error, never
+ * a runtime condition — so the guards throw rather than skipping the
+ * write. These statements are the source of truth for password sign-in;
+ * silently issuing no query at all would leave a caller believing a
+ * password or lockout counter had been stored when it had not.
  */
 final class WpdbPasswordCredentialRepository implements PasswordCredentialRepository
 {
@@ -123,7 +133,7 @@ final class WpdbPasswordCredentialRepository implements PasswordCredentialReposi
         // Setting a password clears any pending reset token and unlocks the
         // account in the same statement — a successful set/reset is a clean
         // slate.
-        $this->wpdb->query($this->wpdb->prepare(
+        $sql = $this->wpdb->prepare(
             "INSERT INTO {$table}
                  (email, password_hash, reset_token_hash, reset_expires_at,
                   failed_attempts, locked_until, updated_at)
@@ -138,14 +148,20 @@ final class WpdbPasswordCredentialRepository implements PasswordCredentialReposi
             $email,
             $passwordHash,
             $now,
-        ));
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the password upsert query.');
+        }
+
+        $this->wpdb->query($sql);
     }
 
     public function storeResetToken(string $email, string $tokenHash, int $expiresAt, int $now): void
     {
         $table = self::tableName($this->wpdb);
 
-        $this->wpdb->query($this->wpdb->prepare(
+        $sql = $this->wpdb->prepare(
             "INSERT INTO {$table}
                  (email, reset_token_hash, reset_expires_at, updated_at)
              VALUES (%s, %s, %d, %d)
@@ -157,20 +173,32 @@ final class WpdbPasswordCredentialRepository implements PasswordCredentialReposi
             $tokenHash,
             $expiresAt,
             $now,
-        ));
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the reset-token store query.');
+        }
+
+        $this->wpdb->query($sql);
     }
 
     public function clearResetToken(string $email, int $now): void
     {
         $table = self::tableName($this->wpdb);
 
-        $this->wpdb->query($this->wpdb->prepare(
+        $sql = $this->wpdb->prepare(
             "UPDATE {$table}
                 SET reset_token_hash = '', reset_expires_at = 0, updated_at = %d
               WHERE email = %s",
             $now,
             $email,
-        ));
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the reset-token clear query.');
+        }
+
+        $this->wpdb->query($sql);
     }
 
     public function recordFailedAttempt(string $email, int $failedAttempts, int $lockedUntil, int $now): void
@@ -180,7 +208,7 @@ final class WpdbPasswordCredentialRepository implements PasswordCredentialReposi
         // UPDATE only — an unknown email has no password to guess, so we
         // never create a row for it (that would leak existence and let an
         // attacker seed the table).
-        $this->wpdb->query($this->wpdb->prepare(
+        $sql = $this->wpdb->prepare(
             "UPDATE {$table}
                 SET failed_attempts = %d, locked_until = %d, updated_at = %d
               WHERE email = %s",
@@ -188,20 +216,32 @@ final class WpdbPasswordCredentialRepository implements PasswordCredentialReposi
             $lockedUntil,
             $now,
             $email,
-        ));
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the failed-attempt query.');
+        }
+
+        $this->wpdb->query($sql);
     }
 
     public function resetFailedAttempts(string $email, int $now): void
     {
         $table = self::tableName($this->wpdb);
 
-        $this->wpdb->query($this->wpdb->prepare(
+        $sql = $this->wpdb->prepare(
             "UPDATE {$table}
                 SET failed_attempts = 0, locked_until = 0, updated_at = %d
               WHERE email = %s",
             $now,
             $email,
-        ));
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the attempt-reset query.');
+        }
+
+        $this->wpdb->query($sql);
     }
 
     public function delete(string $email): void
