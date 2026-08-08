@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use LogicException;
 use wpdb;
 
 use function dbDelta;
@@ -200,7 +201,11 @@ final class WpdbCallRequestRepository implements CallRequestRepository
 
         // Only a still-pending row is updated — the WHERE clause makes
         // completion idempotent and a double-click harmless.
-        $updated = $this->wpdb->query($this->wpdb->prepare(
+        // prepare() returns null only on a mismatch between the placeholders
+        // and the arguments — a coding error, not a runtime condition. Thrown
+        // rather than returned as false, which here would read as "the row was
+        // already completed" and hide the bug.
+        $sql = $this->wpdb->prepare(
             "UPDATE {$table}
                 SET completed_at = %d, completed_by_member_id = %d, completed_by_name = %s
               WHERE id = %d AND completed_at IS NULL",
@@ -208,7 +213,13 @@ final class WpdbCallRequestRepository implements CallRequestRepository
             $memberId,
             $memberName,
             $id,
-        ));
+        );
+
+        if ($sql === null) {
+            throw new LogicException('Failed to prepare the call-request completion query.');
+        }
+
+        $updated = $this->wpdb->query($sql);
 
         return is_int($updated) && $updated > 0;
     }
