@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Auth\OutreachEligibility;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordResetResult;
 use Reach\Auth\VerifiedIdentity;
@@ -234,17 +235,19 @@ final class PasswordAuthController
     }
 
     /**
-     * The member for $email if they exist and hold an outreach role, else
-     * null. Mirrors OAuthController's assertMemberAllowed gate so the two
-     * sign-in paths admit exactly the same people.
+     * The member for $email if they may sign in, else null.
+     *
+     * This used to restate the eligibility rule and had drifted from the
+     * other two copies: it accepted any telephone responder, certified or
+     * not, so an uncertified responder could obtain a session here while
+     * being refused through OAuth. The rule now lives once, in
+     * {@see OutreachEligibility}.
      */
     private function eligibleMember(string $email): ?Member
     {
         $member = $this->members->findByEmail($email);
-        if ($member === null || (!$member->isTwelfthStepper() && !$member->isTelephoneResponder())) {
-            return null;
-        }
-        return $member;
+
+        return OutreachEligibility::permits($member) ? $member : null;
     }
 
     private function issueSessionFor(VerifiedIdentity $identity, int $now): void

@@ -217,21 +217,13 @@ final class PasswordAuthenticator
     }
 
     /**
-     * Whether the member behind this email may use Reach.
-     *
-     * A 12th-stepper always qualifies. A telephone responder qualifies
-     * only once certified — an uncertified responder (still Applied, In
-     * Training or Pending) is not yet cleared for the helpline and is
-     * turned away at sign-in. Kept in lockstep with the OAuth path's
-     * {@see \Reach\Rest\OAuthController::assertMemberAllowed()}.
+     * Whether the member behind this email may use Reach. The rule
+     * itself lives in {@see OutreachEligibility} — see that class on why
+     * it is not restated here.
      */
     private function isEligibleMember(string $email): bool
     {
-        $member = $this->members->findByEmail($email);
-        return $member !== null
-            && ($member->isTwelfthStepper()
-                || ($member->isTelephoneResponder()
-                    && $member->getResponderCertification()->isCertified()));
+        return OutreachEligibility::permits($this->members->findByEmail($email));
     }
 
     private function normaliseEmail(string $email): string

@@ -1,0 +1,208 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Reach\Tests\Fixtures;
+
+use Reach\Devices\Device;
+use Reach\Devices\DeviceRepository;
+
+/**
+ * In-memory {@see DeviceRepository} for tests.
+ *
+ * Mirrors the Wpdb implementation's contract rather than its storage —
+ * most importantly that lookups by token hash refuse revoked rows, which
+ * is the behaviour every authentication path depends on.
+ */
+final class InMemoryDeviceRepository implements DeviceRepository
+{
+    /** @var array<int, Device> */
+    public array $devices = [];
+
+    /**
+     * Device id => the token hash it authenticates with.
+     *
+     * The real table stores the hash on the row; Device deliberately
+     * does not carry it, so the double keeps the mapping alongside.
+     * {@see create()} records it automatically; {@see rememberHash()} is
+     * for devices seeded straight into the constructor.
+     *
+     * @var array<int, string>
+     */
+    public array $hashes = [];
+
+    private int $nextId = 1;
+
+    /** @param array<int, Device> $devices */
+    public function __construct(array $devices = [])
+    {
+        foreach ($devices as $device) {
+            $this->devices[] = $device;
+            $this->nextId = max($this->nextId, $device->id + 1);
+        }
+    }
+
+    public function create(
+        string $tokenHash,
+        string $memberEmail,
+        int $memberId,
+        string $label,
+        string $platform,
+        string $pushProvider,
+        string $pushToken,
+        int $now,
+    ): Device {
+        $device = new Device(
+            $this->nextId++,
+            $memberEmail,
+            $memberId,
+            $label,
+            $platform,
+            $pushProvider,
+            $pushToken,
+            $now,
+            $now,
+        );
+
+        $this->devices[] = $device;
+        $this->hashes[$device->id] = $tokenHash;
+
+        return $device;
+    }
+
+    public function findByTokenHash(string $tokenHash): ?Device
+    {
+        foreach ($this->devices as $device) {
+            if (($this->hashes[$device->id] ?? '') !== $tokenHash) {
+                continue;
+            }
+
+            // Revoked rows are invisible here, exactly as they are in
+            // the Wpdb implementation: every caller must be unable to
+            // tell a revoked token from an unknown one.
+            return $device->isRevoked() ? null : $device;
+        }
+
+        return null;
+    }
+
+    public function rememberHash(int $deviceId, string $tokenHash): void
+    {
+        $this->hashes[$deviceId] = $tokenHash;
+    }
+
+    public function findById(int $id): ?Device
+    {
+        foreach ($this->devices as $device) {
+            if ($device->id === $id) {
+                return $device;
+            }
+        }
+
+        return null;
+    }
+
+    public function findByMemberEmail(string $memberEmail): array
+    {
+        return array_values(array_filter(
+            $this->devices,
+            static fn(Device $d): bool => $d->memberEmail === $memberEmail && !$d->isRevoked(),
+        ));
+    }
+
+    public function findAllLive(): array
+    {
+        return array_values(array_filter(
+            $this->devices,
+            static fn(Device $d): bool => !$d->isRevoked(),
+        ));
+    }
+
+    public function list(int $limit, int $offset): array
+    {
+        return array_slice($this->devices, $offset, $limit);
+    }
+
+    public function countAll(): int
+    {
+        return count($this->devices);
+    }
+
+    public function touch(int $id, int $now): bool
+    {
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $d->pushProvider,
+            $d->pushToken,
+            $d->createdAt,
+            $now,
+            $d->revokedAt,
+        ));
+    }
+
+    public function updatePushToken(int $id, string $pushProvider, string $pushToken): bool
+    {
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $pushProvider,
+            $pushToken,
+            $d->createdAt,
+            $d->lastSeenAt,
+            $d->revokedAt,
+        ));
+    }
+
+    public function revoke(int $id, int $now): bool
+    {
+        $device = $this->findById($id);
+        if ($device === null || $device->isRevoked()) {
+            return false;
+        }
+
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $d->pushProvider,
+            $d->pushToken,
+            $d->createdAt,
+            $d->lastSeenAt,
+            $now,
+        ));
+    }
+
+    public function revokeAllForMember(string $memberEmail, int $now): int
+    {
+        $count = 0;
+        foreach ($this->findByMemberEmail($memberEmail) as $device) {
+            if ($this->revoke($device->id, $now)) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /** @param callable(Device): Device $mutate */
+    private function replace(int $id, callable $mutate): bool
+    {
+        foreach ($this->devices as $index => $device) {
+            if ($device->id === $id) {
+                $this->devices[$index] = $mutate($device);
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

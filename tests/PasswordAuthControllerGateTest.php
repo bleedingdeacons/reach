@@ -14,6 +14,7 @@ use Reach\Rest\PasswordAuthController;
 use Reach\Session\SessionCookie;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Members\Interfaces\Member;
+use Unity\Members\ResponderCertification;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -69,10 +70,33 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
         $this->assertInstanceOf(Member::class, $this->invokeGate($controller, 'twelfth@example.com'));
     }
 
-    public function testGateAcceptsTelephoneResponder(): void
+    public function testGateAcceptsCertifiedTelephoneResponder(): void
     {
-        $controller = $this->controllerWith([new MemberStub('responder@example.com', false, true)]);
+        $controller = $this->controllerWith([new MemberStub(
+            personalEmail: 'responder@example.com',
+            twelfthStepper: false,
+            telephoneResponder: true,
+            responderCertification: ResponderCertification::Certified,
+        )]);
+
         $this->assertInstanceOf(Member::class, $this->invokeGate($controller, 'responder@example.com'));
+    }
+
+    public function testGateRejectsUncertifiedTelephoneResponder(): void
+    {
+        // This assertion used to read the other way, and that was the bug:
+        // the responder role alone was enough here while the OAuth path
+        // additionally required a current certification, so an uncertified
+        // responder could sign in by password and not by provider. The rule
+        // now lives once, in Reach\Auth\OutreachEligibility.
+        $controller = $this->controllerWith([new MemberStub(
+            personalEmail: 'trainee@example.com',
+            twelfthStepper: false,
+            telephoneResponder: true,
+            responderCertification: ResponderCertification::InTraining,
+        )]);
+
+        $this->assertNull($this->invokeGate($controller, 'trainee@example.com'));
     }
 
     // --- endpoint rejections (no session issued) --------------------------

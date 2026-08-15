@@ -72,6 +72,57 @@ function reach(): \Psr\Container\ContainerInterface
     return \Reach\Plugin::getContainer();
 }
 
+/**
+ * Raise an alert on the telephone-responder rota's Hand handsets.
+ *
+ * This is Reach's public alerting API — the supported way for another
+ * plugin to make a duty phone ring:
+ *
+ *     $id = reach_send_alert([
+ *         'kind'      => 'shift_uncovered',
+ *         'source'    => 'trusted',
+ *         'title'     => 'Helpline shift uncovered',
+ *         'body'      => 'Tonight 22:00-08:00 has nobody signed up.',
+ *         'reference' => 'SHIFT-2026-08-15-N',
+ *         'priority'  => 'urgent',
+ *     ]);
+ *
+ * Only `kind` and `title` are required. Omit `target_email` to alert
+ * every certified telephone responder, which is usually what is wanted.
+ * See {@see \Reach\Alerts\AlertApi} for the full argument list.
+ *
+ * <b>Never put personal data in an alert.</b> The text passes through
+ * Google's push infrastructure and onto a lock screen. Send a reference
+ * and let the responder look up the details through a private channel.
+ *
+ * Guarded so a calling plugin can use `function_exists('reach_send_alert')`
+ * to degrade gracefully when Reach is not installed.
+ *
+ * @param array<string, mixed> $alert
+ * @return int|\WP_Error The stored alert's id, or why it was refused.
+ */
+if (!function_exists('reach_send_alert')) {
+    function reach_send_alert(array $alert): int|\WP_Error
+    {
+        try {
+            return \Reach\Plugin::getContainer()
+                ->get(\Reach\Alerts\AlertApi::class)
+                ->send($alert);
+        } catch (\Throwable $e) {
+            // Reach not initialised yet, or its container could not build
+            // the API. A caller reaching for this before 'reach/loaded'
+            // gets a WP_Error rather than a fatal — an alert that could
+            // not be raised must never take the calling plugin down with
+            // it.
+            return new \WP_Error(
+                'reach_unavailable',
+                'Reach is not ready to accept alerts: ' . $e->getMessage(),
+                ['status' => 503],
+            );
+        }
+    }
+}
+
 // Initialize after Unity is loaded.
 add_action('unity/loaded', function ($container) {
     try {
@@ -158,6 +209,13 @@ register_activation_hook(__FILE__, function () {
     // Install/upgrade the password-credentials table (email + password
     // sign-in). Idempotent dbDelta, so safe on every activation/upgrade.
     \Reach\Auth\WpdbPasswordCredentialRepository::install($wpdb);
+
+    // Install/upgrade the Hand tables: enrolled handsets, the alerts
+    // raised for them, and which handset has alarmed for which alert.
+    // Idempotent dbDelta like the rest.
+    \Reach\Devices\WpdbDeviceRepository::install($wpdb);
+    \Reach\Alerts\WpdbAlertRepository::install($wpdb);
+    \Reach\Alerts\WpdbAlertContactRepository::install($wpdb);
 });
 
 // Self-deactivate if Scrutiny gets deactivated while Reach is active —
@@ -176,4 +234,12 @@ register_deactivation_hook(__FILE__, function () {
 
     // Stop the retention purge from firing once Reach is inactive.
     wp_clear_scheduled_hook(\Reach\Plugin::PURGE_CRON_HOOK);
+
+    // Likewise the alert sweep. Enrolled handsets are deliberately left
+    // alone: deactivating a plugin is routinely how a site is upgraded,
+    // and revoking every responder's device — forcing the whole rota to
+    // re-enrol — is far too destructive an answer to a few seconds of
+    // downtime. Nothing authenticates while Reach is inactive anyway,
+    // because none of its routes are registered.
+    wp_clear_scheduled_hook(\Reach\Plugin::ALERT_PURGE_CRON_HOOK);
 });

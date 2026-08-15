@@ -11,8 +11,20 @@ if (!defined('ABSPATH')) {
 use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
+use Reach\Admin\DevicesPage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
+use Reach\Alerts\AlertApi;
+use Reach\Alerts\AlertContactRepository;
+use Reach\Alerts\AlertDispatcher;
+use Reach\Alerts\AlertRepository;
+use Reach\Alerts\Fcm\FcmClient;
+use Reach\Alerts\Transport\FcmTransport;
+use Reach\Alerts\WpdbAlertContactRepository;
+use Reach\Alerts\WpdbAlertRepository;
+use Reach\Auth\DeviceCodeStore;
+use Reach\Auth\DeviceRedirectValidator;
+use Reach\Auth\DeviceTokenMinter;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordCredentialRepository;
@@ -32,12 +44,18 @@ use Reach\CallAttempts\WpdbCallAttemptRepository;
 use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\CallRequests\WpdbCallRequestRepository;
+use Reach\Devices\CurrentDevice;
+use Reach\Devices\DeviceRepository;
+use Reach\Devices\ResponderGate;
+use Reach\Devices\WpdbDeviceRepository;
 use Reach\Frontend\PageRouter;
 use Reach\Geocoding\Geocoder;
 use Reach\Geocoding\PostcodesIoGeocoder;
 use Reach\Resolution\NearestMembersResolver;
+use Reach\Rest\AlertController;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
+use Reach\Rest\DeviceAuthController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
@@ -67,6 +85,57 @@ final class ReachServiceProvider
         $container->register(CurrentSession::class, fn(ContainerInterface $c) => new CurrentSession($c->get(SessionCookie::class)));
         $container->register(StateStore::class, fn() => new StateStore());
         $container->register(JwtVerifier::class, fn() => new JwtVerifier());
+
+        // ── Hand: handsets, their credentials, and the alerts they ring for ──
+        //
+        // The gate is registered first and shared: it is the single
+        // answer to "may this person use Hand?", consulted by both
+        // enrolment paths, by every authenticated request, and by the
+        // dispatcher deciding who an alert may reach. See ResponderGate
+        // on why it is one object rather than a rule written out four
+        // times.
+        $container->register(ResponderGate::class, fn(ContainerInterface $c) => new ResponderGate(
+            $c->get(MemberRepository::class),
+        ));
+        $container->register(DeviceTokenMinter::class, fn() => new DeviceTokenMinter());
+        $container->register(DeviceCodeStore::class, fn() => new DeviceCodeStore());
+        $container->register(DeviceRedirectValidator::class, fn() => new DeviceRedirectValidator());
+        $container->register(DeviceRepository::class, function () {
+            global $wpdb;
+            return new WpdbDeviceRepository($wpdb);
+        });
+        $container->register(CurrentDevice::class, fn(ContainerInterface $c) => new CurrentDevice(
+            $c->get(DeviceRepository::class),
+            $c->get(DeviceTokenMinter::class),
+            $c->get(ResponderGate::class),
+        ));
+
+        $container->register(AlertRepository::class, function () {
+            global $wpdb;
+            return new WpdbAlertRepository($wpdb);
+        });
+        $container->register(AlertContactRepository::class, function () {
+            global $wpdb;
+            return new WpdbAlertContactRepository($wpdb);
+        });
+        $container->register(FcmClient::class, fn() => new FcmClient());
+        $container->register(FcmTransport::class, fn(ContainerInterface $c) => new FcmTransport(
+            $c->get(FcmClient::class),
+            $c->get(Settings::class),
+        ));
+
+        // Transports are passed as a list so adding one — WNS for the
+        // Windows head, say — is a change here and nowhere else.
+        $container->register(AlertDispatcher::class, fn(ContainerInterface $c) => new AlertDispatcher(
+            $c->get(AlertRepository::class),
+            $c->get(AlertContactRepository::class),
+            $c->get(DeviceRepository::class),
+            $c->get(ResponderGate::class),
+            [$c->get(FcmTransport::class)],
+        ));
+        $container->register(AlertApi::class, fn(ContainerInterface $c) => new AlertApi(
+            $c->get(AlertDispatcher::class),
+        ));
 
         // Providers.
         $container->register(GoogleProvider::class, fn(ContainerInterface $c) => new GoogleProvider(
@@ -149,6 +218,9 @@ final class ReachServiceProvider
             $c->get(StateStore::class),
             $c->get(SessionCookie::class),
             $c->get(MemberRepository::class),
+            $c->get(DeviceCodeStore::class),
+            $c->get(DeviceRedirectValidator::class),
+            $c->get(ResponderGate::class),
         ));
 
         $container->register(RateLimiter::class, fn() => new RateLimiter());
@@ -185,6 +257,27 @@ final class ReachServiceProvider
             $c->get(CallRequestMailer::class),
         ));
 
+        $container->register(DeviceAuthController::class, fn(ContainerInterface $c) => new DeviceAuthController(
+            $c->get(DeviceRepository::class),
+            $c->get(DeviceTokenMinter::class),
+            $c->get(DeviceCodeStore::class),
+            $c->get(DeviceRedirectValidator::class),
+            $c->get(ResponderGate::class),
+            $c->get(CurrentDevice::class),
+            $c->get(PasswordAuthenticator::class),
+            $c->get(ProviderRegistry::class),
+            $c->get(StateStore::class),
+            $c->get(RateLimiter::class),
+            $c->get(AuditLogger::class),
+        ));
+
+        $container->register(AlertController::class, fn(ContainerInterface $c) => new AlertController(
+            $c->get(AlertRepository::class),
+            $c->get(AlertContactRepository::class),
+            $c->get(CurrentDevice::class),
+            $c->get(AuditLogger::class),
+        ));
+
         // Frontend + admin.
         $container->register(PageRouter::class, fn(ContainerInterface $c) => new PageRouter(
             $c->get(CurrentSession::class),
@@ -209,6 +302,13 @@ final class ReachServiceProvider
         $container->register(MemberSearchPage::class, fn(ContainerInterface $c) => new MemberSearchPage(
             $c->get(NearestMembersResolver::class),
             $c->get(MemberViewFactory::class),
+        ));
+
+        $container->register(DevicesPage::class, fn(ContainerInterface $c) => new DevicesPage(
+            $c->get(DeviceRepository::class),
+            $c->get(AlertRepository::class),
+            $c->get(AlertApi::class),
+            $c->get(MemberRepository::class),
         ));
     }
 }

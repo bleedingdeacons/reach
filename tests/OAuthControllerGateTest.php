@@ -6,10 +6,13 @@ namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Tests\ReachTestCase;
+use Reach\Auth\DeviceCodeStore;
+use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\Providers\OAuthProvider;
 use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
+use Reach\Devices\ResponderGate;
 use Reach\Rest\OAuthController;
 use Reach\Session\SessionCookie;
 use Unity\Members\Interfaces\Member;
@@ -246,11 +249,18 @@ final class OAuthControllerGateTest extends ReachTestCase
             $registry->register($provider);
         }
 
+        $repository = new InMemoryMemberRepository($members);
+
         return new OAuthController(
             $registry,
             new StateStore(),
             new SessionCookie(),
-            new InMemoryMemberRepository($members),
+            $repository,
+            // Device-flow collaborators; unused on the browser paths
+            // these gate tests drive. See OAuthControllerTest::controller().
+            new DeviceCodeStore(),
+            new DeviceRedirectValidator(),
+            new ResponderGate($repository),
         );
     }
 

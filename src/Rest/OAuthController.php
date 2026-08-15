@@ -9,9 +9,13 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Auth\AnonymisedEmailDetector;
+use Reach\Auth\DeviceCodeStore;
+use Reach\Auth\DeviceRedirectValidator;
+use Reach\Auth\OutreachEligibility;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
+use Reach\Devices\ResponderGate;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
 use Unity\Members\Interfaces\MemberRepository;
@@ -62,6 +66,9 @@ final class OAuthController
         private readonly StateStore $stateStore,
         private readonly SessionCookie $sessionCookie,
         private readonly MemberRepository $members,
+        private readonly DeviceCodeStore $deviceCodes,
+        private readonly DeviceRedirectValidator $deviceRedirects,
+        private readonly ResponderGate $responderGate,
     ) {
     }
 
@@ -182,9 +189,18 @@ final class OAuthController
             return new WP_Error('reach_unknown_provider', 'Unknown provider.', ['status' => 400]);
         }
 
+        // Set when the flow was begun by the Hand app rather than by a
+        // browser. It was validated against the allow-list at /start and
+        // has been out of reach of the request ever since, so it can be
+        // trusted here. Every refusal below routes back to the app when
+        // it is set: a friendly page rendered inside an in-app browser
+        // tab is a dead end the app never hears about, so it would hang
+        // on the sign-in sheet until the responder gave up.
+        $deviceRedirect = $stored['device_redirect'];
+
         $identity = $provider->handleCallback($code, $stored['nonce'], $this->callbackUrl(), $stored['code_verifier']);
         if ($identity === null) {
-            return $this->denyRedirect('signin_failed');
+            return $this->denyFor($deviceRedirect, 'signin_failed');
         }
 
         $returnTo = $stored['return_to'] !== '' ? $stored['return_to'] : $this->homePageUrl();
@@ -196,17 +212,66 @@ final class OAuthController
         // AnonymisedEmailDetector is the single source of truth on
         // what counts as anonymised.
         if (AnonymisedEmailDetector::isAnonymised($identity->email)) {
-            return $this->denyRedirect('email_required');
+            return $this->denyFor($deviceRedirect, 'email_required');
         }
 
         if (($denied = $this->assertMemberAllowed($identity)) !== null) {
-            return $this->denyRedirect($this->errorSlug($denied));
+            return $this->denyFor($deviceRedirect, $this->errorSlug($denied));
+        }
+
+        if ($deviceRedirect !== null) {
+            return $this->completeDeviceSignIn($identity, $deviceRedirect);
         }
 
         $this->issueSessionFor($identity);
         // return_to is the only redirect target that could be influenced
         // by a tampered link, so clamp it to this site here.
         return $this->redirect($this->safeInternalUrl($returnTo));
+    }
+
+    /**
+     * Finish a sign-in that the Hand app started.
+     *
+     * No session cookie is minted: a native app is not a browser and has
+     * no use for one. Instead the proven identity becomes a single-use
+     * exchange code, which the app trades for a device token over TLS.
+     * The code — not the token — is what travels back through the
+     * browser; see {@see \Reach\Auth\DeviceCodeStore} for why.
+     *
+     * The gate applied here is Hand's, which is stricter than the one
+     * {@see assertMemberAllowed()} has already run: the website admits
+     * 12th-steppers, the helpline handset admits only certified
+     * telephone responders. A 12th-stepper therefore gets this far and
+     * is turned away at this last step, with the same `not_eligible`
+     * slug the app renders for every refusal.
+     */
+    private function completeDeviceSignIn(VerifiedIdentity $identity, string $deviceRedirect): WP_REST_Response
+    {
+        if ($this->responderGate->authorisedMember($identity->email) === null) {
+            return $this->denyFor($deviceRedirect, 'not_eligible');
+        }
+
+        $code = $this->deviceCodes->issue($identity);
+
+        return $this->redirect(
+            $this->deviceRedirects->withParams($deviceRedirect, ['code' => $code]),
+        );
+    }
+
+    /**
+     * Refuse a sign-in, routing the refusal wherever the flow came from:
+     * back into the app when this was a device flow, otherwise to the
+     * styled notice on the sign-in page.
+     */
+    private function denyFor(?string $deviceRedirect, string $slug): WP_REST_Response
+    {
+        if ($deviceRedirect === null) {
+            return $this->denyRedirect($slug);
+        }
+
+        return $this->redirect(
+            $this->deviceRedirects->withParams($deviceRedirect, ['error' => $slug]),
+        );
     }
 
     public function apple(WP_REST_Request $request): WP_REST_Response|WP_Error
@@ -287,20 +352,17 @@ final class OAuthController
     /**
      * Gate sign-in on the member's role.
      *
-     * Reach is for members who handle outreach calls — either as 12th-
-     * step volunteers or as certified telephone responders on the
-     * helpline. A telephone responder must hold a current certification
-     * ({@see \Unity\Members\ResponderCertification::isCertified()}); one still working
-     * towards it (Applied, In Training, Pending) is not yet cleared and
-     * is turned away. A verified identity whose email doesn't match any
-     * member, matches a member with neither role, or matches an
-     * uncertified responder, is rejected at the sign-in boundary so the
-     * session cookie is never minted. This keeps the downstream code
-     * (NearestMembersController, CallAttemptController) able to assume
-     * any authenticated session belongs to someone entitled to use Reach.
+     * A verified identity whose email doesn't match any member, matches
+     * a member with neither outreach role, or matches an uncertified
+     * responder, is rejected here so the session cookie is never minted.
+     * That keeps the downstream code (NearestMembersController,
+     * CallAttemptController) able to assume any authenticated session
+     * belongs to someone entitled to use Reach.
      *
-     * Kept in lockstep with the password path's
-     * {@see \Reach\Auth\PasswordAuthenticator::isEligibleMember()}.
+     * The rule itself lives in {@see \Reach\Auth\OutreachEligibility},
+     * which all three sign-in paths now consult rather than restate —
+     * see that class for what went wrong when they each kept their own
+     * copy.
      *
      * Returns null when sign-in may proceed, or a WP_Error suitable for
      * returning from the calling REST callback otherwise.
@@ -308,12 +370,7 @@ final class OAuthController
     private function assertMemberAllowed(VerifiedIdentity $identity): ?WP_Error
     {
         $member = $this->members->findByEmail($identity->email);
-        if (
-            $member === null
-            || !($member->isTwelfthStepper()
-                || ($member->isTelephoneResponder()
-                    && $member->getResponderCertification()->isCertified()))
-        ) {
+        if (!OutreachEligibility::permits($member)) {
             return new WP_Error(
                 'reach_not_eligible',
                 'This account is not registered to use Reach. Please contact your intergroup if you believe this is in error.',

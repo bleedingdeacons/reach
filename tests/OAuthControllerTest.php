@@ -6,10 +6,13 @@ namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Tests\ReachTestCase;
+use Reach\Auth\DeviceCodeStore;
+use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\Providers\OAuthProvider;
 use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
+use Reach\Devices\ResponderGate;
 use Reach\Rest\OAuthController;
 use Reach\Session\SessionCookie;
 use Unity\Members\Interfaces\Member;
@@ -249,11 +252,21 @@ final class OAuthControllerTest extends ReachTestCase
 
     private function controller(ProviderRegistry $registry, ?InMemoryMemberRepository $members = null): OAuthController
     {
+        $repository = $members ?? new InMemoryMemberRepository([]);
+
         return new OAuthController(
             $registry,
             $this->state,
             new SessionCookie(),
-            $members ?? new InMemoryMemberRepository([]),
+            $repository,
+            // The device-flow collaborators. These tests exercise the
+            // browser paths, where no device redirect is ever stashed,
+            // so the three are present to satisfy the constructor and
+            // are never reached. DeviceAuthControllerTest covers the
+            // branch that does use them.
+            new DeviceCodeStore(),
+            new DeviceRedirectValidator(),
+            new ResponderGate($repository),
         );
     }
 
