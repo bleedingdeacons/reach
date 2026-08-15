@@ -219,12 +219,27 @@ final class DevicesPage
             wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
         }
 
+        wp_safe_redirect($this->revokeFromRequest());
+        exit;
+    }
+
+    /**
+     * Apply the revoke POST and return where the browser goes next.
+     *
+     * Split out of {@see handleRevoke()} for the reason
+     * {@see CallRequestsPage::completeFromRequest()} documents: everything
+     * above is a guard, everything below is `wp_safe_redirect(); exit;`,
+     * and the `exit` takes the test runner with it. Same body, same order,
+     * with the target returned rather than issued.
+     */
+    private function revokeFromRequest(): string
+    {
         $deviceId = (int) ($_POST['device_id'] ?? 0);
         check_admin_referer(self::REVOKE_ACTION . '_' . $deviceId);
 
         $revoked = $deviceId > 0 && $this->devices->revoke($deviceId, time());
 
-        $this->redirectBack($revoked ? 'revoked' : 'revoke_failed');
+        return $this->resultUrl($revoked ? 'revoked' : 'revoke_failed');
     }
 
     public function handleTestAlert(): void
@@ -233,6 +248,17 @@ final class DevicesPage
             wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
         }
 
+        wp_safe_redirect($this->testAlertFromRequest());
+        exit;
+    }
+
+    /**
+     * Raise the test alert and return where the browser goes next. Split
+     * out of {@see handleTestAlert()} for the same reason as
+     * {@see revokeFromRequest()}.
+     */
+    private function testAlertFromRequest(): string
+    {
         check_admin_referer(self::TEST_ALERT_ACTION);
 
         $user = wp_get_current_user();
@@ -249,7 +275,7 @@ final class DevicesPage
             'ttl'      => 300,
         ]);
 
-        $this->redirectBack(is_wp_error($result) ? 'test_failed' : 'test_sent');
+        return $this->resultUrl(is_wp_error($result) ? 'test_failed' : 'test_sent');
     }
 
     /**
@@ -324,12 +350,12 @@ final class DevicesPage
             . esc_html($text) . '</p></div>';
     }
 
-    private function redirectBack(string $result): void
+    /** The list URL, flagged with what the last action did. */
+    private function resultUrl(string $result): string
     {
-        wp_safe_redirect(add_query_arg(
+        return (string) add_query_arg(
             ['page' => self::PAGE_SLUG, 'reach_result' => $result],
             admin_url('admin.php'),
-        ));
-        exit;
+        );
     }
 }
