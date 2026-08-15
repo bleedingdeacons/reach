@@ -26,6 +26,16 @@ if (!defined('ABSPATH')) {
  * don't use PKCE simply leave it null. The verifier never leaves the
  * server; only its S256 challenge travels through the redirect.
  *
+ * A `device_redirect` may also be stashed. It marks the flow as having
+ * been started by the Hand app rather than by a browser, and carries
+ * the app URI the callback must bounce back to. It is null for every
+ * web sign-in. The callback branches on it: a device flow ends in a
+ * one-time exchange code sent to the app (see
+ * {@see DeviceCodeStore}), a web flow ends in a session cookie. Storing
+ * it here rather than accepting it on the callback is what makes it
+ * trustworthy — the value was validated once when the flow began, and
+ * the provider cannot influence what comes back out.
+ *
  * Transients are used (not a custom table) because the state is
  * inherently short-lived — 10 minutes is plenty for a user to bounce
  * through the provider — and WordPress already has a working
@@ -39,17 +49,22 @@ final class StateStore
     /**
      * @return array{state: string, nonce: string, code_verifier: ?string}
      */
-    public function issue(string $provider, string $returnTo, ?string $codeVerifier = null): array
-    {
+    public function issue(
+        string $provider,
+        string $returnTo,
+        ?string $codeVerifier = null,
+        ?string $deviceRedirect = null
+    ): array {
         $state = bin2hex(random_bytes(16));
         $nonce = bin2hex(random_bytes(16));
         set_transient(
             self::PREFIX . $state,
             [
-                'provider'      => $provider,
-                'nonce'         => $nonce,
-                'return_to'     => $returnTo,
-                'code_verifier' => $codeVerifier,
+                'provider'        => $provider,
+                'nonce'           => $nonce,
+                'return_to'       => $returnTo,
+                'code_verifier'   => $codeVerifier,
+                'device_redirect' => $deviceRedirect,
             ],
             self::TTL_SECONDS
         );
@@ -65,7 +80,7 @@ final class StateStore
      * transient — single-use semantics, so replaying the callback URL
      * does not work.
      *
-     * @return array{provider: string, nonce: string, return_to: string, code_verifier: ?string}|null
+     * @return array{provider: string, nonce: string, return_to: string, code_verifier: ?string, device_redirect: ?string}|null
      */
     public function consume(string $state): ?array
     {
@@ -76,11 +91,16 @@ final class StateStore
         }
         delete_transient($key);
         $verifier = $stored['code_verifier'] ?? null;
+        // Absent on states issued before device flows existed, so read
+        // defensively rather than assuming the key is there: a state in
+        // flight across an upgrade must still complete as a web sign-in.
+        $deviceRedirect = $stored['device_redirect'] ?? null;
         return [
-            'provider'      => (string) ($stored['provider'] ?? ''),
-            'nonce'         => (string) ($stored['nonce'] ?? ''),
-            'return_to'     => (string) ($stored['return_to'] ?? ''),
-            'code_verifier' => is_string($verifier) ? $verifier : null,
+            'provider'        => (string) ($stored['provider'] ?? ''),
+            'nonce'           => (string) ($stored['nonce'] ?? ''),
+            'return_to'       => (string) ($stored['return_to'] ?? ''),
+            'code_verifier'   => is_string($verifier) ? $verifier : null,
+            'device_redirect' => is_string($deviceRedirect) && $deviceRedirect !== '' ? $deviceRedirect : null,
         ];
     }
 }

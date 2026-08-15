@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Alerts\Fcm\ServiceAccount;
 use Reach\Core\Settings;
 
 /**
@@ -103,6 +104,14 @@ final class SettingsPage
         $callbackUrl = rest_url('reach/v1/oauth/callback');
         $appleRedirectUrl = home_url('/reach/signin');
 
+        // The stored key file is never echoed back — like the OAuth
+        // client secrets, it is write-only once saved. What is shown is
+        // whether one is present and which Firebase project it belongs
+        // to, which is the part an admin actually needs to confirm.
+        $fcmAccount = ServiceAccount::fromJson($this->settings->getFcmServiceAccount());
+        $hasFcm = $fcmAccount !== null;
+        $fcmProject = $fcmAccount !== null ? $fcmAccount->projectId : '';
+
         ?>
         <div class="wrap">
             <h1>Reach</h1>
@@ -161,6 +170,69 @@ final class SettingsPage
                                    autocomplete="off">
                             <p class="description">
                                 Where callback requests are emailed. Each <em>Request a callback</em> raised on the find page is sent here with the caller&rsquo;s name, phone, preferred 12th&#8209;Stepper and any note, plus a reference number &mdash; so the caller&rsquo;s details live in this inbox rather than in the database. Leave blank to use the site admin address (<code><?php echo esc_html((string) get_option('admin_email')); ?></code>).
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <h2>Hand push notifications</h2>
+                <p>
+                    Optional. Reach alerts reach Hand handsets either way &mdash; every handset polls
+                    as well as listening &mdash; but without Firebase an alert arrives at the next poll
+                    rather than instantly, and a phone with the app closed will not ring at all.
+                </p>
+                <table class="form-table">
+                    <tr>
+                        <th><label for="reach_fcm_service_account">Firebase service account</label></th>
+                        <td>
+                            <textarea id="reach_fcm_service_account"
+                                      name="fcm_service_account"
+                                      rows="6"
+                                      class="large-text code"
+                                      autocomplete="off"
+                                      placeholder="<?php echo $hasFcm
+                                        ? 'A service account is saved. Paste a new key file to replace it.'
+                                        : 'Paste the whole service-account JSON key file here.'; ?>"></textarea>
+                            <p class="description">
+                                From the Firebase console: <em>Project settings &rarr; Service accounts &rarr;
+                                Generate new private key</em>. Paste the entire JSON file. It is encrypted at rest,
+                                and is never shown again once saved &mdash; leave this blank to keep the existing one.
+                                <?php if ($hasFcm) : ?>
+                                    <br><strong>Status:</strong> a service account is saved for project
+                                    <code><?php echo esc_html($fcmProject); ?></code>.
+                                <?php else : ?>
+                                    <br><strong>Status:</strong> not configured &mdash; handsets are polling only.
+                                <?php endif; ?>
+                            </p>
+                            <p>
+                                <label>
+                                    <input type="checkbox" name="fcm_service_account_clear" value="1">
+                                    Remove the stored service account
+                                </label>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="reach_apns_critical">iOS critical alerts</label></th>
+                        <td>
+                            <label>
+                                <input type="checkbox"
+                                       id="reach_apns_critical"
+                                       name="apns_critical"
+                                       value="1"
+                                       <?php checked($this->settings->isApnsCriticalEnabled()); ?>>
+                                Send urgent alerts as critical notifications on iOS
+                            </label>
+                            <p class="description">
+                                Critical alerts sound through the ringer switch and Do&nbsp;Not&nbsp;Disturb &mdash;
+                                which is what a duty handset wants. Apple gates them behind the
+                                <code>com.apple.developer.usernotifications.critical-alerts</code> entitlement, which
+                                is granted only on application.
+                                <strong>Do not switch this on until that entitlement is in the Hand app&rsquo;s
+                                provisioning profile:</strong> without it Apple <em>rejects</em> the notification
+                                rather than downgrading it, so this would silence the very alerts it is meant to make
+                                louder. Leave it off and urgent alerts still use the time&#8209;sensitive level, which
+                                breaks through a Focus mode.
                             </p>
                         </td>
                     </tr>
@@ -355,6 +427,25 @@ final class SettingsPage
             ? sanitize_text_field(wp_unslash($_POST['call_request_email']))
             : '';
         $this->settings->setCallRequestEmail($callRequestEmail);
+
+        // Firebase service account. Same write-only handling as the
+        // OAuth client secrets: an empty submission leaves the stored
+        // value untouched, and removing one takes an explicit checkbox
+        // so a blank textarea can never wipe it by accident.
+        //
+        // Deliberately not sanitize_text_field: this is a JSON document
+        // whose private_key contains newlines, and collapsing those
+        // would corrupt the key into something that cannot sign.
+        if (!empty($_POST['fcm_service_account_clear'])) {
+            $this->settings->setFcmServiceAccount('');
+        } elseif (isset($_POST['fcm_service_account']) && is_string($_POST['fcm_service_account'])) {
+            $serviceAccount = trim(wp_unslash($_POST['fcm_service_account']));
+            if ($serviceAccount !== '') {
+                $this->settings->setFcmServiceAccount($serviceAccount);
+            }
+        }
+
+        $this->settings->setApnsCriticalEnabled(!empty($_POST['apns_critical']));
 
         foreach (self::PROVIDERS as $provider) {
             $name = $provider['name'];

@@ -107,6 +107,8 @@ No WordPress users are created. There is no server-side session table. The cooki
 | `/reach/v1/session`                        | GET    | Returns current session info       |
 | `/reach/v1/nearest-members`                | GET    | Nearest 12th-step members by area  |
 | `/reach/v1/call-attempts`                  | POST   | Record an attempt to call a member |
+| `/reach/v1/auth/device/*`                  | —      | Hand handset enrolment — see below |
+| `/reach/v1/alerts`                         | —      | Hand alert collection — see below  |
 
 ## Call attempts and responsiveness signal
 
@@ -142,6 +144,164 @@ The Call attempts page is gated by `scrutiny_view_personal_data`, matching the r
 Member lookup is batched: each page of results triggers exactly one `MemberRepository::findAll(['post__in' => ...])` call so the per-row hydration that follows lands on WP's object cache.
 
 The Call attempts page is deliberately read-only. Edits and deletions would undermine Scrutiny's audit log (which records the attempt as having happened) and create a tempting "tidy up" path that quietly suppresses uncomfortable patterns. If a correction is needed, the caller can log a new attempt with the corrected outcome — the scorer's "reached recently wins" rule will surface the latest reality.
+
+## Hand — alerting the telephone-responder rota
+
+[Hand](https://github.com/bleedingdeacons/hand) is a .NET MAUI app for
+certified telephone responders. Reach is the server side: it enrols the
+handsets, holds the alerts, and pushes them.
+
+### Who may use it
+
+Hand's gate is **stricter than the website's**. Reach admits a
+12th-stepper *or* a certified telephone responder. Hand admits certified
+telephone responders and nobody else — it is the helpline handset, and
+it receives alerts raised for the duty rota. A 12th-stepper with no
+responder role can sign in to Reach and will be refused by Hand.
+
+The gate (`Reach\Devices\ResponderGate`) is re-run on **every**
+authenticated request and again at dispatch time, rather than being
+frozen into the device token when it is issued. A responder whose
+certification lapses or who is removed from Unity stops receiving alerts
+at their next call, without anybody remembering to revoke the handset.
+
+### Enrolling a handset
+
+Two ways in, both ending in the same long-lived bearer token:
+
+```
+SSO       Hand opens /reach/v1/auth/device/start in the system browser
+          → the ordinary OAuth flow, carrying a validated app redirect
+          → the callback mints a ONE-TIME CODE instead of a session cookie
+          → 302 to hand://auth?code=…
+          → Hand POSTs the code to /auth/device/exchange for its token
+
+Password  Hand POSTs email + password to /auth/device/password
+          → token, no browser involved
+```
+
+The code, not the token, is what travels through the browser — RFC 8252
+("OAuth 2.0 for Native Apps"), because a redirect lands in browser
+history and can be read by anything else registered for the scheme.
+Redirect targets are an allow-list of exactly two shapes:
+`hand://auth`, and `http://127.0.0.1:{port}/…` for the Windows head,
+which cannot claim a custom scheme unless packaged as MSIX. `localhost`
+is refused — it resolves through DNS and can be redirected; the literal
+loopback address cannot.
+
+Tokens are stored only as a keyed hash. Rotating `wp_salt('auth')`
+invalidates every enrolled handset, which is the behaviour you want
+after a suspected breach.
+
+### The alerting API
+
+**This is the part other plugins use.** Reach itself raises no alerts.
+
+```php
+$alertId = reach_send_alert([
+    'kind'      => 'shift_uncovered',   // required
+    'subject'   => 'Helpline shift uncovered',  // required (alias: title)
+    'message'   => 'Tonight 22:00–08:00 has nobody signed up.', // alias: body
+    'source'    => 'trusted',
+    'reference' => 'SHIFT-2026-08-15-N',
+    'priority'  => 'urgent',            // normal | urgent
+    'contact'   => 'Sam, 07700 900123', // see below — handled separately
+    'target_email' => '',               // omit to alert the whole rota
+    'ttl'       => 3600,                // seconds; default 1 hour
+]);
+
+if (is_wp_error($alertId)) { /* refused — see the error */ }
+```
+
+`subject`/`message` and `title`/`body` are the same two fields; the wire
+names win if both are sent, so existing integrations are unaffected.
+
+### Contact details
+
+`contact` is the one field that may hold personal data, and it is
+handled completely differently from everything else:
+
+| | Everything else | `contact` |
+| --- | --- | --- |
+| In the alerts table | yes | no — its own table |
+| Encrypted at rest | no | yes, AES-256-GCM |
+| In the FCM push payload | yes | **never** |
+| In the poll response | yes | **never** — only a `has_contact` flag |
+| On the lock screen | yes | **never** |
+| Read by | anyone near the handset | the responder, on request |
+| Audited | no | **yes, every read** |
+
+The responder taps *Show contact* in Hand, which fetches it over TLS from
+`GET /reach/v1/alerts/{id}/contact`. That call is authorised the same way
+as acknowledging — the handset must be one the alert could have gone to —
+and writes a Scrutiny audit entry, so "which responder saw this caller's
+number, and when" is answerable from the audit table exactly as it is for
+the rest of the stack.
+
+Contacts are purged with their alerts, contacts first so no orphaned
+personal data is left behind.
+
+> Put the caller's name and number in `contact` and nowhere else. A phone
+> number in `subject` or `message` is a phone number on a lock screen and
+> in Google's logs.
+
+Plugins that would rather not depend on a function existing can
+`do_action('reach/send_alert', [...])`, which is inert when Reach is not
+active. `do_action('reach/alert_dispatched', $alert, $devices, $pushed)`
+fires afterwards, for a further notifier such as an SMS fallback.
+
+> **Never put personal data in an alert.** The text passes through
+> Google's push infrastructure and onto a lock screen anyone nearby can
+> read. Send a reference and let the responder look the details up
+> through a private channel — the same rule Reach already applies to its
+> own call requests, whose caller details are emailed and never stored.
+
+### Delivery
+
+Store first, deliver second. Every alert is durable before any push is
+attempted, and every handset polls as well as listening, so a failed
+push delays an alert rather than losing it.
+
+| Head | Alert while the app is closed |
+| --- | --- |
+| Android | Yes. Data-only FCM message at high priority; Hand builds a full-screen-intent notification on an alarm-category channel, so the handset rings like a call. |
+| iOS | Yes, capped at 30s — a terminated app runs no code, so the APNs payload carries the sound and the system plays it. Bypassing the ringer switch and Do Not Disturb needs Apple's Critical Alerts entitlement (see Settings). |
+| Windows / macOS | No FCM coverage. Hand runs as a login-start tray app and polls, so "closed" means not on screen rather than not running. |
+
+Android is sent a **data-only** message deliberately. A message carrying
+a `notification` block is handled by the system tray when the app is
+backgrounded and `onMessageReceived` never runs — so Hand would never
+get the chance to raise a full-screen intent, and a duty handset would
+get one polite ding instead of ringing.
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/reach/v1/auth/device/start` | GET | Begin SSO enrolment in the system browser |
+| `/reach/v1/auth/device/exchange` | POST | One-time code → device token |
+| `/reach/v1/auth/device/password` | POST | Email + password → device token |
+| `/reach/v1/auth/device/push` | POST | Record a rotated FCM registration token |
+| `/reach/v1/auth/device/session` | GET | Who this handset is, and whether it is still allowed |
+| `/reach/v1/auth/device/signout` | POST | Revoke this handset |
+| `/reach/v1/alerts` | GET | Alerts this handset should be ringing about |
+| `/reach/v1/alerts/{id}/contact` | GET | Contact details for one alert (audited) |
+| `/reach/v1/alerts/{id}/ack` | POST | This handset has alarmed for one |
+
+The poll has no client-side cursor: what a handset has handled is
+recorded server-side as an acknowledgement, so a handset that is
+reinstalled or restored from a backup neither re-alarms for everything
+nor silently skips live alerts.
+
+### Configuration and admin
+
+**Reach → Settings** takes the Firebase service-account JSON (encrypted
+at rest, write-only once saved) and the iOS critical-alerts switch.
+Leave Firebase blank and everything still works by polling.
+
+**Reach → Hand devices** lists enrolled handsets, revokes them, shows
+recent alerts and who acknowledged each — and has a **Send test alert**
+button. The delivery chain has a lot of links on other people's
+infrastructure and its failure mode is silence, so test it before you
+rely on it.
 
 ## Audit logging
 

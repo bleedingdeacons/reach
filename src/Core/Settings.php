@@ -221,6 +221,76 @@ final class Settings
         return $m[1] . ':' . $m[2];
     }
 
+    /**
+     * The Google service-account key file used to push alerts to Hand
+     * handsets through Firebase Cloud Messaging, as raw JSON.
+     *
+     * Stored encrypted alongside the OAuth client secrets, and for the
+     * same reason: the private key inside it can push a notification to
+     * every handset in the Firebase project, so a database dump must
+     * not yield a usable one.
+     *
+     * Empty means FCM is not configured. That is a supported state, not
+     * a broken one — every handset polls as well as listening, so alerts
+     * still arrive, just at the poll interval rather than instantly.
+     */
+    public function getFcmServiceAccount(): string
+    {
+        $all = get_option(self::OPTION_SECRETS, []);
+        if (!is_array($all) || !isset($all['fcm_service_account']) || !is_string($all['fcm_service_account'])) {
+            return '';
+        }
+        return $this->decrypt($all['fcm_service_account']);
+    }
+
+    public function setFcmServiceAccount(string $value): void
+    {
+        $all = get_option(self::OPTION_SECRETS, []);
+        if (!is_array($all)) {
+            $all = [];
+        }
+        $value = trim($value);
+        if ($value === '') {
+            unset($all['fcm_service_account']);
+        } else {
+            $all['fcm_service_account'] = $this->encrypt($value);
+        }
+        update_option(self::OPTION_SECRETS, $all, false);
+    }
+
+    /**
+     * Whether urgent alerts may ask iOS for a *critical* notification —
+     * the kind that sounds through the ringer switch and Do Not Disturb.
+     *
+     * Off by default, and deliberately so. Critical alerts need the
+     * `com.apple.developer.usernotifications.critical-alerts`
+     * entitlement, which Apple grants only on application. Until it has
+     * been granted, sending the critical flag gets the notification
+     * *rejected* rather than quietly downgraded — so switching this on
+     * before Apple says yes would silence the very alerts it is meant to
+     * make louder. Turn it on once the entitlement is in the app's
+     * provisioning profile.
+     */
+    public function isApnsCriticalEnabled(): bool
+    {
+        $all = get_option(self::OPTION_PUBLIC, []);
+        return is_array($all) && !empty($all['apns_critical']);
+    }
+
+    public function setApnsCriticalEnabled(bool $enabled): void
+    {
+        $all = get_option(self::OPTION_PUBLIC, []);
+        if (!is_array($all)) {
+            $all = [];
+        }
+        if ($enabled) {
+            $all['apns_critical'] = true;
+        } else {
+            unset($all['apns_critical']);
+        }
+        update_option(self::OPTION_PUBLIC, $all, false);
+    }
+
     public function setClientId(string $provider, string $value): void
     {
         $all = get_option(self::OPTION_PUBLIC, []);

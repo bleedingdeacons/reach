@@ -1,0 +1,164 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Reach\Alerts;
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+use Reach\Alerts\Transport\AlertTransport;
+use Reach\Devices\Device;
+use Reach\Devices\DeviceRepository;
+use Reach\Devices\ResponderGate;
+use Reach\Logger\HasLogger;
+
+use function do_action;
+
+/**
+ * Stores an alert and gets it onto the right handsets.
+ *
+ * <b>Store first, deliver second, and never the other way round.</b>
+ * Everything about this feature's reliability follows from that order.
+ * The alert is durable the moment it is raised, so a handset that is
+ * out of signal, asleep, or being replaced mid-shift collects it on its
+ * next poll regardless of what the push transports did. Delivery is
+ * therefore an optimisation — a fast path that makes a phone ring in
+ * two seconds instead of at the next poll — and is allowed to fail
+ * quietly. A dispatcher that failed the caller because Google was
+ * having a bad afternoon would be worse than useless.
+ *
+ * <b>Who receives an alert.</b> A broadcast alert (the normal case for
+ * a helpline) goes to every enrolled handset whose responder still
+ * passes {@see ResponderGate} — certified telephone responders only.
+ * The gate is re-run here rather than trusted from the device row for
+ * the same reason it is re-run on every authenticated request: roles
+ * change, and an alert containing a live callback is precisely the
+ * thing that must not reach someone who has stepped down.
+ *
+ * The gate result is memoised per dispatch. A broadcast to a rota of
+ * thirty responders would otherwise mean thirty member lookups, and
+ * several of them are the same person's phone and desktop.
+ */
+final class AlertDispatcher
+{
+    use HasLogger;
+
+    protected static function logChannel(): string
+    {
+        return 'reach';
+    }
+
+    /** @param array<int, AlertTransport> $transports */
+    public function __construct(
+        private readonly AlertRepository $alerts,
+        private readonly AlertContactRepository $contacts,
+        private readonly DeviceRepository $devices,
+        private readonly ResponderGate $gate,
+        private readonly array $transports,
+    ) {
+    }
+
+    /**
+     * Raise an alert: store it, then try to push it.
+     *
+     * Returns the stored alert. It is stored whatever happens to the
+     * push attempts, so a caller can rely on having a durable record
+     * and a reference to quote.
+     */
+    public function dispatch(AlertRequest $request, ?int $now = null): Alert
+    {
+        $now = $now ?? time();
+        $alert = $this->alerts->create($request, $now);
+
+        // Contact details, when there are any, go to their own encrypted
+        // table and nowhere near the push below. Stored before delivery so
+        // a responder who opens the alert the instant it lands finds them
+        // already there.
+        if ($request->contact !== '') {
+            $this->contacts->save($alert->id, $request->contact, $now);
+        }
+
+        $devices = $this->resolveTargets($alert);
+        $pushed = 0;
+
+        foreach ($devices as $device) {
+            foreach ($this->transports as $transport) {
+                if (!$transport->supports($device)) {
+                    continue;
+                }
+
+                if ($transport->deliver($alert, $device)) {
+                    $pushed++;
+                }
+
+                // One transport per device. Having been accepted by one
+                // is enough, and having been refused by one is not a
+                // reason to try another that declined to support it.
+                break;
+            }
+        }
+
+        self::logInfo('Alert dispatched', [
+            'alert_id'  => $alert->id,
+            'kind'      => $alert->kind,
+            'source'    => $alert->source,
+            'reference' => $alert->reference,
+            'devices'   => count($devices),
+            'pushed'    => $pushed,
+        ]);
+
+        /**
+         * Fires after an alert has been stored and delivery attempted.
+         *
+         * The alert carries no personal data (see {@see Alert}), so this
+         * is safe to hang further notifiers on — an SMS fallback for a
+         * responder with no smartphone, say.
+         */
+        do_action('reach/alert_dispatched', $alert, count($devices), $pushed);
+
+        return $alert;
+    }
+
+    /**
+     * The live handsets an alert should reach.
+     *
+     * @return array<int, Device>
+     */
+    private function resolveTargets(Alert $alert): array
+    {
+        if (!$alert->isBroadcast()) {
+            // A named target that is no longer eligible gets nothing,
+            // and that is not an error worth failing the dispatch over —
+            // the alert is stored, and the admin list will show it went
+            // to nobody.
+            if ($this->gate->authorisedMember($alert->targetEmail) === null) {
+                self::logNotice('Alert targeted a responder who is not eligible', [
+                    'alert_id' => $alert->id,
+                ]);
+                return [];
+            }
+
+            return $this->devices->findByMemberEmail($alert->targetEmail);
+        }
+
+        $eligible = [];
+        /** @var array<string, bool> $decided Memoised gate results, keyed by email. */
+        $decided = [];
+
+        foreach ($this->devices->findAllLive() as $device) {
+            $email = $device->memberEmail;
+
+            if (!array_key_exists($email, $decided)) {
+                $decided[$email] = $this->gate->authorisedMember($email) !== null;
+            }
+
+            if ($decided[$email]) {
+                $eligible[] = $device;
+            }
+        }
+
+        return $eligible;
+    }
+}

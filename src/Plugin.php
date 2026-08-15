@@ -10,13 +10,20 @@ if (!defined('ABSPATH')) {
 
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
+use Reach\Admin\DevicesPage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
+use Reach\Alerts\AlertApi;
+use Reach\Alerts\AlertContactRepository;
+use Reach\Alerts\AlertRepository;
 use Reach\Auth\PasswordCredentialRepository;
 use Reach\Core\ReachServiceProvider;
+use Reach\Devices\DeviceRepository;
 use Reach\Frontend\PageRouter;
+use Reach\Rest\AlertController;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
+use Reach\Rest\DeviceAuthController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
@@ -53,6 +60,24 @@ class Plugin
      */
     public const PURGE_CRON_HOOK = 'reach_purge_call_requests';
 
+    /**
+     * Daily sweep that deletes expired alerts and their
+     * acknowledgements.
+     *
+     * Unlike call requests — which are durable history holding no PII —
+     * alerts are purely operational. An alert whose window closed an
+     * hour ago is of no interest to anybody, and keeping them would grow
+     * a table that every handset polls against several times a minute.
+     */
+    public const ALERT_PURGE_CRON_HOOK = 'reach_purge_alerts';
+
+    /**
+     * How far past expiry an alert is kept before the sweep removes it.
+     * A day's grace leaves the admin list something to show about last
+     * night's shift without keeping the table large.
+     */
+    private const ALERT_RETENTION_SECONDS = 86400;
+
     protected static function logChannel(): string
     {
         return 'reach';
@@ -86,6 +111,38 @@ class Plugin
         self::$container->get(NearestMembersController::class)->register();
         self::$container->get(CallAttemptController::class)->register();
         self::$container->get(CallRequestController::class)->register();
+        self::$container->get(DeviceAuthController::class)->register();
+        self::$container->get(AlertController::class)->register();
+
+        // The action form of the alerting API. The function form
+        // (reach_send_alert) needs no registration — it is declared in
+        // the plugin bootstrap and resolves through the container when
+        // called. See AlertApi for the contract other plugins code
+        // against.
+        self::$container->get(AlertApi::class)->register();
+
+        // Daily sweep of expired alerts. Scheduled here rather than on
+        // activation so an install upgraded into this version picks it
+        // up on its next load without being reactivated.
+        if (!wp_next_scheduled(self::ALERT_PURGE_CRON_HOOK)) {
+            wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', self::ALERT_PURGE_CRON_HOOK);
+        }
+        add_action(self::ALERT_PURGE_CRON_HOOK, static function (): void {
+            $container = self::$container;
+            if ($container === null) {
+                return;
+            }
+
+            $before = time() - self::ALERT_RETENTION_SECONDS;
+
+            // Contacts first: they are joined to the alerts to find them, so
+            // deleting the alerts first would strand every contact row
+            // against an id that no longer exists — and a stranded row here
+            // is orphaned personal data, which is the one kind this stack
+            // must not leave lying about.
+            $container->get(AlertContactRepository::class)->purgeForExpiredAlertsBefore($before);
+            $container->get(AlertRepository::class)->purgeExpiredBefore($before);
+        });
 
         // Call requests are now durable history holding no caller PII, so
         // the old daily retention purge is gone. Clear any event left
@@ -141,14 +198,23 @@ class Plugin
         // MemberChangeTracker fires unity/member_deleted with the member as
         // it was at deletion, from which we take the email the row is keyed
         // on. Inert if Unity never fires it (e.g. a direct DB delete).
+        // A deleted member's enrolled handsets are revoked alongside
+        // their password credential. CurrentDevice would refuse them at
+        // the next request anyway — it re-runs the eligibility gate on
+        // every call — but that leaves live rows the dispatcher still
+        // counts as targets in the meantime, and an alert briefly
+        // addressed to someone who has been removed is exactly the case
+        // this whole gate exists to prevent.
         $credentials = self::$container->get(PasswordCredentialRepository::class);
-        add_action('unity/member_deleted', static function ($postId, $member = null) use ($credentials) {
+        $devices = self::$container->get(DeviceRepository::class);
+        add_action('unity/member_deleted', static function ($postId, $member = null) use ($credentials, $devices) {
             if ($member === null) {
                 return;
             }
             $email = strtolower(trim((string) $member->getPersonalEmail()));
             if ($email !== '') {
                 $credentials->delete($email);
+                $devices->revokeAllForMember($email, time());
             }
         }, 10, 2);
 
@@ -164,6 +230,7 @@ class Plugin
             self::$container->get(CallAttemptsPage::class)->register();
             self::$container->get(CallRequestsPage::class)->register();
             self::$container->get(MemberSearchPage::class)->register();
+            self::$container->get(DevicesPage::class)->register();
             self::$container->get(SettingsPage::class)->register();
         }
 
