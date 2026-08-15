@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use BleedingDeacons\WpMocks\WpState;
 use Reach\Alerts\AlertRequest;
 use Reach\Auth\DeviceTokenMinter;
 use Reach\Devices\CurrentDevice;
@@ -37,15 +38,22 @@ final class AlertControllerTest extends ReachTestCase
     private InMemoryAlertRepository $alerts;
     private InMemoryAlertContactRepository $contacts;
     private DeviceTokenMinter $minter;
+    private SpyAuditLogger $audit;
 
     protected function setUp(): void
     {
         parent::setUp();
 
+        WpState::$restRoutes = [];
+
         $this->devices = new InMemoryDeviceRepository();
         $this->alerts = new InMemoryAlertRepository();
         $this->contacts = new InMemoryAlertContactRepository();
         $this->minter = new DeviceTokenMinter();
+        // Held rather than built inside controller(), because the
+        // contact endpoint's audit entry is the thing under test on that
+        // path rather than a side effect of it.
+        $this->audit = new SpyAuditLogger();
     }
 
     public function testPollRequiresAuthentication(): void
@@ -185,6 +193,232 @@ final class AlertControllerTest extends ReachTestCase
         $this->assertSame(404, $result->get_error_data()['status'] ?? null);
     }
 
+    // --- route wiring -----------------------------------------------------
+
+    public function testRegisterHangsRouteRegistrationOnRestApiInit(): void
+    {
+        $this->captureAction('rest_api_init');
+
+        $this->controller()->register();
+
+        $this->assertCount(1, $this->actionCallbacks('rest_api_init'));
+    }
+
+    public function testAllThreeAlertRoutesAreDeclared(): void
+    {
+        $this->controller()->registerRoutes();
+
+        $routes = array_column(WpState::$restRoutes, 'route');
+        $this->assertContains('/alerts', $routes);
+        $this->assertContains('/alerts/(?P<id>\d+)/contact', $routes);
+        $this->assertContains('/alerts/(?P<id>\d+)/ack', $routes);
+    }
+
+    public function testTheAlertIdIsCoercedToAPositiveInteger(): void
+    {
+        // absint on both id-bearing routes: the pattern already restricts
+        // it to digits, and this makes the callback's (int) cast a
+        // formality rather than the only guard.
+        $this->controller()->registerRoutes();
+
+        foreach (WpState::$restRoutes as $route) {
+            if (!str_contains((string) $route['route'], '<id>')) {
+                continue;
+            }
+            $this->assertSame('absint', $route['args']['args']['id']['sanitize_callback']);
+            $this->assertTrue($route['args']['args']['id']['required']);
+        }
+    }
+
+    // --- the contact endpoint ---------------------------------------------
+
+    public function testFetchingAContactRequiresAuthentication(): void
+    {
+        $alert = $this->raise(['kind' => 'call_request', 'title' => 'Callback wanted']);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $result = $this->controller()->contact(new WP_REST_Request(['id' => $alert->id]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+    }
+
+    public function testAResponderCanFetchTheContactForABroadcastAlert(): void
+    {
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise(['kind' => 'call_request', 'title' => 'Callback wanted']);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $result = $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertSame(200, $result->get_status());
+        $this->assertSame('Sam, 07700 900123', $result->get_data()['contact']);
+        $this->assertSame($alert->id, $result->get_data()['alert_id']);
+    }
+
+    public function testEveryContactReadIsAudited(): void
+    {
+        // The point of the endpoint's shape: a regulator can answer
+        // "which user saw this personal data, and when". An alert contact
+        // is personal data reaching a responder, so it is answerable the
+        // same way as everything else Reach exposes.
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise([
+            'kind'      => 'call_request',
+            'title'     => 'Callback wanted',
+            'reference' => 'CR-000123',
+        ]);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertCount(1, $this->audit->entries);
+        $entry = $this->audit->entries[0];
+        $this->assertSame('alert_contact', $entry['fieldName']);
+        $this->assertStringContainsString('Alert contact viewed', $entry['detail']);
+        $this->assertStringContainsString('ref:CR-000123', $entry['detail']);
+        $this->assertStringContainsString('alert:' . $alert->id, $entry['detail']);
+    }
+
+    public function testTheAuditEntryOmitsAnEmptyReference(): void
+    {
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise(['kind' => 'call_request', 'title' => 'Callback wanted']);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertStringNotContainsString('ref:', $this->audit->entries[0]['detail']);
+    }
+
+    public function testTheAuditTrailNeverRecordsTheContactItself(): void
+    {
+        // Auditing the read must not become a second, unencrypted copy of
+        // the thing being protected.
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise(['kind' => 'call_request', 'title' => 'Callback wanted']);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertStringNotContainsString('900123', $this->audit->entries[0]['detail']);
+        $this->assertStringNotContainsString('Sam', $this->audit->entries[0]['detail']);
+    }
+
+    public function testAnAlertWithNoContactAnswersEmptyAndIsNotAudited(): void
+    {
+        // Nothing personal was disclosed, so there is nothing to audit —
+        // and an audit trail padded with non-events is a worse answer to
+        // "who saw this" than one without them.
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise(['kind' => 'call_request', 'title' => 'Callback wanted']);
+
+        $result = $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertSame('', $result->get_data()['contact']);
+        $this->assertSame([], $this->audit->entries);
+    }
+
+    public function testAResponderCanFetchTheContactForTheirOwnTargetedAlert(): void
+    {
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise([
+            'kind'         => 'call_request',
+            'title'        => 'Callback wanted',
+            'target_email' => 'responder@example.com',
+        ]);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $result = $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertSame('Sam, 07700 900123', $result->get_data()['contact']);
+    }
+
+    public function testAnotherRespondersTargetedContactIsRefusedAsUnknown(): void
+    {
+        // Same 404 as "no such alert": which alerts exist is not
+        // something one responder should learn about another's.
+        $this->enrol('other@example.com');
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise([
+            'kind'         => 'call_request',
+            'title'        => 'Callback wanted',
+            'target_email' => 'other@example.com',
+        ]);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $result = $this->controller()->contact($this->authed($token, ['id' => $alert->id]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_unknown_alert', $result->get_error_code());
+        $this->assertSame(404, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $this->audit->entries, 'a refused read is not a read');
+    }
+
+    public function testFetchingAnUnknownAlertsContactIs404(): void
+    {
+        $token = $this->enrol('responder@example.com');
+
+        $result = $this->controller()->contact($this->authed($token, ['id' => 9999]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame(404, $result->get_error_data()['status'] ?? null);
+    }
+
+    public function testTheContactIsRefusedIdenticallyWhetherItIsMissingOrNotYours(): void
+    {
+        // The two 404s must be indistinguishable or the difference is
+        // itself the disclosure.
+        $this->enrol('other@example.com');
+        $token = $this->enrol('responder@example.com');
+        $theirs = $this->raise([
+            'kind'         => 'call_request',
+            'title'        => 'Callback wanted',
+            'target_email' => 'other@example.com',
+        ]);
+
+        $notYours = $this->controller()->contact($this->authed($token, ['id' => $theirs->id]));
+        $noSuchThing = $this->controller()->contact($this->authed($token, ['id' => 9999]));
+
+        $this->assertInstanceOf(WP_Error::class, $notYours);
+        $this->assertInstanceOf(WP_Error::class, $noSuchThing);
+        $this->assertSame($noSuchThing->get_error_code(), $notYours->get_error_code());
+        $this->assertSame($noSuchThing->get_error_message(), $notYours->get_error_message());
+        $this->assertSame($noSuchThing->get_error_data(), $notYours->get_error_data());
+    }
+
+    public function testTheContactNeverAppearsInThePollResponse(): void
+    {
+        // The poll runs every few seconds on every handset. Personal data
+        // must not travel on it — the app is told a contact exists and
+        // fetches it separately, once, audited.
+        $token = $this->enrol('responder@example.com');
+        $alert = $this->raise(['kind' => 'call_request', 'title' => 'Callback wanted']);
+        $this->contacts->save($alert->id, 'Sam, 07700 900123', time());
+
+        $result = $this->controller()->pending($this->authed($token));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $encoded = (string) wp_json_encode($result->get_data());
+        $this->assertStringNotContainsString('900123', $encoded);
+        $this->assertStringNotContainsString('Sam', $encoded);
+    }
+
+    public function testThePollEchoesTheServerClock(): void
+    {
+        // So a handset can detect a clock that has drifted far enough to
+        // make its own expiry arithmetic wrong.
+        $token = $this->enrol('responder@example.com');
+
+        $result = $this->controller()->pending($this->authed($token));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertEqualsWithDelta(time(), $result->get_data()['now'], 5);
+    }
+
     // --- helpers ----------------------------------------------------------
 
     private function controller(): AlertController
@@ -206,7 +440,7 @@ final class AlertControllerTest extends ReachTestCase
             $this->alerts,
             $this->contacts,
             new CurrentDevice($this->devices, $this->minter, $gate),
-            new SpyAuditLogger(),
+            $this->audit,
         );
     }
 

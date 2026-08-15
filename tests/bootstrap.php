@@ -54,6 +54,14 @@ if (!defined('COOKIE_DOMAIN')) {
     define('COOKIE_DOMAIN', '');
 }
 
+// Normally set by reach.php from plugin_dir_path(__FILE__), which is not
+// loaded here. PageRouter::templateFor() builds template paths from it,
+// and the router's test asserts those paths resolve to files that exist
+// — so it has to be the real directory, not a placeholder.
+if (!defined('REACH_PLUGIN_DIR')) {
+    define('REACH_PLUGIN_DIR', dirname(__DIR__) . '/');
+}
+
 // Reach autoloader.
 spl_autoload_register(function ($class) {
     $prefix = 'Reach\\';

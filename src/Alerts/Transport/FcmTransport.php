@@ -164,11 +164,14 @@ final class FcmTransport implements AlertTransport
      */
     private function data(Alert $alert): array
     {
-        // The alert's own payload goes first so the fields below always
-        // win a name collision — a plugin that puts its own "kind" in
-        // the payload must not be able to change what Hand thinks the
-        // alert is.
-        return $alert->payload + [
+        // The alert's own fields go first, because `+` keeps the *left*
+        // operand's value on a key collision. That ordering is the whole
+        // protection: nothing upstream strips reserved names from a
+        // payload — see AlertRequest::payload(), which only flattens and
+        // caps — so a plugin that puts its own "kind" or "alert_id" in
+        // the payload would otherwise change what Hand thinks the alert
+        // is, and what it acknowledges against.
+        return [
             'alert_id'  => (string) $alert->id,
             'kind'      => $alert->kind,
             'source'    => $alert->source,
@@ -178,7 +181,7 @@ final class FcmTransport implements AlertTransport
             'reference' => $alert->reference,
             'channel'   => self::ANDROID_CHANNEL,
             'sound'     => self::ANDROID_SOUND,
-        ];
+        ] + $alert->payload;
     }
 
     /**

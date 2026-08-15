@@ -44,6 +44,22 @@ final class PageRouter
     public const RESET_SLUG = 'reach/reset';
     public const SET_PASSWORD_SLUG = 'reach/set-password';
 
+    /**
+     * Every page this router serves, including the bare entry point.
+     * Anything else is left to WordPress.
+     */
+    public const PAGES = [
+        'index', 'signin', 'home', 'find', 'shifts',
+        'request', 'lookup', 'reset', 'set-password',
+    ];
+
+    /**
+     * The pages that require a valid Reach session. The password
+     * set/reset pages are deliberately absent: a signed-out member must
+     * be able to reach them, or a forgotten password is unrecoverable.
+     */
+    private const GATED_PAGES = ['home', 'find', 'shifts', 'request', 'lookup'];
+
     public function __construct(
         private readonly CurrentSession $session,
     ) {
@@ -112,7 +128,7 @@ final class PageRouter
     public function renderPage(): void
     {
         $page = get_query_var(self::QUERY_VAR);
-        if (!in_array($page, ['signin', 'home', 'find', 'shifts', 'request', 'reset', 'set-password', 'index', 'lookup'], true)) {
+        if (!in_array($page, self::PAGES, true)) {
             return;
         }
 
@@ -129,21 +145,40 @@ final class PageRouter
         status_header(200);
         nocache_headers();
 
-        // Cookie check failed on the gated page — render the sign-in
-        // template in place rather than bouncing the visitor through a
-        // redirect. The URL stays at /reach/find, which means after a
-        // successful sign-in the visitor lands back where they meant
-        // to go without us having to thread a `?return_to` through the
-        // OAuth flow.
-        // All the signed-in pages bounce to sign-in when there's no session.
-        if (in_array($page, ['home', 'find', 'shifts', 'request', 'lookup'], true) && !$this->session->isAuthenticated()) {
+        $template = self::templateFor($page, $this->session->isAuthenticated());
+
+        $session = $this->session->get(); // available inside template
+        require $template;
+        exit;
+    }
+
+    /**
+     * The template a page renders, given whether the visitor holds a
+     * valid Reach session.
+     *
+     * Pure, and separated from {@see renderPage()} for the reason
+     * {@see landingPath()} already is: everything after this in
+     * renderPage() is `require` and `exit`, neither of which can run
+     * inside a test, and the gating decision is the part worth
+     * protecting.
+     *
+     * A gated page with no session renders the sign-in template *in
+     * place* rather than bouncing through a redirect. The URL stays at
+     * /reach/find, so after a successful sign-in the visitor lands back
+     * where they meant to go without us threading a `?return_to` through
+     * the OAuth flow.
+     *
+     * The templates handle their own <html> shell so we don't pick up
+     * theme chrome — Reach pages are intentionally standalone mobile
+     * views, not theme-wrapped WordPress pages.
+     */
+    public static function templateFor(string $page, bool $isAuthenticated): string
+    {
+        if (in_array($page, self::GATED_PAGES, true) && !$isAuthenticated) {
             $page = 'signin';
         }
 
-        // The templates handle their own <html> shell so we don't pick
-        // up theme chrome — Reach pages are intentionally standalone
-        // mobile views, not theme-wrapped WordPress pages.
-        $template = match ($page) {
+        return match ($page) {
             'signin'       => REACH_PLUGIN_DIR . 'templates/signin.php',
             'home'         => REACH_PLUGIN_DIR . 'templates/home.php',
             'shifts'       => REACH_PLUGIN_DIR . 'templates/shifts.php',
@@ -153,10 +188,6 @@ final class PageRouter
             'lookup'       => REACH_PLUGIN_DIR . 'templates/lookup.php',
             default        => REACH_PLUGIN_DIR . 'templates/find.php',
         };
-
-        $session = $this->session->get(); // available inside template
-        require $template;
-        exit;
     }
 
     /**
