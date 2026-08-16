@@ -102,6 +102,14 @@ final class HelpPage
                     window.name = '<?php echo esc_js(self::ADMIN_WINDOW); ?>';
                     var helpUrl = '<?php echo esc_js($this->helpUrl()); ?>' + '?back=' + encodeURIComponent(window.location.href);
                     var existing = window.open('', '<?php echo esc_js(self::HELP_WINDOW); ?>');
+                    if (!existing) {
+                        // A popup blocker or extension refused the window.
+                        // preventDefault() has already run, so without this the
+                        // Help link would do nothing at all — not even reach the
+                        // fallback page. Open the guide in place instead.
+                        window.location.href = helpUrl;
+                        return;
+                    }
                     try {
                         if (existing && existing.location && existing.location.href && existing.location.href !== 'about:blank') {
                             existing.focus();

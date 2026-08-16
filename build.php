@@ -635,8 +635,13 @@ class PluginBuilder
 
         // Match the version token immediately after the opening span tag,
         // preserving the rest of the chip (e.g. " · Reach & the Hand app").
+        //
+        // The trailing group consumes an optional suffix word, because
+        // getVersionFromPlugin() can return one ("1.2.0 beta"): without it the
+        // match would stop at the space, and each build would write the suffix
+        // in again after the one already there.
         $updated = preg_replace(
-            '/(<span class="version">\s*)v?[0-9][\w.\-]*/',
+            '/(<span class="version">\s*)v?[0-9][\w.\-]*(?:[ \t]+\w+)?/',
             '${1}v' . $this->version,
             $content,
             1,

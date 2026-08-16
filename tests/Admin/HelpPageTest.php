@@ -169,6 +169,22 @@ final class HelpPageTest extends ReachTestCase
     }
 
     /**
+     * window.open() returns null when a popup blocker or an extension refuses
+     * the window. preventDefault() has already run by then, so without an
+     * explicit fallback the Help link would be inert — and the next line would
+     * throw on the null handle rather than failing quietly.
+     *
+     * @test
+     */
+    public function the_script_falls_back_to_the_current_tab_when_the_window_is_blocked(): void
+    {
+        $html = $this->capture(fn () => $this->page->enqueueHelpTabScript());
+
+        $this->assertStringContainsString('if (!existing) {', $html);
+        $this->assertStringContainsString('window.location.href = helpUrl;', $html);
+    }
+
+    /**
      * preventDefault() is what stops WordPress navigating to the fallback page;
      * without it the named-tab trick never runs.
      *
