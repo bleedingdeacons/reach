@@ -303,6 +303,14 @@ button. The delivery chain has a lot of links on other people's
 infrastructure and its failure mode is silence, so test it before you
 rely on it.
 
+**Reach → Help** opens the bundled admin guide
+(`assets/docs/reach.html`) in its own tab: responder set-up and
+certification, handset enrolment, push configuration, and the
+troubleshooting order to work through when a handset isn't ringing.
+Same pattern as Trusted's and Amber's Help submenus — the click is
+intercepted so the guide's back button refocuses the admin tab rather
+than reloading it.
+
 ## Audit logging
 
 Every result returned by `/reach/v1/nearest-members` produces one `logBatch` entry in Scrutiny per member (one per audited PII field), with a structured `detail` string identifying the viewer:

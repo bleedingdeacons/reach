@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reach Guide</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="/wp-includes/css/dashicons.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #FAFAF8;
+            --surface: #FFFFFF;
+            --border: #E8E5E0;
+            --text: #1A1A18;
+            --text-secondary: #6B6860;
+            --accent: #2271B1;
+            --accent-bg: #E3F0FB;
+            --accent-dark: #135E96;
+            --info: #1D4ED8;
+            --info-bg: #DBEAFE;
+            --danger: #DC2626;
+            --danger-bg: #FEE2E2;
+            --success: #16A34A;
+            --success-bg: #DCFCE7;
+            --purple: #7C3AED;
+            --purple-bg: #EDE9FE;
+            --amber: #D97706;
+            --amber-bg: #FEF3C7;
+            --amber-dark: #B45309;
+            --code-bg: #F1F4F7;
+            --nav-width: 280px;
+            --header-height: 64px;
+            --radius: 10px;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-height) + 24px); }
+        body {
+            font-family: 'DM Sans', sans-serif; font-size: 16px; line-height: 1.7;
+            color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── Header ── */
+        .site-header {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            height: var(--header-height); background: rgba(250,250,248,0.92);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 24px; gap: 16px;
+        }
+        .site-header .back-link {
+            display: flex; align-items: center; justify-content: center;
+            width: 36px; height: 36px; flex-shrink: 0;
+            border-radius: 8px; text-decoration: none; color: var(--text);
+        }
+        .site-header .back-link:hover { background: var(--code-bg); }
+        .site-header .logo {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 700; font-size: 20px; color: var(--text);
+            text-decoration: none; letter-spacing: -0.3px;
+        }
+        .site-header .logo span { color: var(--accent); }
+        .site-header .version {
+            font-size: 12px; font-weight: 500; color: var(--text-secondary);
+            background: var(--code-bg); padding: 2px 8px; border-radius: 6px;
+        }
+        .hamburger {
+            display: none; background: none; border: none; cursor: pointer;
+            width: 36px; height: 36px; flex-shrink: 0;
+            border-radius: 8px; align-items: center; justify-content: center;
+        }
+        .hamburger:hover { background: var(--code-bg); }
+        .hamburger svg { width: 22px; height: 22px; color: var(--text); }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            position: fixed; top: var(--header-height); left: 0; bottom: 0;
+            width: var(--nav-width); overflow-y: auto;
+            border-right: 1px solid var(--border);
+            background: var(--bg); padding: 24px 0; z-index: 90;
+        }
+        .sidebar::-webkit-scrollbar { width: 4px; }
+        .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .nav-section { padding: 0 20px; margin-bottom: 24px; }
+        .nav-section-title {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 8px; padding-left: 12px;
+        }
+        .nav-link {
+            display: block; padding: 6px 12px; border-radius: 8px;
+            color: var(--text-secondary); text-decoration: none;
+            font-size: 14px; font-weight: 400; transition: all 0.15s; line-height: 1.5;
+        }
+        .nav-link:hover { color: var(--text); background: var(--surface); }
+        .nav-link.active { color: var(--accent-dark); background: var(--accent-bg); font-weight: 500; }
+
+        /* ── Main ── */
+        .main {
+            margin-left: var(--nav-width);
+            padding: calc(var(--header-height) + 40px) 48px 80px; max-width: 880px;
+        }
+
+        /* ── Typography ── */
+        h1 { font-size: 36px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.2; margin-bottom: 12px; }
+        .subtitle { font-size: 18px; color: var(--text-secondary); font-weight: 400; margin-bottom: 40px; line-height: 1.6; }
+        h2 {
+            font-size: 24px; font-weight: 700; letter-spacing: -0.4px;
+            margin-top: 56px; margin-bottom: 16px; padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+        h2:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+        h3 { font-size: 18px; font-weight: 600; margin-top: 32px; margin-bottom: 10px; }
+        p { margin-bottom: 16px; }
+        ul, ol { margin-bottom: 16px; padding-left: 24px; }
+        li { margin-bottom: 6px; }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 24px; margin-bottom: 24px;
+            box-shadow: var(--shadow-sm);
+        }
+        .card h3 { margin-top: 0; }
+        .card p:last-child { margin-bottom: 0; }
+
+        /* ── Callouts ── */
+        .callout {
+            border-radius: var(--radius); padding: 16px 20px; margin-bottom: 24px;
+            font-size: 15px; display: flex; gap: 12px; align-items: flex-start; line-height: 1.6;
+        }
+        .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+        .callout.info    { background: var(--info-bg);    border-left: 4px solid var(--info); }
+        .callout.warning { background: var(--amber-bg);   border-left: 4px solid var(--amber); }
+        .callout.danger  { background: var(--danger-bg);  border-left: 4px solid var(--danger); }
+        .callout.success { background: var(--success-bg); border-left: 4px solid var(--success); }
+        .callout.purple  { background: var(--purple-bg);  border-left: 4px solid var(--purple); }
+
+        /* ── Code ── */
+        code {
+            font-family: 'JetBrains Mono', monospace; font-size: 13.5px;
+            background: var(--code-bg); padding: 2px 7px; border-radius: 5px; color: var(--accent-dark);
+        }
+        pre {
+            font-family: 'JetBrains Mono', monospace; font-size: 13.5px;
+            background: var(--code-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 14px 16px; margin-bottom: 24px;
+            overflow-x: auto; line-height: 1.6; color: var(--text);
+        }
+        pre code { background: none; padding: 0; color: var(--text); }
+
+        /* ── Steps ── */
+        .steps { counter-reset: step; list-style: none; padding-left: 0; }
+        .steps li {
+            counter-increment: step; padding-left: 44px; position: relative;
+            margin-bottom: 20px; min-height: 32px;
+        }
+        .steps li::before {
+            content: counter(step); position: absolute; left: 0; top: 0;
+            width: 30px; height: 30px; border-radius: 50%;
+            background: var(--accent); color: #fff;
+            font-weight: 700; font-size: 14px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* ── Breadcrumb / path navigation ── */
+        .path {
+            display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px;
+            background: var(--code-bg); border: 1px solid var(--border);
+            border-radius: 8px; padding: 8px 14px; margin-bottom: 20px;
+            font-size: 14px; font-weight: 500;
+        }
+        .path .crumb { color: var(--text); }
+        .path .sep { color: var(--text-secondary); margin: 0 2px; }
+        .path .crumb.final { color: var(--accent-dark); font-weight: 600; }
+
+        /* ── Status / generic table ── */
+        .status-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 15px; }
+        .status-table th {
+            text-align: left; padding: 10px 16px; font-weight: 600;
+            border-bottom: 2px solid var(--border); font-size: 13px;
+            text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);
+        }
+        .status-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        .status-table tr:last-child td { border-bottom: none; }
+        .status-table .field-name {
+            font-family: 'JetBrains Mono', monospace; font-size: 13px;
+            color: var(--accent-dark); font-weight: 500; white-space: nowrap;
+        }
+        .table-scroll { overflow-x: auto; margin-bottom: 24px; }
+        .table-scroll .status-table { margin-bottom: 0; }
+
+        /* ── Status badges ── */
+        .badge {
+            display: inline-block; padding: 2px 10px; border-radius: 20px;
+            font-size: 13px; font-weight: 600; white-space: nowrap;
+        }
+        .badge-on      { background: var(--success-bg); color: var(--success); }
+        .badge-off     { background: #F3F4F6; color: #6B7280; }
+        .badge-live    { background: var(--success-bg); color: var(--success); }
+        .badge-revoked { background: var(--danger-bg);  color: var(--danger); }
+        .badge-push    { background: var(--info-bg);    color: var(--info); }
+        .badge-poll    { background: var(--amber-bg);   color: var(--amber-dark); }
+
+        /* ── Screen mockup ── */
+        .screen-mock {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); overflow: hidden;
+            margin-bottom: 24px; box-shadow: var(--shadow-sm);
+        }
+        .screen-mock .mock-bar {
+            background: #1D2327; padding: 10px 16px;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .screen-mock .mock-bar .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .screen-mock .mock-bar .dot.r { background: #FF5F57; }
+        .screen-mock .mock-bar .dot.y { background: #FFBD2E; }
+        .screen-mock .mock-bar .dot.g { background: #28C940; }
+        .screen-mock .mock-bar .url {
+            flex: 1; background: #2D3748; border-radius: 4px;
+            padding: 4px 10px; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+            color: #A0AEC0;
+        }
+        .screen-mock .mock-body { display: flex; min-height: 200px; }
+        /* WordPress-style dark admin menu. */
+        .screen-mock .mock-sidebar {
+            width: 184px; background: #1d2327; padding: 0; flex-shrink: 0;
+            font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+        .screen-mock .mock-sidebar .mock-menu-item {
+            padding: 8px 12px; font-size: 13px; color: #f0f0f1;
+            display: flex; align-items: center; gap: 9px; line-height: 1.3;
+        }
+        .screen-mock .mock-sidebar .mock-menu-item .mock-ico {
+            font-size: 17px; width: 18px; height: 18px; color: #a7aaad; flex-shrink: 0;
+        }
+        .screen-mock .mock-sidebar .mock-menu-item.active .mock-ico,
+        .screen-mock .mock-sidebar .mock-menu-item.parent .mock-ico { color: #fff; }
+        .screen-mock .mock-sidebar .mock-menu-item.active {
+            background: #2271b1; color: #fff; font-weight: 400;
+        }
+        .screen-mock .mock-sidebar .mock-menu-item.parent {
+            background: #2c3338; color: #fff; font-weight: 600;
+        }
+        .screen-mock .mock-sidebar .mock-submenu { background: #2c3338; padding: 4px 0 6px; }
+        .screen-mock .mock-sidebar .mock-sub-item {
+            padding: 5px 12px 5px 37px; font-size: 12px; color: #c3c4c7;
+        }
+        .screen-mock .mock-sidebar .mock-sub-item.active { color: #72aee6; font-weight: 600; }
+        .screen-mock .mock-sidebar .mock-menu-sep {
+            height: 0; border-top: 1px solid #3c434a; margin: 6px 0;
+        }
+        .screen-mock .mock-content { flex: 1; padding: 20px 24px; background: #fff; overflow-x: auto; }
+        .screen-mock .mock-content .mock-title {
+            font-size: 20px; font-weight: 700; margin-bottom: 12px; color: var(--text);
+        }
+        .screen-mock .mock-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; }
+
+        /* WP list table inside a mock. */
+        .mock-list { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
+        .mock-list th {
+            text-align: left; padding: 7px 10px; font-weight: 600; color: #2c3338;
+            border-bottom: 1px solid #c3c4c7; white-space: nowrap;
+        }
+        .mock-list td { padding: 7px 10px; border-bottom: 1px solid #f0f0f1; color: var(--text-secondary); white-space: nowrap; }
+        .mock-list tr:last-child td { border-bottom: none; }
+        .mock-btn {
+            display: inline-block;
+            background: #f6f7f7; border: 1px solid #c3c4c7;
+            color: var(--accent); border-radius: 3px; padding: 2px 9px; font-size: 11px;
+            text-align: center; white-space: nowrap;
+        }
+        .mock-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+        /* ── ACF form mockup (member record groups & fields) ── */
+        .screen-mock .acf-groups { display: flex; flex-direction: column; gap: 16px; }
+        .screen-mock .acf-group {
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 14px 16px; background: #FCFCFB;
+        }
+        .screen-mock .acf-group-head {
+            font-size: 14px; font-weight: 700; color: var(--accent-dark);
+            padding-bottom: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--border);
+        }
+        .screen-mock .acf-fields { display: flex; flex-wrap: wrap; align-items: flex-start; }
+        .screen-mock .acf-field { box-sizing: border-box; padding-right: 16px; margin-bottom: 12px; }
+        .screen-mock .acf-label {
+            display: block; font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 3px;
+        }
+        .screen-mock .acf-req { color: var(--danger); }
+        .screen-mock .acf-lock { font-size: 10px; }
+        .screen-mock .acf-ctrl { display: inline-block; font-size: 12px; vertical-align: middle; }
+        .screen-mock .acf-text, .screen-mock .acf-select {
+            background: #fff; border: 1px solid #8c8f94; border-radius: 4px;
+            padding: 3px 8px; color: var(--text-secondary); width: 100%; box-sizing: border-box;
+        }
+        .screen-mock .acf-select::after { content: ' \25BE'; }
+        .screen-mock .acf-toggle {
+            display: inline-block; width: 34px; height: 18px; border-radius: 10px;
+            background: #c3c4c7; position: relative;
+        }
+        .screen-mock .acf-toggle::after {
+            content: ''; position: absolute; top: 2px; left: 2px;
+            width: 14px; height: 14px; border-radius: 50%; background: #fff;
+        }
+        .screen-mock .acf-toggle.on { background: var(--success); }
+        .screen-mock .acf-toggle.on::after { left: auto; right: 2px; }
+        .screen-mock .acf-radios { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+        .screen-mock .acf-radios .opt {
+            font-size: 11px; padding: 2px 8px; border: 1px solid #8c8f94;
+            border-radius: 12px; color: var(--text-secondary); background: #fff;
+        }
+        .screen-mock .acf-radios .opt.on {
+            background: var(--success-bg); border-color: var(--success); color: var(--success);
+        }
+
+        /* ── Phone mockup (the Hand app) ── */
+        .phone-mock {
+            width: 240px; border: 1px solid var(--border); border-radius: 22px;
+            background: #1d2327; padding: 10px; margin: 0 0 24px;
+            box-shadow: var(--shadow-md);
+        }
+        .phone-mock .phone-screen {
+            background: #fff; border-radius: 14px; padding: 14px 12px; min-height: 180px;
+            font-size: 12px; line-height: 1.5;
+        }
+        .phone-mock .phone-title { font-weight: 700; font-size: 13px; margin-bottom: 8px; }
+        .phone-mock .phone-row {
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 7px 9px; margin-bottom: 8px; color: var(--text-secondary);
+        }
+        .phone-mock .phone-row.urgent { border-left: 4px solid var(--danger); }
+        .phone-mock .phone-btn {
+            display: block; text-align: center; background: var(--accent); color: #fff;
+            border-radius: 6px; padding: 6px 0; font-weight: 600; font-size: 12px; margin-top: 10px;
+        }
+
+        /* ── Overlay ── */
+        .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 80; }
+
+        /* ── Responsive ── */
+        @media (max-width: 860px) {
+            .sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: var(--shadow-md); }
+            .sidebar.open { transform: translateX(0); }
+            .overlay.visible { display: block; }
+            .hamburger { display: flex; }
+            .main { margin-left: 0; padding: calc(var(--header-height) + 24px) 20px 60px; }
+            h1 { font-size: 28px; } h2 { font-size: 20px; }
+            .screen-mock .mock-body { flex-direction: column; }
+            .screen-mock .mock-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+            /* The WordPress admin mock stays side-by-side: a dark menu column with
+               the white work area beside it, the way the real admin looks. */
+            .screen-mock.wp-mock .mock-body { flex-direction: row; }
+            .screen-mock.wp-mock .mock-sidebar { width: 150px; border-right: none; border-bottom: none; }
+        }
+        @media (max-width: 600px) {
+            .screen-mock .acf-field { width: 100% !important; padding-right: 0; }
+        }
+        @media print {
+            .site-header, .sidebar, .hamburger, .overlay { display: none !important; }
+            .main { margin-left: 0; padding: 20px; max-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="site-header">
+    <a href="#" class="back-link" title="Back to admin" onclick="event.preventDefault(); var backUrl = new URLSearchParams(window.location.search).get('back'); if (backUrl) { var w = window.open('', 'reach-admin'); if (w) { w.focus(); } }"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></a>
+    <button class="hamburger" onclick="toggleNav()" aria-label="Toggle navigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <a href="#" class="logo">
+        Reach <span>Guide</span>
+    </a>
+    <span class="version">v1.14.0 · Reach &amp; the Hand app</span>
+</header>
+
+<div class="overlay" onclick="toggleNav()"></div>
+
+<nav class="sidebar" id="sidebar">
+    <div class="nav-section">
+        <div class="nav-section-title">Getting Started</div>
+        <a href="#overview" class="nav-link active">Overview</a>
+        <a href="#concepts" class="nav-link">How the Pieces Fit</a>
+        <a href="#menu" class="nav-link">Finding Reach in the Admin</a>
+    </div>
+    <div class="nav-section">
+        <div class="nav-section-title">Managing Responders</div>
+        <a href="#roles" class="nav-link">Roles &amp; Who Gets What</a>
+        <a href="#responder-setup" class="nav-link">Making a Telephone Responder</a>
+        <a href="#certification" class="nav-link">The Certification Stages</a>
+        <a href="#responder-signin" class="nav-link">How a Responder Signs In</a>
+        <a href="#responder-shifts" class="nav-link">Shift Sign-Up</a>
+        <a href="#responder-standdown" class="nav-link">Standing a Responder Down</a>
+    </div>
+    <div class="nav-section">
+        <div class="nav-section-title">Hand Devices</div>
+        <a href="#hand-about" class="nav-link">What Hand Is</a>
+        <a href="#hand-before" class="nav-link">Before You Enrol</a>
+        <a href="#hand-push" class="nav-link">Setting Up Push Notifications</a>
+        <a href="#hand-enrol" class="nav-link">Enrolling a Handset</a>
+        <a href="#hand-list" class="nav-link">The Hand Devices List</a>
+        <a href="#hand-test" class="nav-link">Sending a Test Alert</a>
+        <a href="#hand-revoke" class="nav-link">Revoking a Handset</a>
+        <a href="#hand-alerts" class="nav-link">Alerts &amp; Acknowledgements</a>
+    </div>
+    <div class="nav-section">
+        <div class="nav-section-title">Reference</div>
+        <a href="#other-screens" class="nav-link">The Other Reach Screens</a>
+        <a href="#settings" class="nav-link">Settings Reference</a>
+        <a href="#privacy" class="nav-link">Personal Data &amp; Auditing</a>
+        <a href="#troubleshooting" class="nav-link">Troubleshooting</a>
+    </div>
+</nav>
+
+<main class="main">
+
+    <!-- ── Overview ── -->
+    <section id="overview">
+        <h1>Reach</h1>
+        <p class="subtitle">
+            A step-by-step guide to running Reach — setting up the telephone responders who use it,
+            enrolling the Hand handsets that receive alerts, and keeping both working.
+        </p>
+
+        <div class="card">
+            <h3>What is Reach?</h3>
+            <p>Reach is the <strong>public-facing front end</strong> of the intergroup's member data. Someone
+            who needs a 12th-step call signs in with Google, Microsoft, Apple or Facebook — or with an email
+            and password — and gets a mobile-friendly list of the nearest members willing to take the call.</p>
+            <p style="margin-bottom:0;">Reach is also the <strong>server side of Hand</strong>, the phone app
+            certified telephone responders carry. Reach enrols the handsets, stores the alerts and pushes them
+            out. Those two jobs are why this guide has two halves:
+            <a href="#roles">managing responders</a> and <a href="#hand-about">setting up devices</a>.</p>
+        </div>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div><strong>Reach has no member list of its own.</strong> Everybody it knows about comes from the
+            shared <strong>member records</strong> (the Unity plugin), and everything it shows is governed by
+            what is ticked there. If someone can't sign in, can't be found, or isn't getting alerts, the answer
+            is almost always on their member record — not in Reach.</div>
+        </div>
+    </section>
+
+    <!-- ── Concepts ── -->
+    <section id="concepts">
+        <h2>How the Pieces Fit Together</h2>
+        <p>Five things are involved. You only administer the first three, but it helps to know what each one
+        contributes.</p>
+
+        <table class="status-table">
+            <thead><tr><th>Piece</th><th>What it does</th></tr></thead>
+            <tbody>
+            <tr>
+                <td><strong>Member records</strong><br><span style="color:var(--text-secondary);font-size:13px;">(Unity / Intergroup&nbsp;›&nbsp;Members)</span></td>
+                <td>The one place a person exists. Their email, mobile, whether they are a 12th stepper, whether
+                they are a telephone responder, and how far through certification they have got.</td>
+            </tr>
+            <tr>
+                <td><strong>Reach</strong><br><span style="color:var(--text-secondary);font-size:13px;">(the website)</span></td>
+                <td>The sign-in pages and the finder at <code>/reach/find</code>, plus the admin screens under the
+                <strong>Reach</strong> menu.</td>
+            </tr>
+            <tr>
+                <td><strong>Hand</strong><br><span style="color:var(--text-secondary);font-size:13px;">(the phone app)</span></td>
+                <td>The duty handset. It receives alerts raised for the rota and rings like a call. Reach enrols
+                and revokes handsets; the app itself is installed on the responder's own phone.</td>
+            </tr>
+            <tr>
+                <td><strong>Trusted</strong><br><span style="color:var(--text-secondary);font-size:13px;">(the rota, optional)</span></td>
+                <td>The weekly shift rota. When it is active, responders can sign up for shifts from inside
+                Reach, and Trusted is what raises "shift uncovered" alerts.</td>
+            </tr>
+            <tr>
+                <td><strong>Scrutiny</strong><br><span style="color:var(--text-secondary);font-size:13px;">(the audit log)</span></td>
+                <td>Records who looked at whose personal details, and when. Nothing to configure here — but it is
+                why several Reach screens are gated behind a personal-data permission.</td>
+            </tr>
+            </tbody>
+        </table>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>Reach and Hand are <strong>not</strong> the same audience. The website admits a 12th stepper
+            <em>or</em> a certified telephone responder. Hand admits certified telephone responders and nobody
+            else. See <a href="#roles">Roles &amp; Who Gets What</a> — this catches people out more than
+            anything else in the plugin.</div>
+        </div>
+    </section>
+
+    <!-- ── Finding Reach ── -->
+    <section id="menu">
+        <h2>Finding Reach in the Admin</h2>
+        <p>Log in to the WordPress admin (usually your site address followed by <code>/wp-admin</code>). In the
+        left-hand sidebar, look for the <strong>Reach</strong> menu — its icon is a raised hand.</p>
+
+        <div class="screen-mock wp-mock">
+            <div class="mock-bar">
+                <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+                <div class="url">https://aa-bristol.org/wp-admin/</div>
+            </div>
+            <div class="mock-body">
+                <div class="mock-sidebar">
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-dashboard"></span> Dashboard</div>
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-admin-post"></span> Posts</div>
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-admin-page"></span> Pages</div>
+                    <div class="mock-menu-sep"></div>
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-admin-multisite"></span> Intergroup</div>
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-phone"></span> Telephone</div>
+                    <div class="mock-menu-item parent"><span class="mock-ico dashicons dashicons-universal-access"></span> Reach</div>
+                    <div class="mock-submenu">
+                        <div class="mock-sub-item active">Call attempts</div>
+                        <div class="mock-sub-item">Call requests</div>
+                        <div class="mock-sub-item">Find a 12th Stepper</div>
+                        <div class="mock-sub-item">Hand devices</div>
+                        <div class="mock-sub-item">Settings</div>
+                        <div class="mock-sub-item">Help</div>
+                    </div>
+                    <div class="mock-menu-sep"></div>
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-admin-plugins"></span> Plugins</div>
+                    <div class="mock-menu-item"><span class="mock-ico dashicons dashicons-admin-settings"></span> Settings</div>
+                </div>
+                <div class="mock-content">
+                    <div class="mock-title">Reach</div>
+                    <p class="mock-desc">Call attempts opens by default. <strong>Hand devices</strong> is where
+                    handsets are enrolled, tested and revoked; <strong>Settings</strong> holds the push and
+                    sign-in configuration.</p>
+                </div>
+            </div>
+        </div>
+
+        <table class="status-table">
+            <thead><tr><th>Screen</th><th>What it is for</th><th>Who can see it</th></tr></thead>
+            <tbody>
+            <tr><td><strong>Call attempts</strong></td><td>Read-only history of every "Spoke / No answer / Wrong number" a Reach user recorded.</td><td>Personal-data permission</td></tr>
+            <tr><td><strong>Call requests</strong></td><td>Callbacks asked for out of hours, waiting to be actioned.</td><td>Personal-data permission</td></tr>
+            <tr><td><strong>Find a 12th Stepper</strong></td><td>The same finder the public sees, from inside the admin.</td><td>Personal-data permission</td></tr>
+            <tr><td><strong>Hand devices</strong></td><td>Enrolled handsets, the test-alert button, and recent alerts. <a href="#hand-list">Covered below.</a></td><td>Personal-data permission</td></tr>
+            <tr><td><strong>Settings</strong></td><td>Find-page options, Firebase push, and the sign-in providers.</td><td>Site administrator</td></tr>
+            <tr><td><strong>Help</strong></td><td>This guide.</td><td>Personal-data permission</td></tr>
+            </tbody>
+        </table>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>An account without the <strong>personal-data</strong> permission won't see the Reach menu at
+            all; an account with it but without full administrator rights sees everything except
+            <strong>Settings</strong>. That is deliberate — Settings holds credentials, the other screens hold
+            member data.</div>
+        </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- MANAGING RESPONDERS                                            -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+
+    <section id="roles">
+        <h2>Roles &amp; Who Gets What</h2>
+        <p>Three separate settings on a member record decide what a person can do. They are independent — one
+        person can be any combination — and getting them confused is the single most common support question.</p>
+
+        <div class="table-scroll">
+            <table class="status-table">
+                <thead><tr><th>Setting</th><th>What it means</th><th>Reach website</th><th>Hand app</th></tr></thead>
+                <tbody>
+                <tr>
+                    <td><strong>Is Twelfth&nbsp;Stepper?</strong></td>
+                    <td>Willing to be contacted directly for a 12th-step call. Has an <em>area</em> they cover and
+                    the <em>forms of contact</em> they accept.</td>
+                    <td>Can sign in, and <em>appears</em> in the finder.</td>
+                    <td><span class="badge badge-off">No</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Telephone&nbsp;Responder</strong></td>
+                    <td>Takes turns answering the helpline. Only these members can be put on the Trusted rota.</td>
+                    <td>Can sign in.</td>
+                    <td>Only once <strong>Certified</strong>.</td>
+                </tr>
+                <tr>
+                    <td><strong>Responder&nbsp;Certification</strong></td>
+                    <td>How far through the certification process a responder has got — see
+                    <a href="#certification">below</a>.</td>
+                    <td>Makes no difference.</td>
+                    <td><span class="badge badge-on">Certified</span> and nothing else.</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div><strong>Hand's gate is stricter than the website's, on purpose.</strong> A 12th stepper with no
+            responder role can sign in to Reach and will be refused by Hand. A responder who is
+            <em>Applied</em>, <em>In Training</em> or <em>Pending</em> will also be refused. Someone who has not
+            been cleared to take helpline calls must not be sent a caller's details.</div>
+        </div>
+
+        <p>Reach re-asks this question <strong>on every single request</strong> a handset makes, and again when
+        an alert is about to be delivered — it is not frozen in at enrolment. So a responder whose certification
+        is changed, or who is removed from the member list, stops receiving alerts by themselves, without
+        anybody remembering to go and revoke their handset.</p>
+    </section>
+
+    <section id="responder-setup">
+        <h2>Making a Member a Telephone Responder</h2>
+
+        <div class="path">
+            <span class="crumb">Intergroup</span>
+            <span class="sep">›</span>
+            <span class="crumb final">Members</span>
+            <span class="sep">›</span>
+            <span class="crumb final">[Member name]</span>
+        </div>
+
+        <p>Members are not stored in Reach — they live on the shared <strong>member record</strong>, a form
+        organised into groups (<strong>About</strong>, <strong>Home</strong>, <strong>Service</strong>,
+        <strong>GDPR Compliance</strong>). The fields that matter to Reach and Hand are in <strong>About</strong>
+        and <strong>Service</strong>. A <span class="acf-toggle on" style="vertical-align:middle"></span> switch
+        is a yes/no toggle, and <span class="acf-req">*</span> marks a required field:</p>
+
+        <div class="screen-mock">
+            <div class="mock-bar">
+                <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+                <div class="url">https://aa-bristol.org/wp-admin/post.php?post=123&amp;action=edit</div>
+            </div>
+            <div class="mock-content">
+                <div class="mock-title">Edit Member — Sarah T.</div>
+                <div class="acf-groups">
+                    <div class="acf-group">
+                        <div class="acf-group-head">About</div>
+                        <div class="acf-fields">
+                            <div class="acf-field" style="width:50%"><span class="acf-label">Anonymous Name <span class="acf-req">*</span></span><span class="acf-ctrl acf-text">Sarah T.</span></div>
+                            <div class="acf-field" style="width:50%"><span class="acf-label">Personal Email <span class="acf-lock">🔒</span></span><span class="acf-ctrl acf-text">sarah@…</span></div>
+                            <div class="acf-field" style="width:50%"><span class="acf-label">Mobile Number <span class="acf-lock">🔒</span></span><span class="acf-ctrl acf-text">07700 900123</span></div>
+                        </div>
+                    </div>
+                    <div class="acf-group">
+                        <div class="acf-group-head">Service</div>
+                        <div class="acf-fields">
+                            <div class="acf-field" style="width:40%"><span class="acf-label">Telephone Responder</span><span class="acf-ctrl acf-toggle on"></span></div>
+                            <div class="acf-field" style="width:60%"><span class="acf-label">Responder Certification</span><span class="acf-ctrl acf-radios"><span class="opt">Applied</span><span class="opt">In Training</span><span class="opt">Pending</span><span class="opt on">Certified</span></span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <ol class="steps">
+            <li>Go to <strong>Intergroup › Members</strong> and open the member (or <strong>Add New</strong> for
+                somebody who isn't recorded yet).</li>
+            <li>In the <strong>About</strong> group, fill in the <strong>Personal Email</strong> and
+                <strong>Mobile Number</strong>. The email is not optional here — it is the identity Reach and Hand
+                sign them in with.</li>
+            <li>In the <strong>Service</strong> group, switch <strong>Telephone Responder</strong> to
+                <span class="badge badge-on">On</span>.</li>
+            <li>Set <strong>Responder Certification</strong> to wherever they actually are in the process. It only
+                appears once the toggle above is on.</li>
+            <li>Click <strong>Update</strong>. Nothing else is needed on the Reach side — no separate Reach
+                account is created, ever.</li>
+        </ol>
+
+        <div class="callout danger">
+            <span class="callout-icon">🚫</span>
+            <div><strong>Personal Email must be the member's own address.</strong> An intergroup address
+            (anything on <code>aa-bristol.org</code>) is refused when saving, and rightly so: those forward to
+            whoever currently holds a position, so it would sign the wrong person in and stop working the moment
+            that person rotates out.</div>
+        </div>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>Making somebody a responder does <em>not</em> make them findable by the public — that is
+            <strong>Is Twelfth Stepper?</strong> in the <strong>Home</strong> group, along with the areas they
+            cover. Tick both for a member who does both jobs.</div>
+        </div>
+    </section>
+
+    <section id="certification">
+        <h2>The Certification Stages</h2>
+        <p>Certification is a single choice on the member record with five values. Only the last one opens the
+        Hand app.</p>
+
+        <table class="status-table">
+            <thead><tr><th>Stage</th><th>Meaning</th><th>Can use Hand</th></tr></thead>
+            <tbody>
+            <tr><td><strong>None</strong></td><td>Nothing recorded — either not a responder at all, or not yet started.</td><td><span class="badge badge-off">No</span></td></tr>
+            <tr><td><strong>Applied</strong></td><td>Has put their name forward.</td><td><span class="badge badge-off">No</span></td></tr>
+            <tr><td><strong>In Training</strong></td><td>Working through the training.</td><td><span class="badge badge-off">No</span></td></tr>
+            <tr><td><strong>Pending</strong></td><td>Training done, waiting on final sign-off.</td><td><span class="badge badge-off">No</span></td></tr>
+            <tr><td><strong>Certified</strong></td><td>Cleared to take helpline calls.</td><td><span class="badge badge-on">Yes</span></td></tr>
+            </tbody>
+        </table>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div>Moving somebody <em>back</em> from <strong>Certified</strong> takes effect immediately — their
+            handset stops being sent alerts at its very next request. You do not need to revoke it as well,
+            though you may still want to if the phone itself has gone (see
+            <a href="#hand-revoke">Revoking a Handset</a>).</div>
+        </div>
+
+        <p>A member who is not flagged as a telephone responder has no certification at all: the field is hidden,
+        and hidden means <strong>None</strong>. Turning the responder toggle off is therefore a complete way to
+        stand somebody down.</p>
+    </section>
+
+    <section id="responder-signin">
+        <h2>How a Responder Signs In</h2>
+        <p>There are no WordPress user accounts behind any of this. Reach proves who somebody is by their
+        <strong>email address</strong> and then looks that address up in the member records. Two ways to prove
+        it:</p>
+
+        <h3>1. Sign in with Google, Microsoft, Apple or Facebook</h3>
+        <p>The usual route, and the one to encourage — nothing to remember and no password for you to manage.
+        The provider verifies the email, Reach checks it against the member records, and that is the whole
+        exchange. The buttons that appear on <code>/reach/signin</code> are whichever providers have been
+        configured under <a href="#settings">Settings</a>.</p>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div>The address they sign in with <strong>must match the Personal Email on their member
+            record</strong>. Somebody whose record says <code>sarah@gmail.com</code> but who signs in with a
+            work Microsoft account is, as far as Reach can tell, a stranger — and is turned away.</div>
+        </div>
+
+        <h3>2. Sign in with an email and password</h3>
+        <p>For anyone who has none of those accounts, or would rather not use them. Nobody sets a password
+        <em>for</em> them; they set their own:</p>
+
+        <ol class="steps">
+            <li>The responder opens <code>/reach/reset</code> and enters their email address.</li>
+            <li>If that address belongs to an eligible member, a one-time link is emailed to it. (The page says
+                the same thing either way, deliberately — it must not reveal who is and isn't a member.)</li>
+            <li>They follow the link to <code>/reach/set-password</code>, choose a password, and are signed in
+                straight away.</li>
+            <li>From then on they can sign in with email and password on <code>/reach/signin</code>, and can use
+                the same credentials in the Hand app.</li>
+        </ol>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>The same <code>/reach/reset</code> page is what a responder uses if they forget the password
+            later — there is no separate "forgotten password" screen, and nothing for you to reset by hand.</div>
+        </div>
+
+        <h3>When a sign-in is refused</h3>
+        <p>Reach never returns a raw error to somebody signing in; it puts them back on the sign-in page with a
+        readable message. The three you may be asked about:</p>
+
+        <table class="status-table">
+            <thead><tr><th>What they see</th><th>What it actually means</th></tr></thead>
+            <tbody>
+            <tr><td>Not eligible / we can't find you</td><td>The verified email matches no member, or matches a member who is neither a 12th stepper nor a telephone responder. Fix the member record.</td></tr>
+            <tr><td>We need your email address</td><td>They declined to share their email with Facebook, so Facebook handed over an anonymised relay address that can't receive mail. They should sign in again and share it, or use another provider.</td></tr>
+            <tr><td>Sign-in failed</td><td>The attempt expired or went wrong in transit. Trying again usually fixes it.</td></tr>
+            </tbody>
+        </table>
+
+        <p>Apple's private relay addresses are <em>not</em> treated this way — Apple genuinely forwards mail
+        through them, so they are accepted.</p>
+    </section>
+
+    <section id="responder-shifts">
+        <h2>Shift Sign-Up</h2>
+        <p>When the <strong>Trusted</strong> rota plugin is active, a signed-in responder sees a
+        <strong>Shift sign-up</strong> button on the Reach menu page and can put themselves on an open shift from
+        their phone at <code>/reach/shifts</code>.</p>
+
+        <p>There is nothing to switch on: the button appears when Trusted is present and is simply absent when it
+        isn't. Trusted enforces its own rules — responders only, one person per shift — so a member who has just
+        been flagged as a responder can sign up immediately, and one who has been stood down cannot.</p>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>Shift sign-up and Hand alerts are different things and have different gates. Sign-up needs the
+            <strong>Telephone Responder</strong> toggle; Hand additionally needs
+            <strong>Certified</strong>.</div>
+        </div>
+    </section>
+
+    <section id="responder-standdown">
+        <h2>Standing a Responder Down</h2>
+        <p>What to do depends on why. In every case the change takes effect at the responder's next request —
+        there is no cache to clear and no separate Reach record to tidy up.</p>
+
+        <table class="status-table">
+            <thead><tr><th>Situation</th><th>Do this</th><th>What happens</th></tr></thead>
+            <tbody>
+            <tr>
+                <td>Certification has lapsed, or is under review</td>
+                <td>Change <strong>Responder Certification</strong> away from <em>Certified</em>.</td>
+                <td>Hand stops delivering alerts to them at once. They can still sign in to the Reach website.</td>
+            </tr>
+            <tr>
+                <td>Taking a break from the helpline</td>
+                <td>Switch <strong>Telephone Responder</strong> off.</td>
+                <td>As above, plus they disappear from the rota's assignment list.</td>
+            </tr>
+            <tr>
+                <td>Lost or replaced phone</td>
+                <td><a href="#hand-revoke">Revoke the handset</a> on <strong>Reach › Hand devices</strong>.</td>
+                <td>That one handset's access is cut immediately; the responder keeps everything else.</td>
+            </tr>
+            <tr>
+                <td>Left the fellowship / record deleted</td>
+                <td>Delete the member record as usual.</td>
+                <td>Reach revokes <em>all</em> their handsets and deletes their stored password automatically.</td>
+            </tr>
+            </tbody>
+        </table>
+
+        <div class="callout danger">
+            <span class="callout-icon">🚫</span>
+            <div>If you suspect a handset or token has been compromised more widely, rotating the site's
+            authentication salts invalidates <strong>every</strong> enrolled handset at once and everyone
+            re-enrols. That is a site-administrator job, not something on a Reach screen — but it is the big red
+            switch if you ever need it.</div>
+        </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- HAND DEVICES                                                   -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+
+    <section id="hand-about">
+        <h2>What Hand Is</h2>
+        <p><strong>Hand</strong> is the app a certified telephone responder installs on their own phone. It is
+        the duty handset: when an alert is raised — a shift nobody has covered, a caller waiting — every enrolled
+        handset rings, like a call rather than a polite notification, and whoever picks it up acknowledges it.</p>
+
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+            <div class="phone-mock">
+                <div class="phone-screen">
+                    <div class="phone-title">Hand</div>
+                    <div class="phone-row urgent">
+                        <strong>Helpline shift uncovered</strong><br>
+                        Tonight 22:00–08:00 has nobody signed up.
+                    </div>
+                    <div class="phone-row">
+                        <strong>Callback requested</strong><br>
+                        Reference CR-2026-0148 · <em>Show contact</em>
+                    </div>
+                    <div class="phone-btn">I'll take it</div>
+                </div>
+            </div>
+            <div style="flex:1;min-width:260px;">
+                <p>Reach's side of this is three jobs, all on <strong>Reach › Hand devices</strong> and
+                <strong>Reach › Settings</strong>:</p>
+                <ul>
+                    <li><strong>Enrolling</strong> handsets — actually done by the responder on their phone; you
+                    just make sure they are allowed to.</li>
+                    <li><strong>Proving delivery works</strong> — the test alert button.</li>
+                    <li><strong>Revoking</strong> a handset that has been lost or replaced.</li>
+                </ul>
+                <p style="margin-bottom:0;">Reach itself never raises an alert. Alerts come from other plugins —
+                Trusted, typically — using Reach as the delivery mechanism.</p>
+            </div>
+        </div>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div><strong>The failure mode of the whole delivery chain is silence.</strong> A misconfigured push
+            credential doesn't produce an error anybody sees — it produces a handset that simply never rings.
+            That is why <a href="#hand-test">Sending a Test Alert</a> is not an optional nicety.</div>
+        </div>
+    </section>
+
+    <section id="hand-before">
+        <h2>Before You Enrol a Handset</h2>
+        <p>Four things need to be true. Checking them first turns most "it isn't working" conversations into
+        non-events.</p>
+
+        <ol class="steps">
+            <li>The responder's member record has <strong>Telephone Responder</strong> on and
+                <strong>Responder Certification</strong> set to <strong>Certified</strong>
+                (see <a href="#responder-setup">Making a Telephone Responder</a>).</li>
+            <li>Their <strong>Personal Email</strong> on that record is the address they will sign in with.</li>
+            <li>They can already sign in to the Reach website on that phone — by provider or by password. If that
+                doesn't work, Hand won't either, and the website tells you why in plain English.</li>
+            <li><strong>Optional but strongly recommended:</strong> Firebase push is configured
+                (<a href="#hand-push">next section</a>). Without it Hand still works, but a phone with the app
+                closed will not ring.</li>
+        </ol>
+    </section>
+
+    <section id="hand-push">
+        <h2>Setting Up Push Notifications</h2>
+
+        <div class="path">
+            <span class="crumb">Reach</span>
+            <span class="sep">›</span>
+            <span class="crumb final">Settings</span>
+            <span class="sep">›</span>
+            <span class="crumb final">Hand push notifications</span>
+        </div>
+
+        <p>Push is optional, and it is worth understanding exactly what it buys you before you decide. Every
+        handset <strong>polls</strong> as well as listening, and every alert is stored before any push is
+        attempted — so alerts are never lost either way. What push adds is <em>immediacy</em>, and the ability to
+        ring a phone whose app is closed.</p>
+
+        <table class="status-table">
+            <thead><tr><th></th><th>Without Firebase</th><th>With Firebase</th></tr></thead>
+            <tbody>
+            <tr><td><strong>App open</strong></td><td>Arrives at the next poll.</td><td>Arrives at once.</td></tr>
+            <tr><td><strong>App closed (phone)</strong></td><td><span class="badge badge-off">Nothing</span> until they open it.</td><td>Rings.</td></tr>
+            <tr><td><strong>Alert lost?</strong></td><td>No — it is stored and collected later.</td><td>No.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Adding the Firebase service account</h3>
+        <ol class="steps">
+            <li>In the <a href="https://console.firebase.google.com/">Firebase console</a>, open the project the
+                Hand app was built against and go to <strong>Project settings › Service accounts</strong>.</li>
+            <li>Click <strong>Generate new private key</strong>. A JSON file downloads — this is a credential,
+                so treat it like a password.</li>
+            <li>In WordPress, go to <strong>Reach › Settings</strong> and find <strong>Hand push
+                notifications</strong>.</li>
+            <li>Paste the <em>entire</em> JSON file into <strong>Firebase service account</strong> and click
+                <strong>Save Changes</strong>.</li>
+            <li>The <strong>Status</strong> line underneath should now name your Firebase project. Delete the
+                downloaded file from your computer.</li>
+            <li>Go to <strong>Hand devices</strong> and <a href="#hand-test">send a test alert</a>.</li>
+        </ol>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>The key is <strong>encrypted at rest and never shown again</strong>. Leaving the box blank when
+            you save leaves the stored key alone — so you can change other settings freely. To remove one
+            entirely, tick <strong>Remove the stored service account</strong>.</div>
+        </div>
+
+        <h3>What each kind of handset can do</h3>
+        <table class="status-table">
+            <thead><tr><th>Handset</th><th>Alert while the app is closed</th></tr></thead>
+            <tbody>
+            <tr><td><strong>Android</strong></td><td>Yes. Hand raises a full-screen, alarm-category notification, so the phone rings like a call.</td></tr>
+            <tr><td><strong>iOS</strong></td><td>Yes, but the sound is capped at about 30 seconds — a closed app runs no code of its own, so the system plays it.</td></tr>
+            <tr><td><strong>Windows / macOS</strong></td><td>No push. Hand runs as a tray app that starts with the machine and polls, so "closed" means not on screen rather than not running.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>iOS critical alerts</h3>
+        <p>The second setting in this section makes urgent alerts sound through the ringer switch and Do Not
+        Disturb — exactly what a duty handset wants.</p>
+
+        <div class="callout danger">
+            <span class="callout-icon">🚫</span>
+            <div><strong>Do not switch this on speculatively.</strong> Apple grants critical alerts only on
+            application, and without that entitlement in the Hand app's provisioning profile Apple
+            <em>rejects</em> the notification rather than quietly downgrading it — silencing the very alerts it
+            was meant to make louder. Left off, urgent alerts still break through a Focus mode.</div>
+        </div>
+    </section>
+
+    <section id="hand-enrol">
+        <h2>Enrolling a Handset</h2>
+        <p><strong>The responder does this, on their own phone.</strong> There is no "add device" button in the
+        admin — nothing you could press would prove the phone in question belongs to them. Your part is the
+        checklist in <a href="#hand-before">Before You Enrol</a>; theirs is below, and it takes about a minute.</p>
+
+        <h3>The usual way — sign in with a provider</h3>
+        <ol class="steps">
+            <li>Install Hand and open it.</li>
+            <li>Tap <strong>Sign in</strong>. The phone's own browser opens on the familiar Reach sign-in page.</li>
+            <li>Sign in with Google, Microsoft, Apple or Facebook as usual.</li>
+            <li>The browser hands them back to Hand, which is now enrolled. It appears on
+                <strong>Reach › Hand devices</strong> within seconds.</li>
+        </ol>
+
+        <h3>The other way — email and password</h3>
+        <p>Hand can also take the email and password directly, with no browser involved. This is what the Windows
+        app uses, and it is the fallback anywhere the browser round-trip fails. The password is the one they set
+        through <code>/reach/reset</code> — see <a href="#responder-signin">How a Responder Signs In</a>.</p>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>Both routes end in the same place: a long-lived token stored on that handset, which Reach keeps
+            only as a hash. Signing in on a new phone does not disturb the old one — enrol as many times as
+            needed.</div>
+        </div>
+
+        <h3>How many handsets one responder may have</h3>
+        <p>Five. A phone, a tablet and a desktop is a perfectly normal set, and the cap only exists so a stack of
+        forgotten enrolments doesn't quietly become a stack of places alerts are still going.</p>
+
+        <p>Enrolling a sixth does <strong>not</strong> fail: the <em>least recently seen</em> handset is revoked
+        to make room. Somebody standing there with a brand-new phone should never be locked out by an old one
+        they no longer own.</p>
+    </section>
+
+    <section id="hand-list">
+        <h2>The Hand Devices List</h2>
+
+        <div class="path">
+            <span class="crumb">Reach</span>
+            <span class="sep">›</span>
+            <span class="crumb final">Hand devices</span>
+        </div>
+
+        <p>Every handset that has ever been enrolled, live ones and revoked ones together — the list is a record
+        of what has been enrolled, not only of what is enrolled now.</p>
+
+        <div class="screen-mock">
+            <div class="mock-bar">
+                <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+                <div class="url">https://aa-bristol.org/wp-admin/admin.php?page=reach-devices</div>
+            </div>
+            <div class="mock-content">
+                <div class="mock-title">Hand devices</div>
+                <p class="mock-desc"><span class="mock-btn">Send test alert</span> &nbsp; Enrolled handsets — 3 in total.</p>
+                <table class="mock-list">
+                    <thead>
+                        <tr><th>Responder</th><th>Device</th><th>Platform</th><th>Delivery</th><th>Enrolled</th><th>Last seen</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sarah T.</td><td>Pixel 8</td><td>android</td><td>Push</td>
+                            <td>2026-07-02 19:14</td><td>2026-08-16 08:40</td>
+                            <td style="color:#008a20;">Live</td><td><span class="mock-btn">Revoke</span></td>
+                        </tr>
+                        <tr>
+                            <td>Mike R.</td><td>Office PC</td><td>windows</td><td>Poll</td>
+                            <td>2026-07-11 10:02</td><td>2026-08-16 08:12</td>
+                            <td style="color:#008a20;">Live</td><td><span class="mock-btn">Revoke</span></td>
+                        </tr>
+                        <tr>
+                            <td>Mike R.</td><td>Old iPhone</td><td>ios</td><td>Push</td>
+                            <td>2026-03-04 21:37</td><td>2026-06-28 07:55</td>
+                            <td style="color:#b32d2e;">Revoked</td><td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="table-scroll">
+            <table class="status-table">
+                <thead><tr><th>Column</th><th>What it tells you</th></tr></thead>
+                <tbody>
+                <tr><td class="field-name">Responder</td><td>Who the handset belongs to, by their anonymous name where the member record has one, and by email otherwise. An email here usually means the record was deleted or the address no longer matches.</td></tr>
+                <tr><td class="field-name">Device</td><td>The name the app reported — a phone model, a machine name. Cosmetic; it exists so you can tell one of somebody's handsets from another.</td></tr>
+                <tr><td class="field-name">Platform</td><td><code>android</code>, <code>ios</code>, <code>windows</code>, <code>macos</code>.</td></tr>
+                <tr><td class="field-name">Delivery</td><td><span class="badge badge-push">Push</span> — this handset has a working push registration and can be rung instantly. <span class="badge badge-poll">Poll</span> — it collects alerts when it checks in. Every Windows and macOS handset is Poll; a phone showing Poll is worth investigating (see <a href="#troubleshooting">Troubleshooting</a>).</td></tr>
+                <tr><td class="field-name">Enrolled</td><td>When it was first signed in.</td></tr>
+                <tr><td class="field-name">Last seen</td><td>The last time it made any request at all. This is the honest "is this handset still alive" signal — a live handset checks in regularly, so a Last seen of weeks ago means the app has been uninstalled, the phone replaced, or notifications turned off at the OS.</td></tr>
+                <tr><td class="field-name">Status</td><td><span class="badge badge-live">Live</span> or <span class="badge badge-revoked">Revoked</span>. Revoked rows stay for the record and can't be un-revoked — the responder simply signs in again.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>Nothing on this screen decides who <em>may</em> use Hand — that is entirely the member record.
+            A handset belonging to somebody no longer certified will still be listed as Live, and will still
+            receive nothing.</div>
+        </div>
+    </section>
+
+    <section id="hand-test">
+        <h2>Sending a Test Alert</h2>
+        <p>The <strong>Send test alert</strong> button at the top of <strong>Hand devices</strong> rings every
+        live handset, right now, through the real delivery path. Nothing about it is special-cased — that is the
+        point. If the test arrives, the chain works.</p>
+
+        <p>Send one:</p>
+        <ul>
+            <li>after adding or changing the Firebase service account;</li>
+            <li>after a responder enrols a new handset;</li>
+            <li>before the rota starts relying on alerts — a quiet night is not evidence that alerts work.</li>
+        </ul>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>The test alert carries <strong>no personal data</strong>, says who sent it, and expires after
+            five minutes — a test still ringing handsets ten minutes later is just a nuisance. Warn the duty
+            responders first if you're testing at an unsociable hour.</div>
+        </div>
+
+        <p>Afterwards, look at <strong>Recent alerts</strong> further down the same page: the test appears there
+        with <strong>Acknowledged by</strong> filling in as handsets alarm. That is your proof of delivery, not
+        the "Test alert sent" notice, which only means Reach accepted it.</p>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div>If the notice says the test <em>could not</em> be sent, the alert never left Reach — check the
+            Firebase service account first. If it says it was sent but no handset rings, the break is further
+            down the chain; <a href="#troubleshooting">Troubleshooting</a> walks through it.</div>
+        </div>
+    </section>
+
+    <section id="hand-revoke">
+        <h2>Revoking a Handset</h2>
+        <p>Revoking cuts one handset's access dead, immediately. Use it when a phone is <strong>lost, stolen,
+        replaced, or sold</strong> — cases where the person is fine but that particular device must stop
+        receiving alerts.</p>
+
+        <ol class="steps">
+            <li>Go to <strong>Reach › Hand devices</strong>.</li>
+            <li>Find the row — check the <strong>Responder</strong>, <strong>Device</strong> and
+                <strong>Last seen</strong> columns together, since one person may have several.</li>
+            <li>Click <strong>Revoke</strong> and confirm.</li>
+        </ol>
+
+        <p>The handset stops receiving alerts at once and the responder has to sign in again to use Hand on that
+        device. Their website access, their password and their other handsets are untouched.</p>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div><strong>This is a belt-and-braces control, not the main one.</strong> Eligibility is re-checked
+            against the member record on every request, so somebody who stops being certified stops receiving
+            alerts whether or not anyone remembers to come here. Revoking answers the one question that automatic
+            check can't: "that handset, now."</div>
+        </div>
+    </section>
+
+    <section id="hand-alerts">
+        <h2>Alerts &amp; Acknowledgements</h2>
+        <p>The bottom of <strong>Hand devices</strong> lists the ten most recent alerts: when, what kind, which
+        plugin raised it, the title, whether it was urgent, and — the column that matters —
+        <strong>Acknowledged by</strong>.</p>
+
+        <table class="status-table">
+            <thead><tr><th>Acknowledged by</th><th>Means</th></tr></thead>
+            <tbody>
+            <tr><td>One or more names</td><td>Those responders' handsets alarmed and they confirmed it. The alert reached somebody.</td></tr>
+            <tr><td><em>Nobody yet</em></td><td>No handset has confirmed. Either it has only just gone out, or nothing is arriving — worth a test alert if the pattern repeats.</td></tr>
+            </tbody>
+        </table>
+
+        <p>Alerts go to the whole rota by default, so the first responder free picks it up; an alert may also be
+        aimed at one responder. Either way it is <strong>stored before any push is attempted</strong>, and what a
+        handset has dealt with is recorded here rather than on the phone — so a responder who reinstalls the app
+        or restores from a backup neither re-alarms for everything nor silently misses anything live.</p>
+
+        <h3>Where alerts come from</h3>
+        <p>Reach raises none of its own. Other plugins send them — Trusted raising an uncovered shift is the
+        usual case — through a small function that Reach provides. That is a developer-facing detail; the part
+        that concerns everyone is the rule below.</p>
+
+        <div class="callout danger">
+            <span class="callout-icon">🚫</span>
+            <div><strong>Never put personal data in an alert's subject or message.</strong> That text travels
+            through Google's push infrastructure and lands on a lock screen anyone nearby can read. A caller's
+            name and number belong in the alert's separate <strong>contact</strong> field, which is encrypted,
+            never pushed, never shown on a lock screen, and audited every time a responder taps
+            <em>Show contact</em>.</div>
+        </div>
+
+        <p>That is why the phone mock-up earlier shows a callback alert as a reference number with a
+        <em>Show contact</em> link rather than the caller's details: the responder fetches them deliberately,
+        over an encrypted connection, and the fetch is recorded.</p>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════ -->
+    <!-- REFERENCE                                                     -->
+    <!-- ══════════════════════════════════════════════════════════════ -->
+
+    <section id="other-screens">
+        <h2>The Other Reach Screens</h2>
+        <p>Not part of responder or device set-up, but the same menu — briefly, so nothing is a mystery.</p>
+
+        <div class="card">
+            <h3>Call attempts</h3>
+            <p style="margin-bottom:0;">Every "Spoke", "No answer" or "Wrong / bad number" a Reach user recorded
+            after being shown a member, with filters by member, viewer, outcome and date. It is deliberately
+            <strong>read-only</strong>: the audit log already records these as having happened, and an edit
+            button would be a quiet way to tidy away an uncomfortable pattern. A correction is made by logging a
+            fresh attempt, not by rewriting an old one.</p>
+        </div>
+
+        <div class="card">
+            <h3>Call requests</h3>
+            <p style="margin-bottom:0;">Out of hours, the finder offers <em>Request a callback</em> instead of
+            ringing a 12th stepper directly. Each request is emailed to the address in Settings, and listed here
+            so it can be marked completed once actioned. Caller details are sensitive — deal with them and mark
+            them done rather than letting them sit.</p>
+        </div>
+
+        <div class="card">
+            <h3>Find a 12th Stepper</h3>
+            <p style="margin-bottom:0;">The finder itself, inside the admin: enter a postcode or area and see the
+            nearest available members, exactly as a signed-in visitor would. Useful for answering "why can't
+            anyone find me?" without needing a Reach sign-in of your own.</p>
+        </div>
+    </section>
+
+    <section id="settings">
+        <h2>Settings Reference</h2>
+
+        <div class="path">
+            <span class="crumb">Reach</span>
+            <span class="sep">›</span>
+            <span class="crumb final">Settings</span>
+        </div>
+
+        <table class="status-table">
+            <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+            <tbody>
+            <tr>
+                <td><strong>Default search area</strong></td>
+                <td>Nudges place-name searches toward your region. Plenty of place names exist several times over
+                in the UK, so a postcode or outcode (<code>BS5</code>) here makes the finder pick the local one.
+                Blank switches the biasing off.</td>
+            </tr>
+            <tr>
+                <td><strong>Out of hours</strong></td>
+                <td>The window during which the finder offers <em>Request a callback</em> beside each responder.
+                24-hour times in the site's timezone; it may span midnight. Leave either box blank to switch the
+                feature off.</td>
+            </tr>
+            <tr>
+                <td><strong>Call request email</strong></td>
+                <td>Where those callback requests are emailed. Blank means the site admin address.</td>
+            </tr>
+            <tr>
+                <td><strong>Firebase service account</strong></td>
+                <td>The push credential — see <a href="#hand-push">Setting Up Push Notifications</a>. Encrypted
+                at rest and write-only.</td>
+            </tr>
+            <tr>
+                <td><strong>iOS critical alerts</strong></td>
+                <td>Off unless the Hand app has Apple's critical-alerts entitlement. Read the warning in
+                <a href="#hand-push">that section</a> before touching it.</td>
+            </tr>
+            <tr>
+                <td><strong>Redirect URIs</strong></td>
+                <td>Not editable — the two addresses to register with each sign-in provider, with a
+                <strong>Copy</strong> button. If they look wrong, your WordPress Site Address is wrong
+                (<em>Settings › General</em>).</td>
+            </tr>
+            <tr>
+                <td><strong>Google / Microsoft / Apple / Facebook</strong></td>
+                <td>A client ID, and for all but Apple a client secret, per provider. Only configured providers
+                appear as buttons on the sign-in page. Secrets are encrypted at rest; leaving a secret box blank
+                keeps the stored one, and removing it takes the explicit checkbox.</td>
+            </tr>
+            </tbody>
+        </table>
+
+        <div class="callout info">
+            <span class="callout-icon">💡</span>
+            <div>Setting up a provider from scratch — registering the app, obtaining the ID and secret — is
+            beyond this guide; the plugin ships a separate <code>ProviderSetup</code> document covering all four.
+            Ask whoever administers the site.</div>
+        </div>
+    </section>
+
+    <section id="privacy">
+        <h2>Personal Data &amp; Auditing</h2>
+        <p>Reach hands out members' mobile numbers and email addresses to people it has only verified by email
+        address. That is the whole point of it, and it is also why so much of it is logged.</p>
+
+        <ul>
+            <li>Every member shown by the finder produces an <strong>audit entry naming the signed-in visitor
+            who saw them</strong>, viewable in Scrutiny's audit log. So "who saw this member's mobile, and when"
+            is always answerable.</li>
+            <li>Recorded call attempts are audited the same way, with the outcome. The caller's free-text note is
+            <strong>never</strong> written to the audit trail — it appears only on the call-attempt detail
+            screen.</li>
+            <li>Reading a caller's contact details from an alert in Hand is audited, every time.</li>
+            <li>Callback requests are <strong>emailed</strong> rather than kept, so caller details live in that
+            inbox rather than in the database, and requests are removed after a retention period.</li>
+            <li>Reach creates no WordPress accounts. A signed-in visitor is a signed cookie that expires after 12
+            hours, holding their verified email and nothing else.</li>
+        </ul>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div><strong>Worth telling responders about:</strong> the finder shows a coarse badge —
+            <em>Reached recently</em>, <em>No recent reply</em>, <em>Number may be out of date</em> — beside each
+            member, based on what other callers have reported over the last fortnight. No counts, no dates and no
+            caller identities are shown, but members should hear about it from you rather than discover it.</div>
+        </div>
+    </section>
+
+    <section id="troubleshooting">
+        <h2>Troubleshooting</h2>
+
+        <div class="card">
+            <h3>A responder can't sign in to Hand, but the website works</h3>
+            <p>That is Hand's stricter gate doing its job. Open their member record and check
+            <strong>Responder Certification</strong> is <strong>Certified</strong> — <em>Applied</em>,
+            <em>In Training</em> and <em>Pending</em> are all refused — and that <strong>Telephone
+            Responder</strong> is on.</p>
+            <p style="margin-bottom:0;">A 12th stepper who is not a responder will never get into Hand. That is
+            the intended difference, not a fault.</p>
+        </div>
+
+        <div class="card">
+            <h3>A responder can't sign in anywhere</h3>
+            <p style="margin-bottom:0;">Check the <strong>Personal Email</strong> on their member record matches
+            the address they are actually signing in with, character for character. A different work address, or
+            a Facebook sign-in where they declined to share their email, both look like a stranger to Reach.</p>
+        </div>
+
+        <div class="card">
+            <h3>A handset isn't ringing</h3>
+            <p>Work down the chain in this order:</p>
+            <ol style="margin-bottom:0;">
+                <li><strong>Is the responder still certified?</strong> Nothing is delivered to a handset whose
+                owner no longer passes the gate — and the row still says Live.</li>
+                <li><strong>Does the row say Revoked?</strong> They sign in again on the handset.</li>
+                <li><strong>Is <em>Last seen</em> recent?</strong> If it is days or weeks old the app is not
+                running at all — reinstalled, phone replaced, or notifications disabled at the OS.</li>
+                <li><strong>Does <em>Delivery</em> say Poll on a phone?</strong> See the next card.</li>
+                <li><strong>Send a test alert</strong> and watch <em>Acknowledged by</em>.</li>
+            </ol>
+        </div>
+
+        <div class="card">
+            <h3>A phone shows "Poll" instead of "Push"</h3>
+            <p>Poll is correct and expected on Windows and macOS. On a phone it means Reach has no working push
+            registration for that handset — usually because Firebase isn't configured at all
+            (<a href="#hand-push">check Settings</a>), or because the responder denied the notification
+            permission when the app asked.</p>
+            <p style="margin-bottom:0;">Have them open Hand and check its notification permission in the phone's
+            settings; the app re-registers on its own once it is granted, and the column flips to Push.</p>
+        </div>
+
+        <div class="card">
+            <h3>The test alert says it couldn't be sent</h3>
+            <p style="margin-bottom:0;">The alert never left Reach. The usual cause is a Firebase service account
+            that is missing, malformed, or belongs to a different project than the app — re-paste the whole JSON
+            key file and check the <strong>Status</strong> line names the expected project. The Reach log holds
+            the specific reason.</p>
+        </div>
+
+        <div class="card">
+            <h3>Everyone's handsets stopped working at once</h3>
+            <p style="margin-bottom:0;">If nobody's handset works and nothing on the member records changed, the
+            site's authentication salts have almost certainly been rotated — which invalidates every enrolled
+            handset by design. Everyone re-enrols; there is nothing to repair.</p>
+        </div>
+
+        <div class="card">
+            <h3>A handset is listed against an email instead of a name</h3>
+            <p style="margin-bottom:0;">Reach shows the email when it can't find a member for it — the record was
+            deleted, or its Personal Email was changed after enrolment. If the member is still active, put the
+            address back (or have them re-enrol with the new one); if they have gone, revoke the handset.</p>
+        </div>
+
+        <div class="card">
+            <h3>The Reach menu is missing entirely</h3>
+            <p style="margin-bottom:0;">Either your account lacks the personal-data permission, or the
+            <strong>Unity</strong> or <strong>Scrutiny</strong> plugin is inactive — Reach needs both and does
+            nothing without them. Ask your site administrator.</p>
+        </div>
+
+        <div class="card">
+            <h3>Somebody isn't showing up in the finder</h3>
+            <p style="margin-bottom:0;">The finder lists 12th steppers, not telephone responders. Check
+            <strong>Is Twelfth Stepper?</strong> is on in the <strong>Home</strong> group, and that their
+            <strong>Areas</strong> and <strong>Accepts</strong> are filled in — a member with no area can't be
+            placed on the map. The <strong>Find a 12th Stepper</strong> admin screen reproduces exactly what a
+            visitor would see.</p>
+        </div>
+    </section>
+
+</main>
+
+<script>
+    function toggleNav() {
+        document.getElementById('sidebar').classList.toggle('open');
+        document.querySelector('.overlay').classList.toggle('visible');
+    }
+
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.nav-link');
+
+    function updateActiveLink() {
+        let current = '';
+        const scrollY = window.scrollY + 100;
+        sections.forEach(s => { if (s.offsetTop <= scrollY) current = s.getAttribute('id'); });
+        navLinks.forEach(l => {
+            l.classList.remove('active');
+            if (l.getAttribute('href') === '#' + current) l.classList.add('active');
+        });
+    }
+
+    window.addEventListener('scroll', updateActiveLink, { passive: true });
+    updateActiveLink();
+</script>
+
+</body>
+</html>

@@ -42,4 +42,11 @@ parameters:
         - ../unity/src
         - ../scrutiny/src
         - ../sentinel/src
+    # The plugin's own bootstrap, where the REACH_* constants src/ uses
+    # are define()d. Scanned, not analysed. Only the ones given a literal
+    # value are picked up — REACH_PLUGIN_FILE is __FILE__ and resolves,
+    # REACH_PLUGIN_DIR is plugin_dir_path(...) and does not, which is why
+    # its uses in PageRouter are still baselined.
+    scanFiles:
+        - reach.php
     ignoreErrors:

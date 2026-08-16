@@ -62,6 +62,14 @@ if (!defined('REACH_PLUGIN_DIR')) {
     define('REACH_PLUGIN_DIR', dirname(__DIR__) . '/');
 }
 
+// Likewise set by reach.php from __FILE__. HelpPage passes it to
+// plugins_url() to resolve the bundled guide; the stub answers from
+// WpState::$pluginSlug rather than the path, but the constant still has
+// to exist for the call to be made at all.
+if (!defined('REACH_PLUGIN_FILE')) {
+    define('REACH_PLUGIN_FILE', dirname(__DIR__) . '/reach.php');
+}
+
 // Reach autoloader.
 spl_autoload_register(function ($class) {
     $prefix = 'Reach\\';

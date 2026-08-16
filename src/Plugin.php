@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
 use Reach\Admin\DevicesPage;
+use Reach\Admin\HelpPage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
 use Reach\Alerts\AlertApi;
@@ -232,6 +233,13 @@ class Plugin
             self::$container->get(MemberSearchPage::class)->register();
             self::$container->get(DevicesPage::class)->register();
             self::$container->get(SettingsPage::class)->register();
+
+            // Help last in the submenu, whatever order the pages above
+            // registered in. It has no dependencies, so it is built here
+            // rather than resolved from the container, and hooked at a
+            // late priority so its add_submenu_page() call runs after
+            // every sibling's.
+            add_action('admin_menu', [new HelpPage(), 'register'], 999);
         }
 
         self::logDebug('Initialised', ['version' => defined('REACH_VERSION') ? REACH_VERSION : 'unknown']);
