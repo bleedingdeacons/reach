@@ -199,8 +199,11 @@ final class CallAttemptsPageTest extends ReachTestCase
         );
 
         $this->assertStringContainsString(
+            // &#038;, not &: WordPress encodes the separator in an href. The
+            // bare & described output this page has never produced, and
+            // passed only while the test double returned its input untouched.
             '<a href="https://example.test/wp-admin/admin.php?'
-                . 'page=' . CallAttemptsPage::PAGE_SLUG . '-detail&id=5">'
+                . 'page=' . CallAttemptsPage::PAGE_SLUG . '-detail&#038;id=5">'
                 . date('Y-m-d H:i', $this->createdAt())
                 . '</a>',
             $this->render($page, 'renderList'),
@@ -306,7 +309,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         );
 
         $this->assertStringContainsString(
-            '<a href="https://example.test/wp-admin/post.php?post=7&action=edit">Bob T.</a>',
+            '<a href="https://example.test/wp-admin/post.php?post=7&#038;action=edit">Bob T.</a>',
             $this->render($page, 'renderList'),
         );
     }
@@ -341,7 +344,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         $html = $this->render($page, 'renderList');
 
         $this->assertStringContainsString(
-            '<a href="https://example.test/wp-admin/post.php?post=3&action=edit">responder@example.test</a>',
+            '<a href="https://example.test/wp-admin/post.php?post=3&#038;action=edit">responder@example.test</a>',
             $html,
         );
     }

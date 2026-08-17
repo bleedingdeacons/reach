@@ -49,7 +49,7 @@
         "phpstan": "phpstan analyse --memory-limit=1G"
     },
     "require-dev": {
-        "bleedingdeacons/wp-mocks": "^1.5.2",
+        "bleedingdeacons/wp-mocks": "^2.0",
         "mockery/mockery": "^1.6",
         "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^10.5",

@@ -241,7 +241,15 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringContainsString('>Bob T.</a>', $html);
         $this->assertStringContainsString('BS1 1AA', $html);
         $this->assertStringContainsString('Male', $html);
-        $this->assertStringContainsString('<a href="tel:' . self::FAKE_MOBILE . '">' . self::FAKE_MOBILE . '</a>', $html);
+        // The href is percent-encoded and the link text is not: esc_url()
+        // turns the space in the number into %20, while esc_html() leaves it
+        // alone. Asserting the raw number in both positions described output
+        // WordPress would never emit, and passed only while the test double
+        // returned its input untouched.
+        $this->assertStringContainsString(
+            '<a href="tel:' . str_replace(' ', '%20', self::FAKE_MOBILE) . '">' . self::FAKE_MOBILE . '</a>',
+            $html
+        );
         $this->assertMatchesRegularExpression('/\d+\.\d km/', $html, 'distance is shown to one decimal place');
     }
 
