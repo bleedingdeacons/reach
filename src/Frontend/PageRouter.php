@@ -146,6 +146,7 @@ final class PageRouter
         // Tell WP this isn't a 404 — we're handling the request ourselves.
         status_header(200);
         nocache_headers();
+        self::sendNoStore();
 
         $template = self::templateFor($page, $this->session->isAuthenticated());
 
@@ -158,6 +159,32 @@ final class PageRouter
         $sessionToken = $session !== null ? $this->csrf->mint($session) : '';
         require $template;
         exit;
+    }
+
+    /**
+     * Forbid storing these responses, on top of what nocache_headers()
+     * sends.
+     *
+     * A signed-in Reach page carries the member's email address and the
+     * session's write token in its HTML, so a shared cache holding one
+     * would hand it to the next viewer. WordPress covers this itself
+     * from 6.8, where `no-store, private` were added to
+     * nocache_headers() — but Reach supports 6.1, and on 6.1 to 6.7 that
+     * header is only `no-cache, must-revalidate, max-age=0`, which
+     * permits a store-then-revalidate cache to keep the body. Sending it
+     * here makes the guarantee independent of the WordPress version
+     * rather than of a default that changed recently.
+     *
+     * Harmless where core already does it: the same directives, sent
+     * once, replacing core's header rather than appending to it.
+     */
+    private static function sendNoStore(): void
+    {
+        if (headers_sent()) {
+            return;
+        }
+
+        header('Cache-Control: no-cache, must-revalidate, max-age=0, no-store, private');
     }
 
     /**

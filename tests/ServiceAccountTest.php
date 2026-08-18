@@ -63,6 +63,18 @@ final class ServiceAccountTest extends ReachTestCase
             'lookalike host'    => ['https://oauth2.googleapis.com.evil.example.com/token'],
             'host as userinfo'  => ['https://oauth2.googleapis.com@evil.example.com/token'],
             'not a url'         => ['token'],
+            // An approved host is not enough: these are Google URLs that
+            // are not token endpoints, and honouring one would break FCM
+            // authentication while appearing to have passed a check.
+            'approved host, wrong path' => ['https://oauth2.googleapis.com/not-a-token-endpoint'],
+            'approved host, no path'    => ['https://oauth2.googleapis.com'],
+            'approved host, subpath'    => ['https://oauth2.googleapis.com/token/../evil'],
+            // Rejected because each changes where or how the request
+            // goes without changing the host.
+            'userinfo on approved host' => ['https://user:pass@oauth2.googleapis.com/token'],
+            'port on approved host'     => ['https://oauth2.googleapis.com:8443/token'],
+            'query on approved host'    => ['https://oauth2.googleapis.com/token?to=evil'],
+            'fragment on approved host' => ['https://oauth2.googleapis.com/token#evil'],
         ];
     }
 

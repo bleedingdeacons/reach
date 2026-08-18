@@ -550,10 +550,16 @@
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
-            }).then(function () {
+            }).then(function (r) {
+                // fetch() resolves for 4xx too. Redirecting regardless
+                // would send the responder to the sign-in page while
+                // their session was still live - signed out in
+                // appearance only.
+                if (!r.ok) { throw new Error('sign-out refused'); }
                 window.location = cfg.signInUrl;
             }).catch(function () {
-                window.location = cfg.signInUrl;
+                signOutBtn.disabled = false;
+                setStatus('Could not sign you out. Please try again.');
             });
         });
     }

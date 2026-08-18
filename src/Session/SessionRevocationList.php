@@ -8,9 +8,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-use function delete_transient;
-use function get_transient;
-use function set_transient;
+use function delete_option;
+use function get_option;
+use function update_option;
 
 /**
  * The list of session ids that have been signed out before their
@@ -32,21 +32,39 @@ use function set_transient;
  * without touching {@see SessionCookie}'s signing key, which is the
  * alternative and takes every WordPress admin session down with it.
  *
- * <b>Why this stays small.</b> An entry is only ever needed for the
- * remainder of the session it revokes — once the token would have been
- * refused for being expired, there is nothing left to revoke — so each
- * one is stored with exactly that TTL and WordPress expires it. The
- * list is bounded by the number of sign-outs in a 12-hour window, not
+ * <b>Why an option and not a transient.</b> The other short-lived
+ * stores in this plugin — {@see \Reach\Auth\StateStore},
+ * {@see \Reach\Auth\DeviceCodeStore} — are transients, and this began
+ * as one for the same stated reason: the data is inherently short-lived
+ * and WordPress already expires it. That reasoning does not carry over,
+ * because those two fail *closed* and this fails *open*. Losing a
+ * stashed OAuth state means a sign-in is refused; losing a revocation
+ * entry means a signed-out session is accepted again. WordPress is
+ * explicit that a transient's expiry is a maximum and not a guarantee —
+ * under an external object cache an LRU eviction or a `wp_cache_flush()`
+ * can drop one early — so a revocation held in one is a security
+ * decision that quietly undoes itself. Options are durable, and expiry
+ * here is cheap to do by hand.
+ *
+ * <b>Why it stays small.</b> An entry is only needed for the remainder
+ * of the session it revokes — once the token would be refused for being
+ * expired there is nothing left to revoke — so each carries its own
+ * expiry and every write drops the ones that have passed. The list is
+ * bounded by the number of sign-outs in a single session lifetime, not
  * by the number of sessions ever issued.
  *
- * Transients are keyed by a hash of the session id for the reason
- * {@see \Reach\Auth\DeviceCodeStore} gives: option names are not
- * secret, and a live session id sitting in one would be a credential in
- * the clear.
+ * Ids are stored hashed, for the reason {@see \Reach\Auth\DeviceCodeStore}
+ * gives: option contents are not secret — they appear in a database
+ * dump and in any admin tool that lists options — and a live session id
+ * sitting in one would be a credential in the clear.
  */
 final class SessionRevocationList
 {
-    private const PREFIX = 'reach_revoked_session_';
+    /**
+     * Not autoloaded: most requests never consult this, and the ones
+     * that do are already reading a cookie and a member record.
+     */
+    public const OPTION = 'reach_revoked_sessions';
 
     /**
      * Revoke a session for whatever remains of its lifetime.
@@ -54,19 +72,23 @@ final class SessionRevocationList
      * A session already past `$expiresAt` is ignored — it is refused on
      * expiry anyway, and storing an entry that outlives the token it
      * revokes would grow the list for no benefit.
+     *
+     * Read-modify-write, so two sign-outs landing in the same instant
+     * could see one lose its entry. The window is a single option
+     * round trip and the affected session is one whose owner is at that
+     * moment signing out on another device; a lock or a row per id
+     * would cost more than that is worth. Noted rather than hidden.
      */
     public function revoke(string $sessionId, int $expiresAt, int $now): void
     {
-        if ($sessionId === '') {
+        if ($sessionId === '' || $expiresAt <= $now) {
             return;
         }
 
-        $remaining = $expiresAt - $now;
-        if ($remaining <= 0) {
-            return;
-        }
+        $entries = $this->prune($this->all(), $now);
+        $entries[$this->key($sessionId)] = $expiresAt;
 
-        set_transient(self::PREFIX . $this->key($sessionId), 1, $remaining);
+        update_option(self::OPTION, $entries, false);
     }
 
     /**
@@ -77,25 +99,78 @@ final class SessionRevocationList
      * than all being refused at once by an upgrade. They cannot be
      * revoked individually, which is why they are also short-lived —
      * see {@see SessionCookie::TTL_SECONDS}.
+     *
+     * An entry past its own expiry is treated as absent without being
+     * rewritten: this runs on every authenticated request, and a read
+     * that writes would put an option update on the hot path.
      */
-    public function isRevoked(string $sessionId): bool
+    public function isRevoked(string $sessionId, ?int $now = null): bool
     {
         if ($sessionId === '') {
             return false;
         }
 
-        return get_transient(self::PREFIX . $this->key($sessionId)) !== false;
+        $now = $now ?? time();
+        $entries = $this->all();
+        $key = $this->key($sessionId);
+
+        return isset($entries[$key]) && $entries[$key] > $now;
     }
 
     /**
      * Drop a revocation entry. Only used by tests and by an explicit
-     * administrative undo; ordinary expiry is WordPress's job.
+     * administrative undo; ordinary expiry is {@see prune()}'s job.
      */
     public function forget(string $sessionId): void
     {
-        if ($sessionId !== '') {
-            delete_transient(self::PREFIX . $this->key($sessionId));
+        if ($sessionId === '') {
+            return;
         }
+
+        $entries = $this->all();
+        unset($entries[$this->key($sessionId)]);
+
+        if ($entries === []) {
+            delete_option(self::OPTION);
+            return;
+        }
+
+        update_option(self::OPTION, $entries, false);
+    }
+
+    /**
+     * The stored entries, as id-hash => expiry.
+     *
+     * Defensive about shape: this is an option row, so a corrupt or
+     * hand-edited value must degrade to "nothing is revoked" rather
+     * than to a fatal on every authenticated request.
+     *
+     * @return array<string, int>
+     */
+    private function all(): array
+    {
+        $stored = get_option(self::OPTION, []);
+        if (!is_array($stored)) {
+            return [];
+        }
+
+        $entries = [];
+        foreach ($stored as $key => $expiresAt) {
+            if (is_string($key) && is_numeric($expiresAt)) {
+                $entries[$key] = (int) $expiresAt;
+            }
+        }
+
+        return $entries;
+    }
+
+    /**
+     * @param array<string, int> $entries
+     * @return array<string, int>
+     */
+    private function prune(array $entries, int $now): array
+    {
+        return array_filter($entries, static fn(int $expiresAt): bool => $expiresAt > $now);
     }
 
     private function key(string $sessionId): string

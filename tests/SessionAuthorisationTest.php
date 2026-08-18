@@ -34,6 +34,7 @@ final class SessionAuthorisationTest extends ReachTestCase
         parent::setUp();
 
         WpState::$transients = [];
+        WpState::$options = [];
         $_COOKIE = [];
     }
 
@@ -218,16 +219,87 @@ final class SessionAuthorisationTest extends ReachTestCase
         $this->assertNotNull($current->get());
     }
 
-    public function testTheStoredKeyIsNotTheSessionIdItself(): void
+    public function testTheStoredIdIsHashedNotStoredInTheClear(): void
     {
-        // Option names are not secret; a live session id sitting in one
-        // would be a credential in the clear.
+        // Option contents are not secret - they show up in a database
+        // dump and in any admin tool that lists options - so a live
+        // session id sitting in one would be a credential in the clear.
         $revocations = new SessionRevocationList();
         $revocations->revoke('a-session-id', time() + 3600, time());
 
-        foreach (array_keys(WpState::$transients) as $key) {
-            $this->assertStringNotContainsString('a-session-id', (string) $key);
-        }
+        $stored = WpState::$options[SessionRevocationList::OPTION] ?? [];
+
+        $this->assertNotSame([], $stored, 'sanity: something was stored');
+        $this->assertStringNotContainsString(
+            'a-session-id',
+            (string) json_encode($stored),
+        );
+    }
+
+    /**
+     * Revocations must survive what a transient would not. WordPress
+     * treats a transient's expiry as a maximum, so an object-cache
+     * eviction or a flush can drop one early - and a revocation that
+     * disappears fails open, handing a signed-out session back its
+     * access.
+     */
+    public function testRevocationsSurviveATransientFlush(): void
+    {
+        $revocations = new SessionRevocationList();
+        $session = $this->sessionFor('user@example.com');
+
+        $revocations->revoke($session->id, $session->expiresAt, time());
+
+        // Everything a transient store would lose.
+        WpState::$transients = [];
+
+        $this->assertTrue($revocations->isRevoked($session->id));
+    }
+
+    public function testAnEntryPastItsOwnExpiryIsTreatedAsAbsent(): void
+    {
+        $revocations = new SessionRevocationList();
+        $now = time();
+
+        $revocations->revoke('short-lived', $now + 10, $now);
+
+        $this->assertTrue($revocations->isRevoked('short-lived', $now));
+        $this->assertFalse($revocations->isRevoked('short-lived', $now + 11));
+    }
+
+    public function testWritingPrunesEntriesThatHaveExpired(): void
+    {
+        // The list is bounded by sign-outs within one session lifetime,
+        // which only holds if spent entries actually go.
+        $revocations = new SessionRevocationList();
+        $now = time();
+
+        $revocations->revoke('old', $now + 10, $now);
+        $revocations->revoke('new', $now + 3600, $now + 11);
+
+        $this->assertCount(1, WpState::$options[SessionRevocationList::OPTION] ?? []);
+        $this->assertTrue($revocations->isRevoked('new', $now + 11));
+    }
+
+    public function testForgetDropsARevocation(): void
+    {
+        $revocations = new SessionRevocationList();
+        $revocations->revoke('a-session', time() + 3600, time());
+        $this->assertTrue($revocations->isRevoked('a-session'));
+
+        $revocations->forget('a-session');
+
+        $this->assertFalse($revocations->isRevoked('a-session'));
+    }
+
+    public function testACorruptOptionMeansNothingIsRevoked(): void
+    {
+        // It is an option row, so it can be hand-edited or corrupted.
+        // That must degrade to "nothing is revoked" rather than fatal
+        // on every authenticated request.
+        WpState::$options[SessionRevocationList::OPTION] = 'not-an-array';
+
+        $this->assertFalse((new SessionRevocationList())->isRevoked('a-session'));
     }
 
     // --- SessionCsrf --------------------------------------------------------

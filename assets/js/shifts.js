@@ -334,8 +334,15 @@
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
             })
-                .then(function () { window.location = cfg.signInUrl; })
-                .catch(function () { window.location = cfg.signInUrl; });
+                .then(function (r) {
+                    // fetch() resolves for 4xx too; see find.js. Only
+                    // leave the page once the session is really revoked.
+                    if (!r.ok) { throw new Error('sign-out refused'); }
+                    window.location = cfg.signInUrl;
+                })
+                .catch(function () {
+                    setStatus('Could not sign you out. Please try again.');
+                });
         });
     }
 
