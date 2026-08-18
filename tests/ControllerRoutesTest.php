@@ -14,6 +14,7 @@ use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
 use Reach\Session\Session;
+use Reach\Session\SessionCookie;
 use ReflectionClass;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
@@ -22,6 +23,7 @@ use Unity\Members\Interfaces\MemberViewFactory;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
@@ -62,7 +64,12 @@ final class ControllerRoutesTest extends ReachTestCase
         $_COOKIE = [];
 
         $this->container = new FakeContainer([
-            MemberRepository::class  => new InMemoryMemberRepository([]),
+            // Carries the member the session-gated tests sign in as: a
+            // session whose email matches no member is refused, so an
+            // empty repository would deny every one of them.
+            MemberRepository::class  => new InMemoryMemberRepository([
+                new MemberStub('user@example.com'),
+            ]),
             AuditLogger::class       => new SpyAuditLogger(),
             MemberViewFactory::class => new FakeMemberViewFactory(),
         ]);
@@ -161,21 +168,21 @@ final class ControllerRoutesTest extends ReachTestCase
     }
 
     /**
-     * Force the container's shared CurrentSession to report a session for the
-     * given email, bypassing cookie HMAC verification (its own unit test's
-     * job), so the controller gate/introspection branches can be exercised.
+     * Sign in as $email for the container's shared CurrentSession.
+     *
+     * This used to reflect a Session into CurrentSession's private
+     * cache, on the grounds that cookie verification was its own unit
+     * test's business. That would now skip the eligibility check as
+     * well, and these tests are precisely about whether the gate is
+     * wired up — so the cookie is minted for real and invalidate()
+     * drops whatever the earlier unauthenticated call cached.
      */
     private function seedSession(string $email, string $provider = 'google'): void
     {
-        $current = $this->container->get(CurrentSession::class);
-        $session = new Session($email, $provider, 'sub', time(), time() + 3600);
+        $session = new Session($email, $provider, 'sub', time(), time() + 3600, null, Session::newId());
 
-        $ref = new ReflectionClass($current);
-        $cached = $ref->getProperty('cached');
-        $cached->setAccessible(true);
-        $cached->setValue($current, $session);
-        $resolved = $ref->getProperty('resolved');
-        $resolved->setAccessible(true);
-        $resolved->setValue($current, true);
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+        $this->container->get(CurrentSession::class)->invalidate();
     }
 }

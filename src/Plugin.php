@@ -31,7 +31,6 @@ use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
 use Psr\Container\ContainerInterface;
 use Unity\Core\Interfaces\Container;
-use Unity\Members\Interfaces\MemberRepository;
 
 use function add_filter;
 
@@ -181,17 +180,17 @@ class Plugin
         // for shifts without Trusted trusting any request-supplied identity.
         // Inert when Trusted isn't installed (nothing fires the filter).
         $session = self::$container->get(CurrentSession::class);
-        $members = self::$container->get(MemberRepository::class);
-        add_filter('trusted_signup_member', static function ($member) use ($session, $members) {
+        add_filter('trusted_signup_member', static function ($member) use ($session) {
             if ($member !== null) {
                 return $member;
             }
-            $current = $session->get();
-            if ($current === null || $current->email === '') {
-                return null;
-            }
-            // Trusted re-checks the member is a telephone responder before access.
-            return $members->findByEmail($current->email);
+            // The member CurrentSession resolved to authorise this request.
+            // Taking it from there rather than looking the email up again
+            // means the person Trusted acts for is the same one Reach just
+            // decided may act at all - and it inherits the eligibility
+            // re-check, so a withdrawn role stops shift sign-up too.
+            // Trusted still re-checks they are a telephone responder.
+            return $session->member();
         }, 10, 1);
 
         // GDPR erasure: a member's password credential is personal data, so

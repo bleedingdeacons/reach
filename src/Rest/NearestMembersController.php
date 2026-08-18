@@ -11,12 +11,13 @@ if (!defined('ABSPATH')) {
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
+use Reach\Core\RateLimiter;
 use Reach\Resolution\NearestMembersResolver;
 use Reach\Resolution\ResolutionResult;
 use Reach\Resolution\ScoredMember;
 use Reach\Session\CurrentSession;
+use Reach\Session\SessionCsrf;
 use Scrutiny\Audit\Interfaces\AuditLogger;
-use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -32,24 +33,31 @@ use function rest_ensure_response;
  * Authentication & audit
  * ----------------------
  * Reach visitors are proof-of-email holders via the Reach session cookie,
- * not WordPress users. The permission callback below requires a valid
- * session — nothing more by default. Every result returned is audit-logged
- * through Scrutiny in a structured `caller:<name>#<member id>` detail
- * format (or `caller:unknown` when the verified email matches no member),
- * which the Scrutiny admin renders as a linked "Caller: <name>" entry
- * matching the format used by the call-attempt audit. The raw email is
- * never written to the audit row — Scrutiny's contract forbids raw PII
- * in `detail`, and on installs where every Reach lookup runs under one
- * shared WP account the anonymous name is the only useful
- * "who triggered this" signal a regulator can reconstruct from the
- * audit table.
+ * not WordPress users. The permission callback requires a session that
+ * {@see CurrentSession} has both verified and *authorised* — the member
+ * behind it is re-checked against {@see \Reach\Auth\OutreachEligibility}
+ * on every request, so a withdrawn role closes this endpoint at the
+ * viewer's next search rather than whenever their cookie happens to
+ * expire.
  *
- * If the verified email does not match any Unity member record, the
- * viewer is recorded as `unknown` rather than leaking the unmatched
- * email into the log. The 12th-stepper flag is deliberately *not* a
- * gate here, matching CallAttemptController: an intergroup officer or
- * other non-12th-step member who legitimately reaches this endpoint
- * still appears under their anonymous name.
+ * Every result returned is audit-logged through Scrutiny in a structured
+ * `caller:<name>#<member id>` detail format (or `caller:unknown` when
+ * the member carries no anonymous name), which the Scrutiny admin
+ * renders as a linked "Caller: <name>" entry matching the format used by
+ * the call-attempt audit. The raw email is never written to the audit
+ * row — Scrutiny's contract forbids raw PII in `detail`, and on installs
+ * where every Reach lookup runs under one shared WP account the
+ * anonymous name is the only useful "who triggered this" signal a
+ * regulator can reconstruct from the audit table.
+ *
+ * The 12th-stepper flag is deliberately *not* a further gate here,
+ * matching CallAttemptController: a certified telephone responder who
+ * legitimately reaches this endpoint still appears under their anonymous
+ * name.
+ *
+ * Auditing records what was seen; it does not bound it. The per-viewer
+ * search cap below is what stops a single session copying the directory
+ * — see {@see SEARCH_MAX}.
  */
 final class NearestMembersController
 {
@@ -75,6 +83,33 @@ final class NearestMembersController
     private const MAX_DISTANCE_KM = 100.0;
 
     /**
+     * Searches one signed-in viewer may run per window, and the window.
+     *
+     * This is the only endpoint that hands out members' mobile numbers,
+     * up to {@see MAX_LIMIT} of them at a time and out to
+     * {@see MAX_DISTANCE_KM}. Without a ceiling, a single valid session
+     * can walk a list of place names and copy the intergroup's entire
+     * directory — every search audited, and none of them refused.
+     * Auditing answers "who saw this" after the fact; it does not stop
+     * the copying, and a session that has just been withdrawn is
+     * precisely the one likely to be doing it.
+     *
+     * The cap is drawn well above real use. A 12th-stepper working a
+     * call tries a postcode, widens it, perhaps tries the next town —
+     * a handful of searches. Sixty an hour leaves that untouched while
+     * turning a directory sweep into something that takes days and
+     * leaves an obvious trail.
+     *
+     * Keyed on the viewer, not the IP: the IP caveat in
+     * {@see RateLimiter} applies here as much as at sign-in, and behind
+     * a shared edge an IP cap would penalise a whole intergroup for one
+     * abuser. A session is the thing being abused, so a session is what
+     * is limited.
+     */
+    private const SEARCH_MAX = 60;
+    private const SEARCH_WINDOW = 60 * 60;
+
+    /**
      * Fields counted as a personal-data view when a member appears in
      * a results set. `area` (geographic area string) and `accepts`
      * (gender filter) are deliberately *not* in this list: they are
@@ -96,7 +131,8 @@ final class NearestMembersController
         private readonly CallAttemptRepository $callAttempts,
         private readonly ResponsivenessScorer $scorer,
         private readonly AttemptTokenMinter $attemptTokens,
-        private readonly MemberRepository $members,
+        private readonly RateLimiter $rateLimiter,
+        private readonly SessionCsrf $csrf,
     ) {
     }
 
@@ -200,6 +236,21 @@ final class NearestMembersController
 
     public function getNearest(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        $session = $this->session->get();
+        if ($session === null) {
+            // permissionCallback already required one; guard against it
+            // lapsing between the two checks.
+            return new WP_Error('reach_not_authenticated', 'Session expired.', ['status' => 401]);
+        }
+
+        if ($this->rateLimiter->overLimit('search:' . $session->email, self::SEARCH_MAX, self::SEARCH_WINDOW)) {
+            return new WP_Error(
+                'reach_rate_limited',
+                'Too many searches in a short time. Please wait a little while and try again.',
+                ['status' => 429],
+            );
+        }
+
         $location = (string) $request->get_param('location');
         $accepts  = (array) $request->get_param('accepts');
         $limit    = min(self::MAX_LIMIT, max(1, (int) $request->get_param('limit')));
@@ -240,6 +291,12 @@ final class NearestMembersController
             'email'         => $session->email,
             'provider'      => $session->provider,
             'expires_at'    => $session->expiresAt,
+            // The token this session's writes must present. Safe to
+            // return here because the endpoint is same-origin and
+            // cookie-authenticated: a cross-site caller cannot read the
+            // response, which is the whole basis of the defence. See
+            // SessionCsrf.
+            'token'         => $this->csrf->mint($session),
         ], 200);
     }
 
@@ -353,14 +410,15 @@ final class NearestMembersController
 
         $caller = 'unknown';
 
-        $session = $this->session->get();
-        if ($session !== null && $session->email !== '') {
-            $member = $this->members->findByEmail($session->email);
-            if ($member !== null) {
-                $name = trim($member->getAnonymousName());
-                if ($name !== '') {
-                    $caller = sprintf('%s#%d', $name, $member->getId());
-                }
+        // The member CurrentSession already resolved to authorise this
+        // request — asking the repository again would be a second
+        // lookup for an answer we hold, and would let the audit row
+        // name a different member than the one access was granted to.
+        $member = $this->session->member();
+        if ($member !== null) {
+            $name = trim($member->getAnonymousName());
+            if ($name !== '') {
+                $caller = sprintf('%s#%d', $name, $member->getId());
             }
         }
 

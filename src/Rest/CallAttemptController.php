@@ -12,9 +12,9 @@ use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\Session\CurrentSession;
+use Reach\Session\SessionCsrf;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Scrutiny\Privacy\PersonalDataFields;
-use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -70,7 +70,7 @@ final class CallAttemptController
         private readonly AttemptTokenMinter $tokens,
         private readonly CurrentSession $session,
         private readonly AuditLogger $auditLogger,
-        private readonly MemberRepository $members,
+        private readonly SessionCsrf $csrf,
     ) {
     }
 
@@ -143,6 +143,17 @@ final class CallAttemptController
             return new WP_Error('reach_not_authenticated', 'Session expired.', ['status' => 401]);
         }
 
+        // Cookie-authenticated write: the cookie alone must not be
+        // enough to act, or a cross-site page could log attempts on the
+        // viewer's behalf. See SessionCsrf.
+        if (!$this->csrf->verify($request, $session)) {
+            return new WP_Error(
+                'reach_invalid_session_token',
+                'That request could not be verified. Please reload the page and try again.',
+                ['status' => 403],
+            );
+        }
+
         $memberId = (int) $request->get_param('member_id');
         $outcome  = (string) $request->get_param('outcome');
         $token    = (string) $request->get_param('attempt_token');
@@ -182,7 +193,7 @@ final class CallAttemptController
             AuditLogger::ENTITY_MEMBER,
             $memberId,
             [PersonalDataFields::MOBILE_NUMBER],
-            $this->callerDetail($session->email, $attempt->outcome),
+            $this->callerDetail($attempt->outcome),
         );
 
         return rest_ensure_response([
@@ -238,17 +249,18 @@ final class CallAttemptController
      * needs to know how to parse the structure, not what `reached`
      * means.
      */
-    private function callerDetail(string $email, string $outcome): string
+    private function callerDetail(string $outcome): string
     {
         $caller = 'unknown';
 
-        if ($email !== '') {
-            $member = $this->members->findByEmail($email);
-            if ($member !== null) {
-                $name = trim($member->getAnonymousName());
-                if ($name !== '') {
-                    $caller = sprintf('%s#%d', $name, $member->getId());
-                }
+        // The member CurrentSession resolved to authorise this request,
+        // rather than a second lookup by email — see the equivalent in
+        // NearestMembersController::callerDetail().
+        $member = $this->session->member();
+        if ($member !== null) {
+            $name = trim($member->getAnonymousName());
+            if ($name !== '') {
+                $caller = sprintf('%s#%d', $name, $member->getId());
             }
         }
 

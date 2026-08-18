@@ -61,6 +61,8 @@ use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
 use Unity\Members\Interfaces\MemberRepository;
@@ -82,7 +84,15 @@ final class ReachServiceProvider
         // Core helpers.
         $container->register(Settings::class, fn() => new Settings());
         $container->register(SessionCookie::class, fn() => new SessionCookie());
-        $container->register(CurrentSession::class, fn(ContainerInterface $c) => new CurrentSession($c->get(SessionCookie::class)));
+        $container->register(SessionRevocationList::class, fn() => new SessionRevocationList());
+        $container->register(SessionCsrf::class, fn() => new SessionCsrf());
+        // CurrentSession takes the member repository because a signed
+        // cookie is not on its own an authorisation — see that class.
+        $container->register(CurrentSession::class, fn(ContainerInterface $c) => new CurrentSession(
+            $c->get(SessionCookie::class),
+            $c->get(MemberRepository::class),
+            $c->get(SessionRevocationList::class),
+        ));
         $container->register(StateStore::class, fn() => new StateStore());
         $container->register(JwtVerifier::class, fn() => new JwtVerifier());
 
@@ -221,6 +231,9 @@ final class ReachServiceProvider
             $c->get(DeviceCodeStore::class),
             $c->get(DeviceRedirectValidator::class),
             $c->get(ResponderGate::class),
+            $c->get(CurrentSession::class),
+            $c->get(SessionRevocationList::class),
+            $c->get(SessionCsrf::class),
         ));
 
         $container->register(RateLimiter::class, fn() => new RateLimiter());
@@ -239,7 +252,8 @@ final class ReachServiceProvider
             $c->get(CallAttemptRepository::class),
             $c->get(ResponsivenessScorer::class),
             $c->get(AttemptTokenMinter::class),
-            $c->get(MemberRepository::class),
+            $c->get(RateLimiter::class),
+            $c->get(SessionCsrf::class),
         ));
 
         $container->register(CallAttemptController::class, fn(ContainerInterface $c) => new CallAttemptController(
@@ -247,14 +261,14 @@ final class ReachServiceProvider
             $c->get(AttemptTokenMinter::class),
             $c->get(CurrentSession::class),
             $c->get(AuditLogger::class),
-            $c->get(MemberRepository::class),
+            $c->get(SessionCsrf::class),
         ));
 
         $container->register(CallRequestController::class, fn(ContainerInterface $c) => new CallRequestController(
             $c->get(CallRequestRepository::class),
             $c->get(CurrentSession::class),
-            $c->get(MemberRepository::class),
             $c->get(CallRequestMailer::class),
+            $c->get(SessionCsrf::class),
         ));
 
         $container->register(DeviceAuthController::class, fn(ContainerInterface $c) => new DeviceAuthController(
@@ -281,6 +295,7 @@ final class ReachServiceProvider
         // Frontend + admin.
         $container->register(PageRouter::class, fn(ContainerInterface $c) => new PageRouter(
             $c->get(CurrentSession::class),
+            $c->get(SessionCsrf::class),
         ));
 
         $container->register(SettingsPage::class, fn(ContainerInterface $c) => new SettingsPage(

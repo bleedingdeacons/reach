@@ -16,9 +16,13 @@ use Reach\Rest\NearestMembersController;
 use Reach\Session\CurrentSession;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
+use Reach\Core\RateLimiter;
 use ReflectionClass;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Members\Interfaces\Member;
+use Unity\Members\ResponderCertification;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -132,12 +136,19 @@ final class NearestMembersControllerTest extends ReachTestCase
         // attempt audit so the same person appears under the same
         // identifier across the search → call lifecycle. The raw
         // email still never leaks.
+        // Not a 12th-stepper, but a certified telephone responder —
+        // which is the other half of what OutreachEligibility admits,
+        // and so the viewer this case is actually about. Written as a
+        // plain non-12th-stepper until the eligibility gate began
+        // refusing those outright.
         $officer = $this->stubMember(
             id: 1,
             name: 'Intergroup Officer',
             twelfth: false,
             email: 'officer@example.com',
             area: 'BS1 1AA',
+            responder: true,
+            certification: ResponderCertification::Certified,
         );
         $exposed = $this->stubMember(
             id: 2,
@@ -164,11 +175,15 @@ final class NearestMembersControllerTest extends ReachTestCase
         }
     }
 
-    public function testUnknownEmailIsRecordedAsUnknownNotLeaked(): void
+    public function testUnnamedViewerIsRecordedAsUnknownNotLeaked(): void
     {
-        // The Reach session is valid (the OAuth provider verified the
-        // email) but no Unity member record matches. The audit row
-        // must not contain the unmatched email anywhere in detail.
+        // The viewer is an eligible member but carries no anonymous
+        // name, so there is nothing to put in the audit row. It must
+        // say so rather than falling back to their email.
+        //
+        // This was written as a session whose email matched no member
+        // at all; CurrentSession now refuses that outright, so it can
+        // no longer reach the audit step.
         $exposed = $this->stubMember(
             id: 2,
             name: 'Bob T.',
@@ -176,10 +191,17 @@ final class NearestMembersControllerTest extends ReachTestCase
             email: 'bob@example.com',
             area: 'BS1 1AB',
         );
+        $stranger = $this->stubMember(
+            id: 3,
+            name: '',
+            twelfth: true,
+            email: 'stranger@example.com',
+            area: 'BS1 1AC',
+        );
 
         $audit = new SpyAuditLogger();
         $this->controllerWith(
-            members: [$exposed],
+            members: [$exposed, $stranger],
             audit: $audit,
             sessionEmail: 'stranger@example.com',
         )->getNearest($this->request('BS1', limit: 10));
@@ -225,6 +247,92 @@ final class NearestMembersControllerTest extends ReachTestCase
         $this->assertCount(0, $audit->entries, 'No audit rows on unresolvable location');
     }
 
+    /**
+     * The search cap is what stops one valid session copying the
+     * directory. This is the only endpoint that hands out members'
+     * mobile numbers, and auditing records that it happened rather than
+     * bounding how often it may.
+     *
+     * Driven through the real RateLimiter and its transient store, so
+     * the assertion is about the endpoint refusing rather than about a
+     * counter being incremented somewhere.
+     */
+    public function testRefusesOnceTheViewerExceedsTheSearchCap(): void
+    {
+        $exposed = $this->stubMember(
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
+        );
+
+        $controller = $this->controllerWith(
+            members: [$exposed],
+            audit: new SpyAuditLogger(),
+            sessionEmail: 'alice@example.com',
+        );
+
+        $limit = $this->searchCap();
+
+        for ($i = 0; $i < $limit; $i++) {
+            $allowed = $controller->getNearest($this->request('BS1', limit: 10));
+            $this->assertNotInstanceOf(\WP_Error::class, $allowed, "search {$i} should be allowed");
+        }
+
+        $refused = $controller->getNearest($this->request('BS1', limit: 10));
+
+        $this->assertInstanceOf(\WP_Error::class, $refused);
+        $this->assertSame('reach_rate_limited', $refused->get_error_code());
+        $this->assertSame(429, $refused->get_error_data()['status'] ?? null);
+    }
+
+    /**
+     * The cap is per viewer, not per IP — behind a shared edge an IP cap
+     * would penalise a whole intergroup for one abuser.
+     */
+    public function testTheSearchCapIsScopedToTheViewer(): void
+    {
+        $exposed = $this->stubMember(
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
+        );
+
+        $limit = $this->searchCap();
+
+        $greedy = $this->controllerWith(
+            members: [$exposed],
+            audit: new SpyAuditLogger(),
+            sessionEmail: 'greedy@example.com',
+        );
+        for ($i = 0; $i <= $limit; $i++) {
+            $greedy->getNearest($this->request('BS1', limit: 10));
+        }
+
+        // A different viewer, from the same "IP", is unaffected.
+        $other = $this->controllerWith(
+            members: [$exposed],
+            audit: new SpyAuditLogger(),
+            sessionEmail: 'innocent@example.com',
+        );
+
+        $this->assertNotInstanceOf(
+            \WP_Error::class,
+            $other->getNearest($this->request('BS1', limit: 10)),
+        );
+    }
+
+    /** The controller's own cap, read rather than restated. */
+    private function searchCap(): int
+    {
+        $constant = new \ReflectionClassConstant(NearestMembersController::class, 'SEARCH_MAX');
+
+        return (int) $constant->getValue();
+    }
+
     // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------
@@ -251,11 +359,12 @@ final class NearestMembersControllerTest extends ReachTestCase
         return new NearestMembersController(
             new NearestMembersResolver($repo, $geo),
             $audit,
-            $this->sessionWithEmail($sessionEmail),
+            $this->sessionWithEmail($sessionEmail, $repo),
             new NoopCallAttemptRepository(),
             new ResponsivenessScorer(),
             new AttemptTokenMinter(),
-            $repo,
+            new RateLimiter(),
+            new SessionCsrf(),
         );
     }
 
@@ -269,36 +378,44 @@ final class NearestMembersControllerTest extends ReachTestCase
     }
 
     /**
-     * Build a CurrentSession that already holds a cached Session for
-     * the given email, without going through cookie HMAC verification.
+     * Build a CurrentSession holding a signed-in session for $email.
      *
-     * The CurrentSession class is final and its cached state is
-     * private, so reflection is the cleanest way in. The alternative
-     * — minting a real signed cookie and putting it in $_COOKIE —
-     * would test the cookie path, which is the SessionCookie unit
-     * test's job, not this one's.
+     * This used to reflect a Session straight into CurrentSession's
+     * private cache, on the grounds that the cookie path was
+     * SessionCookie's business rather than this test's. That is no
+     * longer safe: resolving a session is now also an authorisation
+     * decision, so a helper that skips the resolve hands the controller
+     * a viewer who has never been past the eligibility gate — and these
+     * tests would then pass whatever that gate did. A real signed
+     * cookie costs one HMAC and exercises the decision for real.
+     *
+     * $members is the same repository the controller searches, so the
+     * viewer resolves against the members already seeded for the test.
+     * A viewer not among them is added, because a session whose email
+     * matches no member is now refused outright and every test here is
+     * about something else.
      */
-    private function sessionWithEmail(string $email): CurrentSession
+    private function sessionWithEmail(string $email, InMemoryMemberRepository $members): CurrentSession
     {
-        $current = new CurrentSession(new SessionCookie());
-
         $session = new Session(
             email:     $email,
             provider:  'google',
             sub:       'oauth-sub-' . md5($email),
             issuedAt:  time(),
             expiresAt: time() + 3600,
+            id:        Session::newId(),
         );
 
-        $ref = new ReflectionClass($current);
-        $cached = $ref->getProperty('cached');
-        $cached->setAccessible(true);
-        $cached->setValue($current, $session);
-        $resolved = $ref->getProperty('resolved');
-        $resolved->setAccessible(true);
-        $resolved->setValue($current, true);
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
 
-        return $current;
+        $viewer = $members->findByEmail($email);
+        if ($viewer === null) {
+            $members = new InMemoryMemberRepository(
+                array_merge($members->findAll(), [new MemberStub($email)]),
+            );
+        }
+
+        return new CurrentSession(new SessionCookie(), $members, new SessionRevocationList());
     }
 
     private function stubMember(
@@ -307,6 +424,8 @@ final class NearestMembersControllerTest extends ReachTestCase
         bool $twelfth,
         string $email,
         string $area,
+        bool $responder = false,
+        ResponderCertification $certification = ResponderCertification::None,
     ): Member {
         return new MemberStub(
             id: $id,
@@ -314,6 +433,8 @@ final class NearestMembersControllerTest extends ReachTestCase
             personalEmail: $email,
             twelfthStepper: $twelfth,
             area: $area,
+            telephoneResponder: $responder,
+            responderCertification: $certification,
         );
     }
 }

@@ -23,9 +23,13 @@ if (!defined('ABSPATH')) {
  * no WordPress account, so WP's cookie-auth nonce check is never
  * the thing gating these requests. Including a nonce would only
  * introduce a second clock that ticks over while a tab sits idle.
+ * Reach's own anti-CSRF token ($sessionToken, below) does that job
+ * instead — it is bound to this session and expires exactly with it,
+ * so there is no second clock. See \Reach\Session\SessionCsrf.
  */
 
 /** @var \Reach\Session\Session|null $session */
+/** @var string $sessionToken */
 $email = $session !== null ? $session->email : '';
 $restUrl  = esc_url(rest_url('reach/v1/nearest-members'));
 $attemptsUrl = esc_url(rest_url('reach/v1/call-attempts'));
@@ -93,7 +97,8 @@ $homeUrl   = esc_url(home_url('/reach/home'));
             restUrl: <?php echo wp_json_encode($restUrl); ?>,
             attemptsUrl: <?php echo wp_json_encode($attemptsUrl); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
+            sessionToken: <?php echo wp_json_encode($sessionToken); ?>
         };
     </script>
     <script src="<?php echo esc_url(REACH_PLUGIN_URL . 'assets/js/find.js'); ?>?v=<?php echo esc_attr(REACH_VERSION); ?>"></script>

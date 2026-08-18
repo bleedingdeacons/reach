@@ -7,6 +7,9 @@ namespace Reach\Tests;
 use Brain\Monkey\Functions;
 use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Reach\Tests\ReachTestCase;
 use Reach\Frontend\PageRouter;
 
@@ -228,6 +231,13 @@ final class PageRouterTest extends ReachTestCase
 
     private function router(): PageRouter
     {
-        return new PageRouter(new CurrentSession(new SessionCookie()));
+        return new PageRouter(
+            new CurrentSession(
+                new SessionCookie(),
+                new InMemoryMemberRepository([]),
+                new SessionRevocationList(),
+            ),
+            new SessionCsrf(),
+        );
     }
 }

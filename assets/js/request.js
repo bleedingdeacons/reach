@@ -122,7 +122,11 @@
         fetch(cfg.requestsUrl, {
             method: 'POST',
             credentials: 'same-origin',
-            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Reach-Token': cfg.sessionToken || ''
+            },
             body: JSON.stringify({
                 caller_phone: phone,
                 caller_name:  name,

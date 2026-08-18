@@ -191,14 +191,28 @@ final class PasswordAuthControllerGateTest extends ReachTestCase
     {
         $repo    = $repo ?? new InMemoryPasswordCredentialRepository();
         $members = new InMemoryMemberRepository($members);
-        $auth    = new PasswordAuthenticator($repo, $members, new PasswordResetMailer(), new PasswordPolicy());
+        $this->mailer = new PasswordResetMailer();
+        $auth    = new PasswordAuthenticator($repo, $members, $this->mailer, new PasswordPolicy());
 
         return new PasswordAuthController($auth, new SessionCookie(), $members, new SpyAuditLogger(), new RateLimiter());
     }
 
+    /**
+     * The mailer the authenticator under test was built with, kept so
+     * {@see tokenFromLastMail()} can flush its queue.
+     */
+    private PasswordResetMailer $mailer;
+
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
     private function tokenFromLastMail(): string
     {
+        // Reset links are queued and sent after the response, so that an
+        // eligible address and an ineligible one cost the same to answer
+        // (see PasswordResetMailer). In production the flush runs on
+        // `shutdown`; here we run it directly, because Brain Monkey
+        // records hooks without firing them.
+        $this->mailer->flush();
+
         $mail = WpState::$mail;
         $this->assertNotEmpty($mail, 'expected a reset email to have been sent');
         $message = (string) end($mail)['message'];

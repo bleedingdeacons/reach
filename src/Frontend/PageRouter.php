@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Session\CurrentSession;
+use Reach\Session\SessionCsrf;
 
 /**
  * Wire the Reach front-end pages into WordPress.
@@ -62,6 +63,7 @@ final class PageRouter
 
     public function __construct(
         private readonly CurrentSession $session,
+        private readonly SessionCsrf $csrf,
     ) {
     }
 
@@ -147,7 +149,13 @@ final class PageRouter
 
         $template = self::templateFor($page, $this->session->isAuthenticated());
 
-        $session = $this->session->get(); // available inside template
+        // Both available inside the template. $sessionToken is the
+        // anti-CSRF token this session's writes must present; the
+        // templates hand it to their JS in window.REACH_CONFIG. Empty
+        // when signed out, which is correct — the sign-in and password
+        // templates make no authenticated writes.
+        $session = $this->session->get();
+        $sessionToken = $session !== null ? $this->csrf->mint($session) : '';
         require $template;
         exit;
     }

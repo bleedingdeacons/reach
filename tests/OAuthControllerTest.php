@@ -14,7 +14,10 @@ use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\OAuthController;
+use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
 use Unity\Members\Interfaces\Member;
 use WP_Error;
 use WP_REST_Request;
@@ -240,12 +243,78 @@ final class OAuthControllerTest extends ReachTestCase
         $this->assertNotSame('', $data['state']);
     }
 
-    public function testSignoutAcknowledges(): void
+    public function testSignoutAcknowledgesWhenNobodyIsSignedIn(): void
     {
-        $result = $this->controller($this->registryWith('google'))->signout();
+        // No cookie, so nothing to revoke and no token to demand. The
+        // caller still gets the outcome it asked for: saying otherwise
+        // would tell an unauthenticated prober whether a cookie was
+        // valid.
+        $result = $this->controller($this->registryWith('google'))->signout(new WP_REST_Request());
 
         $this->assertInstanceOf(WP_REST_Response::class, $result);
         $this->assertTrue($result->get_data()['signed_out']);
+    }
+
+    public function testSignoutRevokesTheSessionServerSide(): void
+    {
+        $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
+        $session = $this->sessionFor('user@example.com');
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+        $revocations = new SessionRevocationList();
+        $controller  = $this->controllerWithRevocations($members, $revocations);
+
+        $result = $controller->signout($this->withSessionToken(new WP_REST_Request(), $session));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertTrue($result->get_data()['signed_out']);
+
+        // The point of the whole exercise: the token is dead even
+        // though it is still signed, unexpired, and would still verify.
+        $this->assertTrue($revocations->isRevoked($session->id));
+    }
+
+    /**
+     * A revoked session stops being accepted everywhere, not merely in
+     * the browser that pressed Sign out — which is what makes sign-out
+     * mean something for a stateless cookie.
+     */
+    public function testRevokedSessionIsNoLongerAccepted(): void
+    {
+        $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
+        $session = $this->sessionFor('user@example.com');
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+        $revocations = new SessionRevocationList();
+        $current = new CurrentSession(new SessionCookie(), $members, $revocations);
+
+        $this->assertNotNull($current->get(), 'sanity: the session is good before revocation');
+
+        $revocations->revoke($session->id, $session->expiresAt, time());
+
+        $this->assertNull(
+            (new CurrentSession(new SessionCookie(), $members, $revocations))->get(),
+            'a revoked session must not be accepted, however valid its signature',
+        );
+    }
+
+    public function testSignoutRefusesWithoutTheSessionToken(): void
+    {
+        $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
+        $session = $this->sessionFor('user@example.com');
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+        $revocations = new SessionRevocationList();
+        $controller  = $this->controllerWithRevocations($members, $revocations);
+
+        // No X-Reach-Token header: a cross-site page must not be able to
+        // sign a responder out mid-shift.
+        $result = $controller->signout(new WP_REST_Request());
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_invalid_session_token', $result->get_error_code());
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+        $this->assertFalse($revocations->isRevoked($session->id));
     }
 
     // --- helpers ----------------------------------------------------------
@@ -267,6 +336,36 @@ final class OAuthControllerTest extends ReachTestCase
             new DeviceCodeStore(),
             new DeviceRedirectValidator(),
             new ResponderGate($repository),
+            // Session-lifecycle collaborators. CurrentSession is what
+            // sign-out revokes through, and the CSRF token is what a
+            // cookie-authenticated write must present. Built over the
+            // same member repository so an issued session resolves to
+            // the same records the rest of the test sees.
+            new CurrentSession(new SessionCookie(), $repository, new SessionRevocationList()),
+            new SessionRevocationList(),
+            new SessionCsrf(),
+        );
+    }
+
+    /**
+     * A controller sharing an explicit revocation list, so a test can
+     * inspect what sign-out actually recorded.
+     */
+    private function controllerWithRevocations(
+        InMemoryMemberRepository $members,
+        SessionRevocationList $revocations
+    ): OAuthController {
+        return new OAuthController(
+            $this->registryWith('google'),
+            $this->state,
+            new SessionCookie(),
+            $members,
+            new DeviceCodeStore(),
+            new DeviceRedirectValidator(),
+            new ResponderGate($members),
+            new CurrentSession(new SessionCookie(), $members, $revocations),
+            $revocations,
+            new SessionCsrf(),
         );
     }
 

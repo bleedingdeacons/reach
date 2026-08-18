@@ -329,7 +329,11 @@
 
     if (signOutBtn) {
         signOutBtn.addEventListener('click', function () {
-            fetch(cfg.signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            fetch(cfg.signOutUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
+            })
                 .then(function () { window.location = cfg.signInUrl; })
                 .catch(function () { window.location = cfg.signInUrl; });
         });

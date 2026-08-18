@@ -108,7 +108,8 @@ $homeUrl     = esc_url(home_url('/reach/home'));
             requestsUrl: <?php echo wp_json_encode($requestsUrl); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
             signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
-            homeUrl: <?php echo wp_json_encode($homeUrl); ?>
+            homeUrl: <?php echo wp_json_encode($homeUrl); ?>,
+            sessionToken: <?php echo wp_json_encode($sessionToken); ?>
         };
     </script>
     <script>
@@ -117,7 +118,13 @@ $homeUrl     = esc_url(home_url('/reach/home'));
             var signOutBtn = document.getElementById('reach-signout');
             if (!signOutBtn) return;
             signOutBtn.addEventListener('click', function () {
-                fetch(cfg.signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                // Sign-out revokes the session server-side, so it is a
+                // write and carries the session token like any other.
+                fetch(cfg.signOutUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
+                })
                     .then(function () { window.location = cfg.signInUrl; })
                     .catch(function () { window.location = cfg.signInUrl; });
             });

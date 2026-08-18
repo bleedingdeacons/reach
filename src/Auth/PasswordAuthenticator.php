@@ -156,7 +156,10 @@ final class PasswordAuthenticator
         $tokenHash = hash('sha256', $rawToken);
 
         $this->credentials->storeResetToken($email, $tokenHash, $now + self::RESET_TTL_SECONDS, $now);
-        $this->mailer->send($email, $rawToken);
+        // Queued, not sent: the send happens after the response so that
+        // an eligible address and an ineligible one take the same time
+        // to answer. See PasswordResetMailer for the full reasoning.
+        $this->mailer->queue($email, $rawToken);
     }
 
     /**

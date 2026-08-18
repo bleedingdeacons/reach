@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use function add_action;
 use function add_query_arg;
 use function home_url;
 use function wp_mail;
@@ -26,11 +27,93 @@ use function wp_mail;
  * caller only invokes this for eligible members, and the endpoint's
  * response is identical regardless, so nothing here leaks account
  * existence.
+ *
+ * <b>Why sending is queued rather than done on the spot.</b> The
+ * request-reset endpoint answers `{sent: true}` whether or not a link
+ * went out, so its *body* reveals nothing — but the two branches did not
+ * cost the same. Sending is a synchronous SMTP round trip; not sending
+ * is a return. Tens to hundreds of milliseconds, measurable from
+ * outside, is enough to tell whether an address belongs to an eligible
+ * member — exactly the account enumeration the constant response exists
+ * to prevent. {@see queue()} defers the work past the response so both
+ * branches answer in the same time, which is the same reasoning
+ * {@see PasswordAuthenticator::burnTime()} applies on the login path.
  */
 final class PasswordResetMailer
 {
     /**
-     * Send the set/reset link to $email. Returns wp_mail's success flag.
+     * Links waiting to go out after the response.
+     *
+     * @var array<int, array{email: string, token: string}>
+     */
+    private array $pending = [];
+
+    /** Whether the shutdown flush has been registered this request. */
+    private bool $hooked = false;
+
+    /**
+     * Queue the set/reset link for $email, to be sent once the response
+     * has been handed back — see the class docblock for why.
+     *
+     * The hook is registered on first use rather than at construction:
+     * most requests queue nothing, and a request that queues twice
+     * should still flush once.
+     */
+    public function queue(string $email, string $rawToken): void
+    {
+        $this->pending[] = ['email' => $email, 'token' => $rawToken];
+
+        if ($this->hooked) {
+            return;
+        }
+        $this->hooked = true;
+
+        // Late priority so anything else still writing to the response
+        // has already run by the time we start talking to an SMTP server.
+        add_action('shutdown', [$this, 'flush'], PHP_INT_MAX);
+    }
+
+    /**
+     * Send everything {@see queue()} has accumulated.
+     *
+     * Public because it is the shutdown callback, and because it is
+     * where the sending is actually observable — the registration above
+     * is asserted separately as a hook.
+     *
+     * `fastcgi_finish_request()` is called first where the SAPI provides
+     * it (PHP-FPM, which is the usual deployment): it returns the
+     * response to the client and lets the rest of the script run
+     * unwatched, which is what makes the timing genuinely equal rather
+     * than merely later. Where it is absent the send still happens after
+     * WordPress has finished with the response, which narrows the
+     * window without closing it — worth being clear about rather than
+     * claiming more than the platform gives.
+     */
+    public function flush(): void
+    {
+        if ($this->pending === []) {
+            return;
+        }
+
+        $queued = $this->pending;
+        $this->pending = [];
+
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+
+        foreach ($queued as $item) {
+            $this->send($item['email'], $item['token']);
+        }
+    }
+
+    /**
+     * Send the set/reset link to $email immediately. Returns wp_mail's
+     * success flag.
+     *
+     * Callers on the enumeration-sensitive path want {@see queue()};
+     * this stays public because it is the unit of work, and the queue is
+     * only a decision about when to run it.
      */
     public function send(string $email, string $rawToken): bool
     {

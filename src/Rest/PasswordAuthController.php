@@ -258,6 +258,10 @@ final class PasswordAuthController
             $identity->sub,
             $now,
             $now + SessionCookie::TTL_SECONDS,
+            null,
+            // Names this sign-in so it can be revoked on sign-out and so
+            // its CSRF token binds to it alone. See Session::newId().
+            Session::newId(),
         );
         $this->sessionCookie->issue($session);
     }

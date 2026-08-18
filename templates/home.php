@@ -77,7 +77,8 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
     <script>
         window.REACH_CONFIG = {
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
+            sessionToken: <?php echo wp_json_encode($sessionToken); ?>
         };
     </script>
     <script>
@@ -86,7 +87,13 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
             var signOutBtn = document.getElementById('reach-signout');
             if (!signOutBtn) return;
             signOutBtn.addEventListener('click', function () {
-                fetch(cfg.signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                // Sign-out revokes the session server-side, so it is a
+                // write and carries the session token like any other.
+                fetch(cfg.signOutUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
+                })
                     .then(function () { window.location = cfg.signInUrl; })
                     .catch(function () { window.location = cfg.signInUrl; });
             });

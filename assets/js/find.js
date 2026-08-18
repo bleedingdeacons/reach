@@ -12,6 +12,12 @@
  * "just in case" only introduces a second clock (the ~12-hour
  * nonce tick) that can tick over while a tab sits idle, turning a
  * still-signed-in user into a "Cookie check failed." error.
+ *
+ * Writes additionally carry X-Reach-Token, Reach's own anti-CSRF
+ * token, from cfg.sessionToken. It is bound to this session and
+ * expires exactly when the session does, so it adds no second clock
+ * of the kind described above. Reads don't need it — a cross-site
+ * caller cannot read a cookie-authenticated response.
  */
 (function () {
     'use strict';
@@ -162,7 +168,8 @@
             credentials: 'same-origin',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Reach-Token': cfg.sessionToken || ''
             },
             body: body
         })
@@ -542,7 +549,7 @@
             fetch(cfg.signOutUrl, {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 'Accept': 'application/json' }
+                headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
             }).then(function () {
                 window.location = cfg.signInUrl;
             }).catch(function () {
