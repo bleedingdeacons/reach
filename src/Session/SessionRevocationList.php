@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use function add_option;
 use function delete_option;
 use function get_option;
 use function update_option;
@@ -32,39 +33,54 @@ use function update_option;
  * without touching {@see SessionCookie}'s signing key, which is the
  * alternative and takes every WordPress admin session down with it.
  *
- * <b>Why an option and not a transient.</b> The other short-lived
- * stores in this plugin — {@see \Reach\Auth\StateStore},
- * {@see \Reach\Auth\DeviceCodeStore} — are transients, and this began
- * as one for the same stated reason: the data is inherently short-lived
- * and WordPress already expires it. That reasoning does not carry over,
+ * <b>Why options and not transients.</b> The other short-lived stores in
+ * this plugin — {@see \Reach\Auth\StateStore},
+ * {@see \Reach\Auth\DeviceCodeStore} — are transients, and this began as
+ * one for the same stated reason: the data is inherently short-lived and
+ * WordPress already expires it. That reasoning does not carry over,
  * because those two fail *closed* and this fails *open*. Losing a
  * stashed OAuth state means a sign-in is refused; losing a revocation
  * entry means a signed-out session is accepted again. WordPress is
  * explicit that a transient's expiry is a maximum and not a guarantee —
  * under an external object cache an LRU eviction or a `wp_cache_flush()`
  * can drop one early — so a revocation held in one is a security
- * decision that quietly undoes itself. Options are durable, and expiry
- * here is cheap to do by hand.
+ * decision that quietly undoes itself.
  *
- * <b>Why it stays small.</b> An entry is only needed for the remainder
- * of the session it revokes — once the token would be refused for being
- * expired there is nothing left to revoke — so each carries its own
- * expiry and every write drops the ones that have passed. The list is
- * bounded by the number of sign-outs in a single session lifetime, not
- * by the number of sessions ever issued.
+ * <b>Why one option per revocation.</b> A single option holding a map of
+ * every revoked id is a read-modify-write, and two sign-outs landing
+ * together can drop one of them — which fails open, in the one place
+ * that must not. Each revocation is therefore its own option, written
+ * with `add_option()`: that is an INSERT against a unique column, so
+ * concurrent writers cannot lose each other's entries, and a repeat
+ * revocation is a harmless no-op. Reading is a single targeted option
+ * rather than an array that grows with every sign-out.
+ *
+ * <b>Housekeeping is separate, and deliberately best-effort.</b> An
+ * entry is only needed for the remainder of the session it revokes, so
+ * spent ones are swept on the next sign-out. Finding them needs a list,
+ * and {@see INDEX_OPTION} is that list — a read-modify-write, and this
+ * time that is fine: losing an index entry leaves an option row nobody
+ * sweeps, which wastes a row rather than restoring access. Correctness
+ * lives in the per-id options; only tidiness lives in the index.
  *
  * Ids are stored hashed, for the reason {@see \Reach\Auth\DeviceCodeStore}
- * gives: option contents are not secret — they appear in a database
- * dump and in any admin tool that lists options — and a live session id
- * sitting in one would be a credential in the clear.
+ * gives: option names and contents are not secret — they appear in a
+ * database dump and in any admin tool that lists options — and a live
+ * session id sitting in one would be a credential in the clear.
  */
 final class SessionRevocationList
 {
     /**
-     * Not autoloaded: most requests never consult this, and the ones
-     * that do are already reading a cookie and a member record.
+     * Prefix for the per-revocation options. Followed by the hashed
+     * session id; well inside the 191-character option_name limit.
      */
-    public const OPTION = 'reach_revoked_sessions';
+    public const PREFIX = 'reach_revoked_session_';
+
+    /**
+     * Names the outstanding revocations so spent ones can be swept.
+     * Housekeeping only — see the class docblock.
+     */
+    public const INDEX_OPTION = 'reach_revoked_sessions_index';
 
     /**
      * Revoke a session for whatever remains of its lifetime.
@@ -72,12 +88,6 @@ final class SessionRevocationList
      * A session already past `$expiresAt` is ignored — it is refused on
      * expiry anyway, and storing an entry that outlives the token it
      * revokes would grow the list for no benefit.
-     *
-     * Read-modify-write, so two sign-outs landing in the same instant
-     * could see one lose its entry. The window is a single option
-     * round trip and the affected session is one whose owner is at that
-     * moment signing out on another device; a lock or a row per id
-     * would cost more than that is worth. Noted rather than hidden.
      */
     public function revoke(string $sessionId, int $expiresAt, int $now): void
     {
@@ -85,10 +95,14 @@ final class SessionRevocationList
             return;
         }
 
-        $entries = $this->prune($this->all(), $now);
-        $entries[$this->key($sessionId)] = $expiresAt;
+        $key = $this->key($sessionId);
 
-        update_option(self::OPTION, $entries, false);
+        // INSERT, not read-modify-write: two sign-outs at once cannot
+        // lose each other. False means it was already revoked, which is
+        // the outcome the caller wanted either way.
+        add_option(self::PREFIX . $key, $expiresAt, '', false);
+
+        $this->sweep($now, [$key => $expiresAt]);
     }
 
     /**
@@ -102,7 +116,8 @@ final class SessionRevocationList
      *
      * An entry past its own expiry is treated as absent without being
      * rewritten: this runs on every authenticated request, and a read
-     * that writes would put an option update on the hot path.
+     * that writes would put an option update on the hot path. Sweeping
+     * is {@see revoke()}'s job.
      */
     public function isRevoked(string $sessionId, ?int $now = null): bool
     {
@@ -110,16 +125,14 @@ final class SessionRevocationList
             return false;
         }
 
-        $now = $now ?? time();
-        $entries = $this->all();
-        $key = $this->key($sessionId);
+        $expiresAt = get_option(self::PREFIX . $this->key($sessionId));
 
-        return isset($entries[$key]) && $entries[$key] > $now;
+        return is_numeric($expiresAt) && (int) $expiresAt > ($now ?? time());
     }
 
     /**
      * Drop a revocation entry. Only used by tests and by an explicit
-     * administrative undo; ordinary expiry is {@see prune()}'s job.
+     * administrative undo; ordinary expiry is {@see sweep()}'s job.
      */
     public function forget(string $sessionId): void
     {
@@ -127,50 +140,73 @@ final class SessionRevocationList
             return;
         }
 
-        $entries = $this->all();
-        unset($entries[$this->key($sessionId)]);
+        $key = $this->key($sessionId);
+        delete_option(self::PREFIX . $key);
 
-        if ($entries === []) {
-            delete_option(self::OPTION);
-            return;
-        }
-
-        update_option(self::OPTION, $entries, false);
+        $index = $this->index();
+        unset($index[$key]);
+        $this->writeIndex($index);
     }
 
     /**
-     * The stored entries, as id-hash => expiry.
+     * Delete the revocations that have outlived the sessions they
+     * revoked, and fold in whatever the caller has just added.
+     *
+     * @param array<string, int> $additions
+     */
+    private function sweep(int $now, array $additions = []): void
+    {
+        $index = $this->index() + $additions;
+
+        $live = [];
+        foreach ($index as $key => $expiresAt) {
+            if ($expiresAt > $now) {
+                $live[$key] = $expiresAt;
+                continue;
+            }
+            delete_option(self::PREFIX . $key);
+        }
+
+        $this->writeIndex($live);
+    }
+
+    /**
+     * The index, as id-hash => expiry.
      *
      * Defensive about shape: this is an option row, so a corrupt or
-     * hand-edited value must degrade to "nothing is revoked" rather
-     * than to a fatal on every authenticated request.
+     * hand-edited value must degrade to "nothing to sweep" rather than
+     * to a fatal.
      *
      * @return array<string, int>
      */
-    private function all(): array
+    private function index(): array
     {
-        $stored = get_option(self::OPTION, []);
+        $stored = get_option(self::INDEX_OPTION, []);
         if (!is_array($stored)) {
             return [];
         }
 
-        $entries = [];
+        $index = [];
         foreach ($stored as $key => $expiresAt) {
             if (is_string($key) && is_numeric($expiresAt)) {
-                $entries[$key] = (int) $expiresAt;
+                $index[$key] = (int) $expiresAt;
             }
         }
 
-        return $entries;
+        return $index;
     }
 
     /**
-     * @param array<string, int> $entries
-     * @return array<string, int>
+     * @param array<string, int> $index
      */
-    private function prune(array $entries, int $now): array
+    private function writeIndex(array $index): void
     {
-        return array_filter($entries, static fn(int $expiresAt): bool => $expiresAt > $now);
+        if ($index === []) {
+            delete_option(self::INDEX_OPTION);
+            return;
+        }
+
+        update_option(self::INDEX_OPTION, $index, false);
     }
 
     private function key(string $sessionId): string

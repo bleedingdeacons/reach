@@ -227,13 +227,44 @@ final class SessionAuthorisationTest extends ReachTestCase
         $revocations = new SessionRevocationList();
         $revocations->revoke('a-session-id', time() + 3600, time());
 
-        $stored = WpState::$options[SessionRevocationList::OPTION] ?? [];
+        $stored = WpState::$options;
 
         $this->assertNotSame([], $stored, 'sanity: something was stored');
-        $this->assertStringNotContainsString(
-            'a-session-id',
-            (string) json_encode($stored),
-        );
+        // Neither the option names nor their contents may carry it.
+        $this->assertStringNotContainsString('a-session-id', (string) json_encode($stored));
+        $this->assertStringNotContainsString('a-session-id', implode('|', array_keys($stored)));
+    }
+
+    /**
+     * Revocation is an INSERT per session rather than a rewrite of one
+     * shared array, so two sign-outs landing together cannot drop each
+     * other's entry. A read-modify-write could, and would fail open.
+     */
+    public function testConcurrentRevocationsDoNotLoseEachOther(): void
+    {
+        $now = time();
+
+        // Two instances, as two requests would have, interleaved so that
+        // each reads before the other writes.
+        $a = new SessionRevocationList();
+        $b = new SessionRevocationList();
+
+        $a->revoke('session-a', $now + 3600, $now);
+        $b->revoke('session-b', $now + 3600, $now);
+
+        $this->assertTrue($a->isRevoked('session-a'));
+        $this->assertTrue($a->isRevoked('session-b'));
+    }
+
+    public function testRevokingTheSameSessionTwiceIsHarmless(): void
+    {
+        $revocations = new SessionRevocationList();
+        $now = time();
+
+        $revocations->revoke('a-session', $now + 3600, $now);
+        $revocations->revoke('a-session', $now + 3600, $now);
+
+        $this->assertTrue($revocations->isRevoked('a-session'));
     }
 
     /**
@@ -277,8 +308,9 @@ final class SessionAuthorisationTest extends ReachTestCase
         $revocations->revoke('old', $now + 10, $now);
         $revocations->revoke('new', $now + 3600, $now + 11);
 
-        $this->assertCount(1, WpState::$options[SessionRevocationList::OPTION] ?? []);
+        $this->assertCount(1, WpState::$options[SessionRevocationList::INDEX_OPTION] ?? []);
         $this->assertTrue($revocations->isRevoked('new', $now + 11));
+        $this->assertFalse($revocations->isRevoked('old', $now + 11));
     }
 
     public function testForgetDropsARevocation(): void
@@ -297,7 +329,7 @@ final class SessionAuthorisationTest extends ReachTestCase
         // It is an option row, so it can be hand-edited or corrupted.
         // That must degrade to "nothing is revoked" rather than fatal
         // on every authenticated request.
-        WpState::$options[SessionRevocationList::OPTION] = 'not-an-array';
+        WpState::$options[SessionRevocationList::INDEX_OPTION] = 'not-an-array';
 
         $this->assertFalse((new SessionRevocationList())->isRevoked('a-session'));
     }
