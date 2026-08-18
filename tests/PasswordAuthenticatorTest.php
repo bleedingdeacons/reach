@@ -112,8 +112,8 @@ final class PasswordAuthenticatorTest extends ReachTestCase
 
         $auth->beginReset('user@example.com', 1000);
 
-        $this->assertCount(1, WpState::$mail);
-        $this->assertSame('user@example.com', WpState::$mail[0]['to']);
+        $this->assertCount(1, $this->sentMail());
+        $this->assertSame('user@example.com', $this->sentMail()[0]['to']);
 
         $cred = $repo->find('user@example.com');
         $this->assertNotNull($cred);
@@ -128,7 +128,7 @@ final class PasswordAuthenticatorTest extends ReachTestCase
 
         $auth->beginReset('nobody@example.com', 1000);
 
-        $this->assertCount(0, WpState::$mail);
+        $this->assertCount(0, $this->sentMail());
         $this->assertNull($repo->find('nobody@example.com'));
     }
 
@@ -140,7 +140,7 @@ final class PasswordAuthenticatorTest extends ReachTestCase
 
         $auth->beginReset('regular@example.com', 1000);
 
-        $this->assertCount(0, WpState::$mail);
+        $this->assertCount(0, $this->sentMail());
         $this->assertNull($repo->find('regular@example.com'));
     }
 
@@ -155,7 +155,7 @@ final class PasswordAuthenticatorTest extends ReachTestCase
 
         $auth->beginReset('trainee@example.com', 1000);
 
-        $this->assertCount(0, WpState::$mail);
+        $this->assertCount(0, $this->sentMail());
         $this->assertNull($repo->find('trainee@example.com'));
     }
 
@@ -170,7 +170,7 @@ final class PasswordAuthenticatorTest extends ReachTestCase
 
         $auth->beginReset('certified@example.com', 1000);
 
-        $this->assertCount(1, WpState::$mail);
+        $this->assertCount(1, $this->sentMail());
     }
 
     public function testBeginResetHonoursCooldownThenAllowsResendLater(): void
@@ -181,11 +181,11 @@ final class PasswordAuthenticatorTest extends ReachTestCase
         $auth->beginReset('user@example.com', 1000);
         // A second request inside the cooldown window sends nothing.
         $auth->beginReset('user@example.com', 1000 + PasswordAuthenticator::RESET_COOLDOWN_SECONDS - 1);
-        $this->assertCount(1, WpState::$mail);
+        $this->assertCount(1, $this->sentMail());
 
         // Past the cooldown, a resend is allowed.
         $auth->beginReset('user@example.com', 1000 + PasswordAuthenticator::RESET_COOLDOWN_SECONDS + 1);
-        $this->assertCount(2, WpState::$mail);
+        $this->assertCount(2, $this->sentMail());
     }
 
     // --- complete reset ---------------------------------------------------
@@ -294,12 +294,20 @@ final class PasswordAuthenticatorTest extends ReachTestCase
 
     // --- helpers ----------------------------------------------------------
 
+    /**
+     * The mailer the authenticator under test was built with, kept so
+     * {@see tokenFromLastMail()} can flush its queue.
+     */
+    private PasswordResetMailer $mailer;
+
     private function makeAuth(InMemoryPasswordCredentialRepository $repo, array $members): PasswordAuthenticator
     {
+        $this->mailer = new PasswordResetMailer();
+
         return new PasswordAuthenticator(
             $repo,
             new InMemoryMemberRepository($members),
-            new PasswordResetMailer(),
+            $this->mailer,
             new PasswordPolicy(),
         );
     }
@@ -314,8 +322,33 @@ final class PasswordAuthenticatorTest extends ReachTestCase
     }
 
     /** Pull the raw reset token out of the ?token=… link in the last mail. */
+    /**
+     * The mail actually sent, having first flushed anything the mailer
+     * is holding back until after the response.
+     *
+     * Assertions go through this rather than reading WpState::$mail
+     * directly so that "no link was sent" stays a real assertion: read
+     * without the flush, a queued-but-unsent link would look identical
+     * to one that was never issued.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function sentMail(): array
+    {
+        $this->mailer->flush();
+
+        return WpState::$mail;
+    }
+
     private function tokenFromLastMail(): string
     {
+        // Reset links are queued and sent after the response, so that an
+        // eligible address and an ineligible one cost the same to answer
+        // (see PasswordResetMailer). In production the flush runs on
+        // `shutdown`; here we run it directly, because Brain Monkey
+        // records hooks without firing them.
+        $this->mailer->flush();
+
         $mail = WpState::$mail;
         $this->assertNotEmpty($mail, 'expected a reset email to have been sent');
         $message = (string) end($mail)['message'];

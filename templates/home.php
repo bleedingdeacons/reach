@@ -77,7 +77,8 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
     <script>
         window.REACH_CONFIG = {
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
-            signInUrl: <?php echo wp_json_encode($signInUrl); ?>
+            signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
+            sessionToken: <?php echo wp_json_encode($sessionToken); ?>
         };
     </script>
     <script>
@@ -86,9 +87,27 @@ $shiftsEnabled  = defined('TRUSTED_VERSION');
             var signOutBtn = document.getElementById('reach-signout');
             if (!signOutBtn) return;
             signOutBtn.addEventListener('click', function () {
-                fetch(cfg.signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
-                    .then(function () { window.location = cfg.signInUrl; })
-                    .catch(function () { window.location = cfg.signInUrl; });
+                // Sign-out revokes the session server-side, so it is a
+                // write and carries the session token like any other.
+                signOutBtn.disabled = true;
+                fetch(cfg.signOutUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
+                })
+                    .then(function (r) {
+                        // fetch() resolves for 4xx too, so redirecting on
+                        // any response would send the responder away
+                        // believing they were signed out while the session
+                        // was still live. Only leave once the server says
+                        // it revoked it.
+                        if (!r.ok) { throw new Error('sign-out refused'); }
+                        window.location = cfg.signInUrl;
+                    })
+                    .catch(function () {
+                        signOutBtn.disabled = false;
+                        window.alert('Could not sign you out. Please check your connection and try again.');
+                    });
             });
         })();
     </script>

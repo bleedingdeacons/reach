@@ -71,6 +71,7 @@ $homeUrl    = esc_url(home_url('/reach/home'));
             trustedBase: <?php echo wp_json_encode(esc_url_raw(rest_url('trusted/v1'))); ?>,
             signOutUrl: <?php echo wp_json_encode($signOutUrl); ?>,
             signInUrl: <?php echo wp_json_encode($signInUrl); ?>,
+            sessionToken: <?php echo wp_json_encode($sessionToken); ?>,
             // "Today" in the site's configured timezone (Settings → General), so
             // the day list opens on the same day the rest of the site considers
             // today rather than whatever the visitor's device clock reads.

@@ -14,7 +14,10 @@ use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\OAuthController;
+use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\ResponderCertification;
@@ -261,6 +264,14 @@ final class OAuthControllerGateTest extends ReachTestCase
             new DeviceCodeStore(),
             new DeviceRedirectValidator(),
             new ResponderGate($repository),
+            // Session-lifecycle collaborators. CurrentSession is what
+            // sign-out revokes through, and the CSRF token is what a
+            // cookie-authenticated write must present. Built over the
+            // same member repository so an issued session resolves to
+            // the same records the rest of the test sees.
+            new CurrentSession(new SessionCookie(), $repository, new SessionRevocationList()),
+            new SessionRevocationList(),
+            new SessionCsrf(),
         );
     }
 

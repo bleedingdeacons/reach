@@ -16,8 +16,11 @@ use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
+use Reach\Session\CurrentSession;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -69,6 +72,9 @@ final class OAuthController
         private readonly DeviceCodeStore $deviceCodes,
         private readonly DeviceRedirectValidator $deviceRedirects,
         private readonly ResponderGate $responderGate,
+        private readonly CurrentSession $currentSession,
+        private readonly SessionRevocationList $revocations,
+        private readonly SessionCsrf $csrf,
     ) {
     }
 
@@ -345,8 +351,13 @@ final class OAuthController
             $now,
             $now + SessionCookie::TTL_SECONDS,
             $identity->providerEmail,
+            Session::newId(),
         );
         $this->sessionCookie->issue($session);
+        // The cookie was written mid-request; anything downstream that
+        // asks for the current session must see this one rather than
+        // whatever was cached before it existed.
+        $this->currentSession->invalidate();
     }
 
     /**
@@ -392,10 +403,58 @@ final class OAuthController
         return new WP_REST_Response(['state' => $tokens['state'], 'nonce' => $tokens['nonce']], 200);
     }
 
-    public function signout(): WP_REST_Response
+    /**
+     * Sign out: revoke the session server-side, then clear the cookie.
+     *
+     * Clearing the cookie alone only removes the browser's copy — the
+     * token stays signed and valid until it expires, so any other copy
+     * of it keeps working. Recording the id in
+     * {@see SessionRevocationList} is what actually ends the session.
+     *
+     * The session is read through {@see CurrentSession::raw()} rather
+     * than `get()`: a session that is already refused — an expired
+     * certification, say — is still worth revoking, and refusing to
+     * sign it out because it is not authorised would be exactly
+     * backwards.
+     *
+     * Always reports success, including when there was nothing to sign
+     * out. A caller asking to be signed out has got the outcome it
+     * asked for, and saying otherwise only tells an unauthenticated
+     * prober whether a cookie was valid.
+     */
+    public function signout(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        $session = $this->currentSession->raw();
+
+        if ($session !== null) {
+            if (!$this->csrf->verify($request, $session)) {
+                return $this->csrfError();
+            }
+
+            $this->revocations->revoke($session->id, $session->expiresAt, time());
+        }
+
         $this->sessionCookie->clear();
+        $this->currentSession->invalidate();
+
         return new WP_REST_Response(['signed_out' => true], 200);
+    }
+
+    /**
+     * The refusal for a write that arrived without a valid session
+     * token. 403 rather than 401: the caller is authenticated — the
+     * cookie is what got the request this far — but this particular
+     * request is not one Reach will act on. Shared with the other
+     * cookie-authenticated write endpoints so the client can handle one
+     * shape; see {@see SessionCsrf}.
+     */
+    private function csrfError(): WP_Error
+    {
+        return new WP_Error(
+            'reach_invalid_session_token',
+            'That request could not be verified. Please reload the page and try again.',
+            ['status' => 403],
+        );
     }
 
     private function callbackUrl(): string

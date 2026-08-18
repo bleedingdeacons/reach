@@ -8,6 +8,15 @@ use BleedingDeacons\WpMocks\TestCase;
 use Brain\Monkey\Actions;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
+use Reach\Session\CurrentSession;
+use Reach\Session\Session;
+use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
+use Reach\Session\SessionRevocationList;
+use Reach\Tests\Fixtures\MemberStub;
+use Unity\Members\Interfaces\Member;
+use Unity\Testing\Doubles\InMemoryMemberRepository;
+use WP_REST_Request;
 
 /**
  * Base case for Reach's unit tests.
@@ -159,5 +168,88 @@ abstract class ReachTestCase extends TestCase
     protected function filterCallbacks(string $hook): array
     {
         return $this->addedFilters[$hook] ?? [];
+    }
+
+    /**
+     * A session value object for $email, with sensible defaults.
+     *
+     * Separate from the CurrentSession helpers so a test that needs an
+     * odd session — expired, no id, a particular provider — can build
+     * one and hand it to {@see currentSessionWith()}.
+     */
+    protected function sessionFor(string $email): Session
+    {
+        return new Session(
+            email:     $email,
+            provider:  'google',
+            sub:       'oauth-sub-' . md5($email),
+            issuedAt:  time(),
+            expiresAt: time() + 3600,
+            id:        Session::newId(),
+        );
+    }
+
+    /**
+     * A CurrentSession holding a signed-in, *authorised* session for
+     * $email.
+     *
+     * Built by minting a real cookie and letting CurrentSession resolve
+     * it, rather than by reflecting values into its private state.
+     * That matters now that resolving a session is also an
+     * authorisation decision: a helper that set `cached` directly would
+     * hand every caller a session that had never been through the
+     * eligibility gate, and the controller tests would then be passing
+     * regardless of what that gate did.
+     */
+    protected function currentSessionFor(string $email): CurrentSession
+    {
+        return $this->currentSessionWith($this->sessionFor($email), new MemberStub($email));
+    }
+
+    /**
+     * As {@see currentSessionFor()}, but with the member spelled out —
+     * an ineligible one, or null for an email matching no member. Both
+     * are cases CurrentSession must refuse, so both need saying
+     * explicitly rather than defaulting.
+     */
+    protected function currentSessionWith(Session $session, ?Member $member): CurrentSession
+    {
+        $cookie = new SessionCookie();
+        $_COOKIE[SessionCookie::COOKIE_NAME] = $cookie->sign($session);
+
+        return new CurrentSession(
+            $cookie,
+            new InMemoryMemberRepository($member !== null ? [$member] : []),
+            new SessionRevocationList(),
+        );
+    }
+
+    /**
+     * Attach the anti-CSRF header for $session to a request.
+     *
+     * Goes through set_header() rather than the constructor's header
+     * array because WP_REST_Request canonicalises header names on the
+     * way in as well as on lookup, and only set_header() does that in
+     * the stub. A test that sets the raw array gets a header the
+     * controller cannot find — which looks exactly like the token being
+     * wrong.
+     */
+    protected function withSessionToken(WP_REST_Request $request, Session $session): WP_REST_Request
+    {
+        $request->set_header(SessionCsrf::HEADER, (new SessionCsrf())->mint($session));
+
+        return $request;
+    }
+
+    /** A CurrentSession with no cookie at all — nobody is signed in. */
+    protected function currentSessionSignedOut(): CurrentSession
+    {
+        unset($_COOKIE[SessionCookie::COOKIE_NAME]);
+
+        return new CurrentSession(
+            new SessionCookie(),
+            new InMemoryMemberRepository([]),
+            new SessionRevocationList(),
+        );
     }
 }

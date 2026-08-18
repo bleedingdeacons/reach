@@ -11,16 +11,14 @@ use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\Core\Settings;
 use Reach\Rest\CallRequestController;
-use Reach\Session\CurrentSession;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
 use Unity\Members\Interfaces\Member;
-use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
-use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 // Reuse the Member/MemberRepository fakes rather than redeclaring them.
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';
@@ -37,6 +35,9 @@ require_once __DIR__ . '/PasswordAuthenticatorTest.php';
  */
 final class CallRequestControllerTest extends ReachTestCase
 {
+    /** The session seeded for this test, or null when signed out. */
+    private ?Session $session = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,6 +45,7 @@ final class CallRequestControllerTest extends ReachTestCase
         WpState::$options = [];
         WpState::$mail = [];
         WpState::$mailResult = true;
+        $this->session = null;
         $_COOKIE = [];
     }
 
@@ -90,12 +92,9 @@ final class CallRequestControllerTest extends ReachTestCase
         $repo = new SpyCallRequestRepository();
         // MemberStub resolves getAnonymousName() to 'Test', so that is the
         // responder identifier stored on the (non-identifying) tracking row.
-        $members = new InMemoryMemberRepository([
-            new MemberStub('responder@example.com'),
-        ]);
         $settings = new Settings();
         $settings->setCallRequestEmail('ops@example.com');
-        $controller = $this->makeController($repo, $settings, $members);
+        $controller = $this->makeController($repo, $settings, new MemberStub('responder@example.com'));
 
         $result = $controller->create($this->request([
             'gender'       => 'female',
@@ -175,15 +174,22 @@ final class CallRequestControllerTest extends ReachTestCase
         $this->assertSame(400, $result->get_error_data()['status'] ?? null);
     }
 
-    public function testResponderNameFallsBackToEmailWhenNoMemberRecord(): void
+    public function testResponderNameFallsBackToEmailWhenMemberHasNoAnonymousName(): void
     {
         $this->seedSession('stranger@example.com');
         $repo = new SpyCallRequestRepository();
         $settings = new Settings();
         $settings->setCallRequestEmail('ops@example.com');
-        // Empty member repo: no anonymous name to resolve, so the email is
-        // stored as the responder identifier.
-        $controller = $this->makeController($repo, $settings, new InMemoryMemberRepository([]));
+        // Eligible, so the request goes through, but with no anonymous
+        // name to resolve - so the email is stored as the responder
+        // identifier. This was written as an empty member repository
+        // until CurrentSession began refusing a session whose email
+        // matches no member; see the test below for that case.
+        $controller = $this->makeController(
+            $repo,
+            $settings,
+            new MemberStub('stranger@example.com', anonymousName: ''),
+        );
 
         $controller->create($this->request([
             'gender'       => 'female',
@@ -195,38 +201,109 @@ final class CallRequestControllerTest extends ReachTestCase
         $this->assertSame('stranger@example.com', $repo->created[0]['responderName']);
     }
 
+    /**
+     * A signed cookie whose email matches no member is refused, and no
+     * caller details are mailed anywhere as a result.
+     */
+    public function testRejectsSessionWhoseEmailMatchesNoMember(): void
+    {
+        $this->seedSession('ghost@example.com');
+        $repo = new SpyCallRequestRepository();
+
+        $controller = new CallRequestController(
+            $repo,
+            $this->currentSessionWith($this->session, null),
+            new CallRequestMailer(new Settings()),
+            new SessionCsrf(),
+        );
+
+        $result = $controller->create($this->request());
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $repo->created);
+        $this->assertSame([], WpState::$mail, 'no caller details should have been mailed');
+    }
+
+    /**
+     * The cookie alone must not be enough to raise a request - this
+     * endpoint mails caller-supplied text to the intergroup, so a
+     * forged one is a message somebody acts on.
+     */
+    public function testRejectsWriteWithoutTheSessionToken(): void
+    {
+        $this->seedSession('responder@example.com');
+        $repo = new SpyCallRequestRepository();
+        $controller = $this->makeController($repo);
+
+        // Deliberately built without the header the helper adds.
+        $result = $controller->create(new WP_REST_Request([
+            'gender'       => 'male',
+            'area'         => 'BS5',
+            'caller_name'  => 'Caller',
+            'caller_phone' => '07700 900000',
+            'note'         => '',
+        ]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_invalid_session_token', $result->get_error_code());
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $repo->created);
+        $this->assertSame([], WpState::$mail, 'no caller details should have been mailed');
+    }
+
     // --- helpers ----------------------------------------------------------
 
     private function makeController(
         ?CallRequestRepository $repo = null,
         ?Settings $settings = null,
-        ?MemberRepository $members = null
+        ?Member $responder = null
     ): CallRequestController {
         $settings = $settings ?? new Settings();
+
+        // The responder's own member record, which CurrentSession
+        // resolves to authorise the request and the controller then
+        // names on the tracking row.
+        $responder ??= new MemberStub($this->session?->email ?? 'responder@example.com');
+
+        $current = $this->session !== null
+            ? $this->currentSessionWith($this->session, $responder)
+            : $this->currentSessionSignedOut();
+
         return new CallRequestController(
             $repo ?? new SpyCallRequestRepository(),
-            new CurrentSession(new SessionCookie()),
-            $members ?? new InMemoryMemberRepository([]),
+            $current,
             new CallRequestMailer($settings),
+            new SessionCsrf(),
         );
     }
 
-    /** @param array<string, mixed> $params */
+    /**
+     * @param array<string, mixed> $params
+     *
+     * Carries the anti-CSRF header for the seeded session: every test
+     * here is about some other gate, so the request has to clear this
+     * one to reach it.
+     */
     private function request(array $params = []): WP_REST_Request
     {
-        return new WP_REST_Request($params + [
+        $request = new WP_REST_Request($params + [
             'gender'       => 'male',
             'area'         => 'BS5',
             'caller_name'  => 'Caller',
             'caller_phone' => '07700 900000',
             'note'         => '',
         ]);
+
+        return $this->session !== null
+            ? $this->withSessionToken($request, $this->session)
+            : $request;
     }
 
     private function seedSession(string $email, string $provider = 'google'): void
     {
-        $session = new Session($email, $provider, 'sub-123', time(), time() + 3600);
-        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+        $this->session = new Session($email, $provider, 'sub-123', time(), time() + 3600, null, Session::newId());
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($this->session);
     }
 }
 

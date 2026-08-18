@@ -37,6 +37,70 @@ final class ServiceAccountTest extends ReachTestCase
         $this->assertSame('https://oauth2.googleapis.com/token', $account->tokenUri);
     }
 
+    /**
+     * token_uri decides where a signed assertion gets POSTed, so a
+     * value in the file is honoured only if it is one of Google's.
+     * A key file is pasted in by an administrator, which makes this a
+     * low-privilege-gain sink rather than a hole — but a doctored file
+     * or a typo should not be able to redirect the exchange.
+     *
+     * @dataProvider foreignTokenUris
+     */
+    public function testRefusesATokenUriThatIsNotGooglesAndFallsBack(string $configured): void
+    {
+        $account = ServiceAccount::fromJson($this->json(['token_uri' => $configured]));
+
+        $this->assertNotNull($account, 'the file is still usable; only the endpoint is overridden');
+        $this->assertSame('https://oauth2.googleapis.com/token', $account->tokenUri);
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function foreignTokenUris(): array
+    {
+        return [
+            'another host'      => ['https://evil.example.com/token'],
+            'plain http'        => ['http://oauth2.googleapis.com/token'],
+            'lookalike host'    => ['https://oauth2.googleapis.com.evil.example.com/token'],
+            'host as userinfo'  => ['https://oauth2.googleapis.com@evil.example.com/token'],
+            'not a url'         => ['token'],
+            // An approved host is not enough: these are Google URLs that
+            // are not token endpoints, and honouring one would break FCM
+            // authentication while appearing to have passed a check.
+            'approved host, wrong path' => ['https://oauth2.googleapis.com/not-a-token-endpoint'],
+            'approved host, no path'    => ['https://oauth2.googleapis.com'],
+            'approved host, subpath'    => ['https://oauth2.googleapis.com/token/../evil'],
+            // Rejected because each changes where or how the request
+            // goes without changing the host.
+            'userinfo on approved host' => ['https://user:pass@oauth2.googleapis.com/token'],
+            'port on approved host'     => ['https://oauth2.googleapis.com:8443/token'],
+            'query on approved host'    => ['https://oauth2.googleapis.com/token?to=evil'],
+            'fragment on approved host' => ['https://oauth2.googleapis.com/token#evil'],
+        ];
+    }
+
+    /**
+     * The two endpoints Google actually publishes are honoured as
+     * given, so a key file naming either keeps working.
+     *
+     * @dataProvider googleTokenUris
+     */
+    public function testHonoursGooglesOwnTokenEndpoints(string $configured): void
+    {
+        $account = ServiceAccount::fromJson($this->json(['token_uri' => $configured]));
+
+        $this->assertNotNull($account);
+        $this->assertSame($configured, $account->tokenUri);
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function googleTokenUris(): array
+    {
+        return [
+            'oauth2.googleapis.com' => ['https://oauth2.googleapis.com/token'],
+            'accounts.google.com'   => ['https://accounts.google.com/o/oauth2/token'],
+        ];
+    }
+
     public function testIgnoresFieldsItDoesNotUse(): void
     {
         // The rest of the file is Google's own bookkeeping, so a key file

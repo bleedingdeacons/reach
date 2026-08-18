@@ -329,9 +329,20 @@
 
     if (signOutBtn) {
         signOutBtn.addEventListener('click', function () {
-            fetch(cfg.signOutUrl, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
-                .then(function () { window.location = cfg.signInUrl; })
-                .catch(function () { window.location = cfg.signInUrl; });
+            fetch(cfg.signOutUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-Reach-Token': cfg.sessionToken || '' }
+            })
+                .then(function (r) {
+                    // fetch() resolves for 4xx too; see find.js. Only
+                    // leave the page once the session is really revoked.
+                    if (!r.ok) { throw new Error('sign-out refused'); }
+                    window.location = cfg.signInUrl;
+                })
+                .catch(function () {
+                    setStatus('Could not sign you out. Please try again.');
+                });
         });
     }
 

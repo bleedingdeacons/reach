@@ -12,7 +12,7 @@ use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\Session\CurrentSession;
-use Unity\Members\Interfaces\MemberRepository;
+use Reach\Session\SessionCsrf;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -79,8 +79,8 @@ final class CallRequestController
     public function __construct(
         private readonly CallRequestRepository $repository,
         private readonly CurrentSession $session,
-        private readonly MemberRepository $members,
         private readonly CallRequestMailer $mailer,
+        private readonly SessionCsrf $csrf,
     ) {
     }
 
@@ -159,6 +159,18 @@ final class CallRequestController
             return new WP_Error('reach_not_authenticated', 'Session expired.', ['status' => 401]);
         }
 
+        // This endpoint mails caller-supplied text to the intergroup, so
+        // a forged request is not merely a spurious row — it is a
+        // message someone will act on. The cookie alone must not be
+        // enough to send one. See SessionCsrf.
+        if (!$this->csrf->verify($request, $session)) {
+            return new WP_Error(
+                'reach_invalid_session_token',
+                'That request could not be verified. Please reload the page and try again.',
+                ['status' => 403],
+            );
+        }
+
         $gender      = (string) $request->get_param('gender');
         $area        = trim((string) $request->get_param('area'));
         $callerName  = trim((string) $request->get_param('caller_name'));
@@ -183,6 +195,7 @@ final class CallRequestController
         $note        = $this->capNote($note);
 
         $responderName = $this->responderName($session->email);
+
 
         // Store the non-identifying tracking row first so we have an id
         // (and hence a serial) to put in the email. The caller's name,
@@ -268,11 +281,10 @@ final class CallRequestController
      */
     private function responderName(string $email): string
     {
-        if ($email === '') {
-            return '';
-        }
-
-        $member = $this->members->findByEmail($email);
+        // The member CurrentSession resolved to authorise this request,
+        // rather than a second lookup by email — see the equivalent in
+        // NearestMembersController::callerDetail().
+        $member = $this->session->member();
         if ($member !== null) {
             $name = trim($member->getAnonymousName());
             if ($name !== '') {

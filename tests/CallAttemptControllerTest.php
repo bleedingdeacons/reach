@@ -9,16 +9,15 @@ use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\Rest\CallAttemptController;
-use Reach\Session\CurrentSession;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
+use Reach\Session\SessionCsrf;
 use Scrutiny\Audit\Interfaces\AuditLogger;
-use Unity\Members\Interfaces\MemberRepository;
+use Unity\Members\Interfaces\Member;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
-use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
 require_once __DIR__ . '/PasswordAuthenticatorTest.php';
@@ -39,11 +38,15 @@ final class CallAttemptControllerTest extends ReachTestCase
 {
     private AttemptTokenMinter $minter;
 
+    /** The session seeded for this test, or null when signed out. */
+    private ?Session $session = null;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->minter = new AttemptTokenMinter();
+        $this->session = null;
         $_COOKIE = [];
     }
 
@@ -119,8 +122,7 @@ final class CallAttemptControllerTest extends ReachTestCase
         $repo  = new SpyCallAttemptRepository();
         $audit = new SpyAuditLogger();
         // The viewer resolves to a member (anonymous name 'Test', id 1).
-        $members = new InMemoryMemberRepository([new MemberStub('viewer@example.com', true, true, 1)]);
-        $controller = $this->makeController($repo, $audit, $members);
+        $controller = $this->makeController($repo, $audit, new MemberStub('viewer@example.com', true, true, 1));
 
         $token = $this->minter->mint('viewer@example.com', 42, time());
 
@@ -155,12 +157,17 @@ final class CallAttemptControllerTest extends ReachTestCase
         $this->assertStringNotContainsString('voicemail', $detail);
     }
 
-    public function testAuditFallsBackToUnknownCallerWhenViewerHasNoMember(): void
+    public function testAuditFallsBackToUnknownCallerWhenViewerHasNoAnonymousName(): void
     {
         $this->seedSession('ghost@example.com');
         $repo  = new SpyCallAttemptRepository();
         $audit = new SpyAuditLogger();
-        $controller = $this->makeController($repo, $audit, new InMemoryMemberRepository([]));
+        // Eligible, so the request is allowed through, but carrying no
+        // anonymous name to put in the audit row. This used to be
+        // written as a viewer matching no member at all; that case can
+        // no longer reach the audit step, because CurrentSession now
+        // refuses it outright — see the test below.
+        $controller = $this->makeController($repo, $audit, new MemberStub('ghost@example.com', anonymousName: ''));
 
         $token = $this->minter->mint('ghost@example.com', 7, time());
 
@@ -171,9 +178,128 @@ final class CallAttemptControllerTest extends ReachTestCase
         ]));
 
         $detail = $audit->batches[0]['detail'];
-        // No identifier invented for an unresolved caller; result still shown.
+        // No identifier invented for an unnamed caller; result still shown.
         $this->assertStringContainsString('caller:unknown', $detail);
         $this->assertStringContainsString('result:No Answer', $detail);
+    }
+
+    /**
+     * A signed cookie whose email matches no member is not a session
+     * this controller will act on. The signature proves who signed in;
+     * it says nothing about whether they may still use Reach, and the
+     * member record is where that answer lives.
+     */
+    public function testRejectsSessionWhoseEmailMatchesNoMember(): void
+    {
+        $this->seedSession('ghost@example.com');
+        $repo = new SpyCallAttemptRepository();
+
+        $controller = new CallAttemptController(
+            $repo,
+            $this->minter,
+            $this->currentSessionWith($this->session, null),
+            new SpyAuditLogger(),
+            new SessionCsrf(),
+        );
+
+        $this->assertInstanceOf(WP_Error::class, $controller->permissionCallback());
+
+        $result = $controller->create($this->request([
+            'member_id'     => 7,
+            'outcome'       => CallAttempt::OUTCOME_NO_ANSWER,
+            'attempt_token' => $this->minter->mint('ghost@example.com', 7, time()),
+        ]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $repo->recorded, 'nothing should have been recorded');
+    }
+
+    /**
+     * A member who has been de-flagged since signing in loses access at
+     * their next request, not whenever their cookie happens to expire.
+     * This is the whole point of re-checking eligibility per request.
+     */
+    public function testRejectsSessionWhoseMemberIsNoLongerEligible(): void
+    {
+        $this->seedSession('lapsed@example.com');
+        $repo = new SpyCallAttemptRepository();
+
+        $ineligible = new MemberStub(
+            'lapsed@example.com',
+            twelfthStepper: false,
+            telephoneResponder: false,
+        );
+
+        $controller = new CallAttemptController(
+            $repo,
+            $this->minter,
+            $this->currentSessionWith($this->session, $ineligible),
+            new SpyAuditLogger(),
+            new SessionCsrf(),
+        );
+
+        $result = $controller->create($this->request([
+            'member_id'     => 7,
+            'outcome'       => CallAttempt::OUTCOME_NO_ANSWER,
+            'attempt_token' => $this->minter->mint('lapsed@example.com', 7, time()),
+        ]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $repo->recorded, 'nothing should have been recorded');
+    }
+
+    /**
+     * The cookie alone must not be enough to write. Without the
+     * anti-CSRF header the request is refused even though the session
+     * is perfectly valid.
+     */
+    public function testRejectsWriteWithoutTheSessionToken(): void
+    {
+        $this->seedSession('viewer@example.com');
+        $repo = new SpyCallAttemptRepository();
+        $controller = $this->makeController($repo);
+
+        $token = $this->minter->mint('viewer@example.com', 7, time());
+
+        // Deliberately built without the header the helper adds.
+        $request = new WP_REST_Request([
+            'member_id'     => 7,
+            'outcome'       => CallAttempt::OUTCOME_REACHED,
+            'attempt_token' => $token,
+            'note'          => '',
+        ]);
+
+        $result = $controller->create($request);
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_invalid_session_token', $result->get_error_code());
+        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $repo->recorded, 'nothing should have been recorded');
+    }
+
+    /** A token minted for a different session does not work either. */
+    public function testRejectsWriteWithAnotherSessionsToken(): void
+    {
+        $this->seedSession('viewer@example.com');
+        $repo = new SpyCallAttemptRepository();
+        $controller = $this->makeController($repo);
+
+        $other = new Session('viewer@example.com', 'google', 'sub-1', time(), time() + 3600, null, Session::newId());
+
+        $request = $this->withSessionToken(new WP_REST_Request([
+            'member_id'     => 7,
+            'outcome'       => CallAttempt::OUTCOME_REACHED,
+            'attempt_token' => $this->minter->mint('viewer@example.com', 7, time()),
+            'note'          => '',
+        ]), $other);
+
+        $result = $controller->create($request);
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_invalid_session_token', $result->get_error_code());
+        $this->assertSame([], $repo->recorded, 'nothing should have been recorded');
     }
 
     // --- helpers ----------------------------------------------------------
@@ -181,32 +307,52 @@ final class CallAttemptControllerTest extends ReachTestCase
     private function makeController(
         ?CallAttemptRepository $repo = null,
         ?AuditLogger $audit = null,
-        ?MemberRepository $members = null
+        ?Member $viewer = null
     ): CallAttemptController {
+        // The viewer's own member record, which CurrentSession resolves
+        // to authorise the request and the controller then names in the
+        // audit row. Defaults to an eligible member for the seeded
+        // email; pass one explicitly to vary it.
+        $viewer ??= new MemberStub($this->session?->email ?? 'viewer@example.com');
+
+        $current = $this->session !== null
+            ? $this->currentSessionWith($this->session, $viewer)
+            : $this->currentSessionSignedOut();
+
         return new CallAttemptController(
             $repo ?? new SpyCallAttemptRepository(),
             $this->minter,
-            new CurrentSession(new SessionCookie()),
+            $current,
             $audit ?? new SpyAuditLogger(),
-            $members ?? new InMemoryMemberRepository([]),
+            new SessionCsrf(),
         );
     }
 
-    /** @param array<string, mixed> $params */
+    /**
+     * @param array<string, mixed> $params
+     *
+     * Carries the anti-CSRF header for the seeded session: every test
+     * here is about some *other* gate, so the request has to clear this
+     * one to reach it. The token's own gate has its own tests.
+     */
     private function request(array $params = []): WP_REST_Request
     {
-        return new WP_REST_Request($params + [
+        $request = new WP_REST_Request($params + [
             'member_id'     => 1,
             'outcome'       => CallAttempt::OUTCOME_REACHED,
             'attempt_token' => '',
             'note'          => '',
         ]);
+
+        return $this->session !== null
+            ? $this->withSessionToken($request, $this->session)
+            : $request;
     }
 
     private function seedSession(string $email, string $provider = 'google'): void
     {
-        $session = new Session($email, $provider, 'sub-1', time(), time() + 3600);
-        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+        $this->session = new Session($email, $provider, 'sub-1', time(), time() + 3600, null, Session::newId());
+        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($this->session);
     }
 }
 

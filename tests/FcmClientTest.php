@@ -53,7 +53,13 @@ final class FcmClientTest extends ReachTestCase
             'project_id'   => 'reach-alerts',
             'client_email' => 'pusher@reach-alerts.iam.gserviceaccount.com',
             'private_key'  => $privateKey,
-            'token_uri'    => 'https://oauth2.test/token',
+            // Google's other published token endpoint, rather than an
+            // arbitrary host: ServiceAccount now pins token_uri to
+            // Google's own, so a made-up one would be replaced by the
+            // default and this fixture would stop distinguishing
+            // anything. Deliberately NOT the default, so a client that
+            // hard-coded oauth2.googleapis.com would still fail these.
+            'token_uri'    => 'https://accounts.google.com/o/oauth2/token',
         ]));
 
         $this->assertNotNull($account);
@@ -95,7 +101,7 @@ final class FcmClientTest extends ReachTestCase
         $this->assertTrue($client->send($this->account, ['token' => 'device-token']));
 
         $this->assertCount(2, $this->calls);
-        $this->assertSame('https://oauth2.test/token', $this->calls[0]['url']);
+        $this->assertSame('https://accounts.google.com/o/oauth2/token', $this->calls[0]['url']);
         $this->assertSame(
             'https://fcm.googleapis.com/v1/projects/reach-alerts/messages:send',
             $this->calls[1]['url'],
@@ -132,7 +138,7 @@ final class FcmClientTest extends ReachTestCase
         $this->assertSame('https://www.googleapis.com/auth/firebase.messaging', $claims['scope']);
         // The audience must be the token endpoint the assertion is sent
         // to, or Google rejects it.
-        $this->assertSame('https://oauth2.test/token', $claims['aud']);
+        $this->assertSame('https://accounts.google.com/o/oauth2/token', $claims['aud']);
         $this->assertSame(3600, $claims['exp'] - $claims['iat']);
     }
 

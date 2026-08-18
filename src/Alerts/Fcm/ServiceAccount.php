@@ -28,6 +28,16 @@ if (!defined('ABSPATH')) {
  */
 final class ServiceAccount
 {
+    /**
+     * The token endpoints Google publishes for service accounts. The
+     * first is the default when a key file names none, or names one
+     * that is not on this list. See {@see tokenUri()}.
+     */
+    private const TOKEN_ENDPOINTS = [
+        'https://oauth2.googleapis.com/token',
+        'https://accounts.google.com/o/oauth2/token',
+    ];
+
     private function __construct(
         public readonly string $projectId,
         public readonly string $clientEmail,
@@ -65,15 +75,7 @@ final class ServiceAccount
             return null;
         }
 
-        // Google has always emitted token_uri, but it is documented as
-        // part of the file rather than as a constant, so honour it when
-        // present and fall back to the published endpoint when not.
-        $tokenUri = self::string($data, 'token_uri');
-        if ($tokenUri === '') {
-            $tokenUri = 'https://oauth2.googleapis.com/token';
-        }
-
-        return new self($projectId, $clientEmail, $privateKey, $tokenUri);
+        return new self($projectId, $clientEmail, $privateKey, self::tokenUri($data));
     }
 
     /**
@@ -97,6 +99,63 @@ final class ServiceAccount
     public function fingerprint(): string
     {
         return substr(hash('sha256', $this->clientEmail . '|' . $this->projectId), 0, 16);
+    }
+
+    /**
+     * The token endpoint these credentials are exchanged at.
+     *
+     * Google has always emitted `token_uri`, but it is documented as
+     * part of the file rather than as a constant, so a value in the file
+     * is honoured — provided it is one of Google's. A key file is pasted
+     * in by an administrator, which makes this a low-privilege-gain sink
+     * rather than a hole; it is still a field from a file that decides
+     * where a signed assertion gets POSTed, and a typo or a doctored
+     * file should not be able to redirect that anywhere.
+     *
+     * Anything unrecognised falls back to the published endpoint rather
+     * than refusing the whole file. The private key is what matters, the
+     * assertion is signed for Google either way, and failing closed here
+     * would take push notifications down over a field nobody edits.
+     *
+     * The match is against whole endpoints, not merely an approved host:
+     * `https://oauth2.googleapis.com/anything-else` is a Google URL that
+     * is not a token endpoint, so honouring it would break authentication
+     * while looking like it had passed a check. Userinfo, a port, a query
+     * and a fragment are all rejected for the same reason — they change
+     * where or how the request goes without changing the host.
+     *
+     * @param array<mixed, mixed> $data
+     */
+    private static function tokenUri(array $data): string
+    {
+        $default = self::TOKEN_ENDPOINTS[0];
+
+        $configured = self::string($data, 'token_uri');
+        if ($configured === '') {
+            return $default;
+        }
+
+        $parts = parse_url($configured);
+        if (!is_array($parts)) {
+            return $default;
+        }
+
+        // Nothing that redirects the request or rides along with it.
+        foreach (['user', 'pass', 'port', 'query', 'fragment'] as $unwanted) {
+            if (isset($parts[$unwanted])) {
+                return $default;
+            }
+        }
+
+        if (strtolower((string) ($parts['scheme'] ?? '')) !== 'https') {
+            return $default;
+        }
+
+        $normalised = 'https://'
+            . strtolower((string) ($parts['host'] ?? ''))
+            . (string) ($parts['path'] ?? '');
+
+        return in_array($normalised, self::TOKEN_ENDPOINTS, true) ? $normalised : $default;
     }
 
     /**
