@@ -32,6 +32,14 @@ use WP_Error;
  * alert nobody can identify or read is not a degraded alert, it is
  * noise.
  *
+ * <b>`target_device_id` is Reach's own, and other plugins should leave
+ * it alone.</b> A device id is an internal row number that means
+ * nothing outside this plugin, and a caller that guessed one would be
+ * addressing a handset it cannot know the owner of. It exists for the
+ * two things that are genuinely about a handset rather than a person —
+ * the admin test alert and a removal notice — and is validated here
+ * only so a stray value cannot become a negative id.
+ *
  * <b>`contact` is the one field that may hold personal data, and it is
  * handled completely differently from the rest.</b> Everything else
  * here ends up in the alerts table, in the push payload, and on a lock
@@ -79,6 +87,7 @@ final class AlertRequest
         public readonly string $reference,
         public readonly array $payload,
         public readonly string $targetEmail,
+        public readonly int $targetDeviceId,
         public readonly int $ttlSeconds,
         public readonly string $contact,
     ) {
@@ -132,6 +141,7 @@ final class AlertRequest
             reference: self::text($args['reference'] ?? '', self::REFERENCE_MAX),
             payload: self::payload($args['payload'] ?? []),
             targetEmail: $targetEmail,
+            targetDeviceId: self::deviceId($args['target_device_id'] ?? null),
             ttlSeconds: self::ttl($args['ttl'] ?? null),
             contact: self::text($args['contact'] ?? '', self::CONTACT_MAX),
         );
@@ -212,6 +222,27 @@ final class AlertRequest
         }
 
         return $out;
+    }
+
+    /**
+     * Coerce a device target to a usable row id, or 0 for "any handset".
+     *
+     * Anything that is not plainly a positive integer becomes 0 rather
+     * than raising. Getting this wrong in the permissive direction would
+     * be a broadcast where one handset was meant, so the coercion only
+     * ever widens to the default and never invents an id.
+     */
+    private static function deviceId(mixed $value): int
+    {
+        if (is_int($value)) {
+            return max(0, $value);
+        }
+
+        if (is_string($value) && ctype_digit($value)) {
+            return (int) $value;
+        }
+
+        return 0;
     }
 
     /**

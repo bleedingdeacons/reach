@@ -12,8 +12,17 @@ use Reach\Alerts\AlertRequest;
  * In-memory {@see AlertRepository} for tests.
  *
  * Reproduces the two contract points the delivery paths lean on: the
- * poll returns only live, unacknowledged alerts addressed to the caller,
- * and acknowledgement is idempotent.
+ * poll returns only live, unacknowledged alerts addressed to the caller
+ * — by device where one is named, by responder otherwise — and
+ * acknowledgement is idempotent.
+ *
+ * <b>"By device where one is named" is a precedence, not a second
+ * condition.</b> This fake had it right while the SQL had it wrong, which
+ * is exactly why the mismatch survived a green suite: every test that
+ * exercised targeting ran against this class. A change to the rule here
+ * is a change to {@see \Reach\Alerts\WpdbAlertRepository::pendingFor()}
+ * too, and {@see \Reach\Tests\WpdbAlertRepositoryTest} is where the SQL
+ * side of it is pinned.
  */
 final class InMemoryAlertRepository implements AlertRepository
 {
@@ -39,6 +48,7 @@ final class InMemoryAlertRepository implements AlertRepository
             $request->targetEmail,
             $now,
             $request->expiresAt($now),
+            targetDeviceId: $request->targetDeviceId,
         );
 
         $this->alerts[] = $alert;
@@ -66,7 +76,15 @@ final class InMemoryAlertRepository implements AlertRepository
                 continue;
             }
 
-            if (!$alert->isBroadcast() && $alert->targetEmail !== $memberEmail) {
+            if ($alert->isDeviceTargeted() && $alert->targetDeviceId !== $deviceId) {
+                continue;
+            }
+
+            if (
+                !$alert->isDeviceTargeted()
+                && !$alert->isBroadcast()
+                && $alert->targetEmail !== $memberEmail
+            ) {
                 continue;
             }
 

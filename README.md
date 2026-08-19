@@ -297,11 +297,23 @@ nor silently skips live alerts.
 at rest, write-only once saved) and the iOS critical-alerts switch.
 Leave Firebase blank and everything still works by polling.
 
-**Reach → Hand devices** lists enrolled handsets, revokes them, shows
-recent alerts and who acknowledged each — and has a **Send test alert**
-button. The delivery chain has a lot of links on other people's
-infrastructure and its failure mode is silence, so test it before you
-rely on it.
+**Reach → Hand devices** lists enrolled handsets, shows recent alerts
+and who acknowledged each, and offers three things per row or in bulk:
+
+* **Send test alert** — to every live handset, or to a ticked selection.
+  The delivery chain has a lot of links on other people's infrastructure
+  and its failure mode is silence, so test it before you rely on it. Use
+  the selection when you need to know *which* handset is deaf: a
+  broadcast six phones answer and a seventh does not looks much like a
+  broadcast seven answer. Selected handsets each get their own alert, so
+  the recent-alerts table answers per handset.
+* **Revoke** — cuts a handset's token dead now and keeps the row, so the
+  list stays a record of what was enrolled and when it stopped.
+* **Remove** — tells the handset it is off the rota, then deletes the row
+  outright. For a pairing that should not be in the record at all: one
+  enrolled by mistake, or a responder asking for it to be erased rather
+  than merely disabled. The notice goes first and by push only — once
+  the row is gone there is no token left to poll with.
 
 **Reach → Help** opens the bundled admin guide
 (`assets/docs/reach.html`) in its own tab: responder set-up and

@@ -87,6 +87,7 @@ final class WpdbAlertRepository implements AlertRepository
             reference VARCHAR(64) NOT NULL DEFAULT '',
             payload TEXT NULL,
             target_email VARCHAR(254) NOT NULL DEFAULT '',
+            target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             created_at BIGINT UNSIGNED NOT NULL,
             expires_at BIGINT UNSIGNED NOT NULL,
             PRIMARY KEY  (id),
@@ -127,10 +128,11 @@ final class WpdbAlertRepository implements AlertRepository
                 'reference'    => $request->reference,
                 'payload'      => $payloadJson,
                 'target_email' => $request->targetEmail,
+                'target_device_id' => $request->targetDeviceId,
                 'created_at'   => $now,
                 'expires_at'   => $request->expiresAt($now),
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d'],
         );
 
         return new Alert(
@@ -145,6 +147,7 @@ final class WpdbAlertRepository implements AlertRepository
             $request->targetEmail,
             $now,
             $request->expiresAt($now),
+            targetDeviceId: $request->targetDeviceId,
         );
     }
 
@@ -178,20 +181,36 @@ final class WpdbAlertRepository implements AlertRepository
         // never the encrypted column itself. Personal data must not travel
         // on the path every handset runs every few seconds; the app is told
         // there is a contact and fetches it separately, once, audited.
+        //
+        // <b>The address filter branches on target type rather than being
+        // ANDed with it.</b> A device target overrides the address, which is
+        // what {@see \Reach\Alerts\AlertDispatcher::resolveTargets()} and
+        // {@see \Reach\Rest\AlertController::maySee()} both already do.
+        // Conjoining the two instead meant an alert carrying a device id and
+        // somebody else's address was pushed to that handset and then hidden
+        // from it on the poll — an alert only the fast path could deliver,
+        // which is precisely the failure the store-first design exists to
+        // rule out. It would have gone missing on the pull-only heads and
+        // after any push failure.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
             "SELECT a.id, a.kind, a.source, a.priority, a.title, a.body, a.reference,
-                    a.payload, a.target_email, a.created_at, a.expires_at,
+                    a.payload, a.target_email, a.target_device_id, a.created_at, a.expires_at,
                     (c.alert_id IS NOT NULL) AS has_contact
                FROM {$table} a
                LEFT JOIN {$acks} k ON k.alert_id = a.id AND k.device_id = %d
                LEFT JOIN {$contacts} c ON c.alert_id = a.id
               WHERE k.alert_id IS NULL
                 AND a.expires_at > %d
-                AND (a.target_email = '' OR a.target_email = %s)
+                AND (
+                      (a.target_device_id > 0 AND a.target_device_id = %d)
+                   OR (a.target_device_id = 0
+                       AND (a.target_email = '' OR a.target_email = %s))
+                )
               ORDER BY a.id ASC
               LIMIT %d",
             $deviceId,
             $now,
+            $deviceId,
             $memberEmail,
             $limit,
         ), ARRAY_A);
@@ -315,7 +334,7 @@ final class WpdbAlertRepository implements AlertRepository
     private function columns(): string
     {
         return 'id, kind, source, priority, title, body, reference, payload, '
-            . 'target_email, created_at, expires_at';
+            . 'target_email, target_device_id, created_at, expires_at';
     }
 
     /**
@@ -358,6 +377,7 @@ final class WpdbAlertRepository implements AlertRepository
             // Absent on the queries that do not join the contacts table
             // (the admin list, findById); those callers do not use it.
             (bool) ($row['has_contact'] ?? false),
+            (int) ($row['target_device_id'] ?? 0),
         );
     }
 

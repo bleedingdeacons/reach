@@ -199,6 +199,108 @@ final class AlertDispatcherTest extends ReachTestCase
         $this->assertSame([], $second->delivered, 'The second transport should not double-deliver.');
     }
 
+    public function testADeviceTargetedAlertReachesOnlyThatHandset(): void
+    {
+        // One responder, two handsets. Addressing by email would ring
+        // both, which is exactly the ambiguity the admin test button
+        // exists to remove.
+        $devices = new InMemoryDeviceRepository();
+        $phone  = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+        $devices->create('h2', 'a@example.com', 1, 'Tablet', 'android', Device::PUSH_FCM, 'tok-b', 100);
+
+        $transport = new RecordingTransport();
+
+        (new AlertDispatcher(
+            new InMemoryAlertRepository(),
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('a@example.com'),
+            [$transport],
+        ))->dispatch($this->request(['target_device_id' => $phone->id]), 1_700_000_000);
+
+        $this->assertCount(1, $transport->delivered);
+        $this->assertSame($phone->id, $transport->delivered[0]->id);
+    }
+
+    public function testADeviceTargetedAlertIsStillStoredWhenTheHandsetIsGone(): void
+    {
+        // Storing first is unconditional. The admin needs the row in the
+        // Recent alerts table whatever the handset did.
+        $alerts = new InMemoryAlertRepository();
+        $transport = new RecordingTransport();
+
+        (new AlertDispatcher(
+            $alerts,
+            new InMemoryAlertContactRepository(),
+            new InMemoryDeviceRepository(),
+            $this->gateAdmitting('a@example.com'),
+            [$transport],
+        ))->dispatch($this->request(['target_device_id' => 999]), 1_700_000_000);
+
+        $this->assertCount(1, $alerts->alerts);
+        $this->assertSame([], $transport->delivered);
+    }
+
+    public function testADeviceTargetedAlertSkipsARevokedHandset(): void
+    {
+        $devices = new InMemoryDeviceRepository();
+        $device = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+        $devices->revoke($device->id, 200);
+
+        $transport = new RecordingTransport();
+
+        (new AlertDispatcher(
+            new InMemoryAlertRepository(),
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('a@example.com'),
+            [$transport],
+        ))->dispatch($this->request(['target_device_id' => $device->id]), 1_700_000_000);
+
+        $this->assertSame([], $transport->delivered);
+    }
+
+    public function testADeviceTargetedAlertStillObeysTheEligibilityGate(): void
+    {
+        // An admin testing the handset of someone who has stepped down
+        // should find it silent — that is the correct answer, not a bug.
+        $devices = new InMemoryDeviceRepository();
+        $device = $devices->create('h1', 'lapsed@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+        $transport = new RecordingTransport();
+
+        (new AlertDispatcher(
+            new InMemoryAlertRepository(),
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('someone-else@example.com'),
+            [$transport],
+        ))->dispatch($this->request(['target_device_id' => $device->id]), 1_700_000_000);
+
+        $this->assertSame([], $transport->delivered);
+    }
+
+    public function testADeviceTargetedAlertIsNotABroadcast(): void
+    {
+        $devices = new InMemoryDeviceRepository();
+        $device = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+        $alerts = new InMemoryAlertRepository();
+
+        (new AlertDispatcher(
+            $alerts,
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('a@example.com'),
+            [],
+        ))->dispatch($this->request(['target_device_id' => $device->id]), 1_700_000_000);
+
+        // It carries no address, so anything reading isBroadcast() to
+        // decide who may see it must not be fooled by the empty one.
+        $this->assertFalse($alerts->alerts[0]->isBroadcast());
+        $this->assertTrue($alerts->alerts[0]->isDeviceTargeted());
+    }
+
     private function request(array $overrides = []): AlertRequest
     {
         $request = AlertRequest::fromArray($overrides + [

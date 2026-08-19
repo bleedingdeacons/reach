@@ -92,6 +92,25 @@ interface DeviceRepository
     public function revoke(int $id, int $now): bool;
 
     /**
+     * Delete a device outright, leaving no row behind.
+     *
+     * The harder-edged sibling of {@see revoke()}, and chosen
+     * deliberately rather than as a tidier revoke. Revoking keeps the
+     * row so the admin list stays a record of what was enrolled and
+     * when it was cut off; removing is for a handset that should not be
+     * in that record at all — enrolled by mistake, or a responder
+     * exercising their right to have the pairing erased rather than
+     * merely disabled.
+     *
+     * Acknowledgement rows naming the device are left where they are.
+     * They expire with their alerts within the hour, and a foreign key
+     * is not something dbDelta can express in any case.
+     *
+     * @return bool Whether a row was actually removed.
+     */
+    public function delete(int $id): bool;
+
+    /**
      * Revoke every live device belonging to one responder. Used when a
      * member is deleted or loses eligibility, so their handsets stop
      * without an admin hunting for each one.

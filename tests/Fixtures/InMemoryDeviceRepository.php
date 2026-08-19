@@ -181,6 +181,22 @@ final class InMemoryDeviceRepository implements DeviceRepository
         ));
     }
 
+    public function delete(int $id): bool
+    {
+        foreach ($this->devices as $index => $device) {
+            if ($device->id !== $id) {
+                continue;
+            }
+
+            unset($this->devices[$index], $this->hashes[$id]);
+            $this->devices = array_values($this->devices);
+
+            return true;
+        }
+
+        return false;
+    }
+
     public function revokeAllForMember(string $memberEmail, int $now): int
     {
         $count = 0;

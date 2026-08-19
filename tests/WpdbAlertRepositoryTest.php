@@ -190,9 +190,72 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         $this->assertStringContainsString('a.expires_at > 1700000000', $q);
         // Broadcast alerts and this responder's own, and nothing else.
         $this->assertStringContainsString("(a.target_email = '' OR a.target_email = 'jo@example.com')", $q);
+        // …or, for an alert addressed to one handset rather than to a
+        // person, by device id *instead of* the address.
+        $this->assertStringContainsString('(a.target_device_id > 0 AND a.target_device_id = 7)', $q);
         // Oldest first, so a handset back from a signal blackspot alarms
         // in the order things actually happened.
         $this->assertStringContainsString('ORDER BY a.id ASC', $q);
+    }
+
+    public function testInstallCarriesTheDeviceTargetColumn(): void
+    {
+        $GLOBALS['__reach_dbdelta'] = [];
+        $db = $this->db();
+
+        WpdbAlertRepository::install($db);
+
+        // Defaulting to 0 is what lets dbDelta add the column to a table
+        // full of existing alerts without any of them changing meaning.
+        $this->assertStringContainsString(
+            'target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0',
+            $GLOBALS['__reach_dbdelta'][0],
+        );
+    }
+
+    public function testTheDeviceTargetIsStoredAndReadBack(): void
+    {
+        $db = $this->db();
+
+        $alert = (new WpdbAlertRepository($db))->create(
+            $this->request(['target_device_id' => 9]),
+            1_700_000_000,
+        );
+
+        $this->assertSame(9, $db->inserted[0]['data']['target_device_id']);
+        $this->assertSame(9, $alert->targetDeviceId);
+        $this->assertTrue($alert->isDeviceTargeted());
+        $this->assertFalse($alert->isBroadcast());
+    }
+
+    public function testPendingForLetsADeviceTargetOverrideTheAddress(): void
+    {
+        // The regression this test exists for: the address filter used to be
+        // ANDed with the device filter, so an alert carrying a device id and
+        // somebody else's address was pushed to that handset and then hidden
+        // from it on the poll. An alert only the push can deliver is exactly
+        // what the store-first design exists to rule out — it would vanish on
+        // the pull-only heads and after any push failure.
+        //
+        // The dispatcher and the REST guard have always given the device id
+        // precedence; this is the third place that decides, and it has to
+        // agree with them.
+        $db = $this->db();
+
+        (new WpdbAlertRepository($db))->pendingFor('jo@example.com', 7, 1_700_000_000, 20);
+
+        $q = $db->queries[0];
+
+        // The device branch stands alone: no address predicate qualifies it.
+        $this->assertStringContainsString('(a.target_device_id > 0 AND a.target_device_id = 7)', $q);
+        // The address branch applies only where no handset is named.
+        $this->assertStringContainsString('a.target_device_id = 0', $q);
+        $this->assertStringContainsString("(a.target_email = '' OR a.target_email = 'jo@example.com')", $q);
+        // …and the two are alternatives, not conditions to satisfy together.
+        $this->assertStringNotContainsString(
+            "AND (a.target_email = '' OR a.target_email = 'jo@example.com')\n                AND (a.target_device_id",
+            $q,
+        );
     }
 
     public function testPendingForReadsOnlyWhetherAContactExists(): void
