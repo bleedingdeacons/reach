@@ -42,6 +42,16 @@ final class InMemoryDeviceRepository implements DeviceRepository
         }
     }
 
+    /**
+     * When true, {@see create()} throws as the Wpdb implementation does
+     * when its INSERT fails - a missing table, most usefully.
+     *
+     * Worth being able to simulate: the real thing used to swallow that
+     * failure and hand back a Device with id 0, so enrolment answered 201
+     * with a token for a row that did not exist.
+     */
+    public bool $failOnCreate = false;
+
     public function create(
         string $tokenHash,
         string $memberEmail,
@@ -52,6 +62,10 @@ final class InMemoryDeviceRepository implements DeviceRepository
         string $pushToken,
         int $now,
     ): Device {
+        if ($this->failOnCreate) {
+            throw new \RuntimeException('The device could not be enrolled: the write failed.');
+        }
+
         $device = new Device(
             $this->nextId++,
             $memberEmail,

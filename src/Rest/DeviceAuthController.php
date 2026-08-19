@@ -19,6 +19,7 @@ use Reach\Devices\CurrentDevice;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Reach\Devices\ResponderGate;
+use RuntimeException;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Members\Interfaces\Member;
 use WP_Error;
@@ -71,6 +72,13 @@ use function rest_url;
  */
 final class DeviceAuthController
 {
+    use \Reach\Logger\HasLogger;
+
+    protected static function logChannel(): string
+    {
+        return 'reach';
+    }
+
     public const NAMESPACE = 'reach/v1';
 
     /** Per-IP enrolment attempts allowed per window, and the window length. */
@@ -475,16 +483,35 @@ final class DeviceAuthController
         $this->pruneDevicesFor($email, $now);
 
         $token = $this->minter->mint();
-        $device = $this->devices->create(
-            $this->minter->hash($token),
-            $email,
-            $member->getId(),
-            $label,
-            $platform,
-            $pushProvider,
-            $pushToken,
-            $now,
-        );
+
+        // A failed write must not become a successful-looking enrolment.
+        // The repository throws rather than returning a row with id 0, so
+        // the responder is told sign-in failed and can try again, instead
+        // of being handed a token that 401s on its next use and sends them
+        // round the sign-in loop with no explanation.
+        try {
+            $device = $this->devices->create(
+                $this->minter->hash($token),
+                $email,
+                $member->getId(),
+                $label,
+                $platform,
+                $pushProvider,
+                $pushToken,
+                $now,
+            );
+        } catch (RuntimeException $e) {
+            self::logError('Handset enrolment failed', [
+                'member' => $member->getId(),
+                'error'  => $e->getMessage(),
+            ]);
+
+            return new WP_Error(
+                'reach_enrolment_failed',
+                'This handset could not be enrolled. Please try again, and tell your intergroup if it keeps happening.',
+                ['status' => 500],
+            );
+        }
 
         $this->auditLogger->log(
             AuditLogger::ACTION_VIEW,

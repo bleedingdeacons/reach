@@ -193,29 +193,19 @@ register_activation_hook(__FILE__, function () {
     \Reach\Frontend\PageRouter::addRewriteRules();
     flush_rewrite_rules();
 
-    // Install/upgrade the call-attempts table. dbDelta is idempotent
-    // and diffs against the live schema, so this is safe on every
-    // activation including upgrades.
+    // Install every table. Schema owns the list and each installer is an
+    // idempotent dbDelta, so this is safe on every activation including
+    // upgrades. Activation is no longer the only path that creates tables
+    // though - see Reach\Core\Schema, which also runs on load when the
+    // stored version is behind, because an update over an active plugin
+    // never fires this hook at all.
     global $wpdb;
-    \Reach\CallAttempts\WpdbCallAttemptRepository::install($wpdb);
+    \Reach\Core\Schema::install($wpdb);
+    \Reach\Core\Schema::markInstalled();
 
-    // Install/upgrade the call-requests table (out-of-hours callback
-    // requests). The install migration drops legacy caller-PII columns;
-    // requests are now durable history, so there is no retention purge to
+    // Requests are now durable history, so there is no retention purge to
     // schedule. Clear any purge event left by an earlier version.
-    \Reach\CallRequests\WpdbCallRequestRepository::install($wpdb);
     wp_clear_scheduled_hook(\Reach\Plugin::PURGE_CRON_HOOK);
-
-    // Install/upgrade the password-credentials table (email + password
-    // sign-in). Idempotent dbDelta, so safe on every activation/upgrade.
-    \Reach\Auth\WpdbPasswordCredentialRepository::install($wpdb);
-
-    // Install/upgrade the Hand tables: enrolled handsets, the alerts
-    // raised for them, and which handset has alarmed for which alert.
-    // Idempotent dbDelta like the rest.
-    \Reach\Devices\WpdbDeviceRepository::install($wpdb);
-    \Reach\Alerts\WpdbAlertRepository::install($wpdb);
-    \Reach\Alerts\WpdbAlertContactRepository::install($wpdb);
 });
 
 // Self-deactivate if Scrutiny gets deactivated while Reach is active —
