@@ -19,6 +19,7 @@ use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertRepository;
 use Reach\Auth\PasswordCredentialRepository;
 use Reach\Core\ReachServiceProvider;
+use Reach\Core\Schema;
 use Reach\Devices\DeviceRepository;
 use Reach\Frontend\PageRouter;
 use Reach\Rest\AlertController;
@@ -100,6 +101,16 @@ class Plugin
         }
 
         self::$container = $unityContainer;
+
+        // Create or upgrade tables before anything can query them.
+        //
+        // The activation hook is not enough on its own: WordPress fires it
+        // on activation, and updating a plugin that is already active is
+        // not an activation - neither is the GitHub Plugin URI auto-update
+        // these sites take. So a release that adds a table shipped code
+        // expecting a table nothing had created. Cheap on the common path,
+        // one option read; see Schema for the failure that prompted it.
+        Schema::ensureInstalled();
 
         (new ReachServiceProvider())->register($unityContainer);
 

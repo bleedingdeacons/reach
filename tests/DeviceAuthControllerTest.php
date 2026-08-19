@@ -247,6 +247,32 @@ final class DeviceAuthControllerTest extends ReachTestCase
         $this->assertSame('rotated-token', $this->devices->devices[0]->pushToken);
     }
 
+    public function testAFailedWriteIsReportedAsFailureNotAsAToken(): void
+    {
+        // The amber bug. The device table did not exist, $wpdb->insert()
+        // returned false, and nothing checked - so enrolment answered 201
+        // with a freshly minted token for a row that was never written.
+        // The handset stored it, 401'd on its very next request, and sent
+        // its responder back round the sign-in loop with an empty admin
+        // device list and nothing saying why.
+        //
+        // A write that fails must read as a failure.
+        $this->devices->failOnCreate = true;
+
+        $controller = $this->controllerFor($this->certified('responder@example.com'));
+        $code = $this->codes->issue($this->identity('responder@example.com'));
+
+        $result = $controller->exchange($this->request([
+            'code'     => $code,
+            'platform' => 'android',
+        ]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_enrolment_failed', $result->get_error_code());
+        $this->assertSame(500, $result->get_error_data()['status'] ?? null);
+        $this->assertSame([], $this->devices->devices, 'Nothing should have been enrolled.');
+    }
+
     public function testStartRefusesARedirectOutsideTheAllowList(): void
     {
         $controller = $this->controllerFor($this->certified('responder@example.com'));

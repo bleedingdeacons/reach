@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use LogicException;
+use RuntimeException;
 use wpdb;
 
 use function dbDelta;
@@ -104,7 +105,7 @@ final class WpdbDeviceRepository implements DeviceRepository
     ): Device {
         $table = self::tableName($this->wpdb);
 
-        $this->wpdb->insert(
+        $inserted = $this->wpdb->insert(
             $table,
             [
                 'token_hash'    => $tokenHash,
@@ -119,6 +120,21 @@ final class WpdbDeviceRepository implements DeviceRepository
             ],
             ['%s', '%s', '%d', '%s', '%s', '%s', '%s', '%d', '%d'],
         );
+
+        // $wpdb->insert() reports failure by returning false, and a missing
+        // table is a failure like any other. Left unchecked this returned a
+        // Device with id 0 and the caller minted a token for it, so
+        // enrolment answered 201 with a working-looking credential for a row
+        // that did not exist. The handset stored it, 401'd on its very next
+        // request, and bounced its responder back to sign-in - with an empty
+        // admin device list and nothing anywhere saying why. Silence is the
+        // one failure mode this feature cannot afford, so fail loudly.
+        if ($inserted === false || (int) $this->wpdb->insert_id <= 0) {
+            throw new RuntimeException(
+                'The device could not be enrolled: the write to ' . $table . ' failed. '
+                . 'If the table is missing, Reach\Core\Schema installs it on the next load.'
+            );
+        }
 
         return new Device(
             (int) $this->wpdb->insert_id,
