@@ -268,6 +268,15 @@ final class WpdbDeviceRepository implements DeviceRepository
         return is_int($updated) && $updated > 0;
     }
 
+    public function delete(int $id): bool
+    {
+        $table = self::tableName($this->wpdb);
+
+        $deleted = $this->wpdb->delete($table, ['id' => $id], ['%d']);
+
+        return is_int($deleted) && $deleted > 0;
+    }
+
     public function revokeAllForMember(string $memberEmail, int $now): int
     {
         $table = self::tableName($this->wpdb);

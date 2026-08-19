@@ -212,6 +212,13 @@ final class AlertController
      */
     private function maySee(Alert $alert, Device $device): bool
     {
+        // A device-targeted alert carries no address, so its device id
+        // has to be checked before the email — otherwise the empty
+        // address reads as a broadcast and every handset may see it.
+        if ($alert->isDeviceTargeted()) {
+            return $alert->targetDeviceId === $device->id;
+        }
+
         return $alert->isBroadcast() || $alert->targetEmail === $device->memberEmail;
     }
 

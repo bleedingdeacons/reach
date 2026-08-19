@@ -190,9 +190,44 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         $this->assertStringContainsString('a.expires_at > 1700000000', $q);
         // Broadcast alerts and this responder's own, and nothing else.
         $this->assertStringContainsString("(a.target_email = '' OR a.target_email = 'jo@example.com')", $q);
+        // …narrowed again by handset, for the alerts addressed to one
+        // device rather than to a person. Both clauses, not either: a
+        // device-targeted alert carries no email, so the address filter
+        // alone would hand it to the whole rota.
+        $this->assertStringContainsString('(a.target_device_id = 0 OR a.target_device_id = 7)', $q);
         // Oldest first, so a handset back from a signal blackspot alarms
         // in the order things actually happened.
         $this->assertStringContainsString('ORDER BY a.id ASC', $q);
+    }
+
+    public function testInstallCarriesTheDeviceTargetColumn(): void
+    {
+        $GLOBALS['__reach_dbdelta'] = [];
+        $db = $this->db();
+
+        WpdbAlertRepository::install($db);
+
+        // Defaulting to 0 is what lets dbDelta add the column to a table
+        // full of existing alerts without any of them changing meaning.
+        $this->assertStringContainsString(
+            'target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0',
+            $GLOBALS['__reach_dbdelta'][0],
+        );
+    }
+
+    public function testTheDeviceTargetIsStoredAndReadBack(): void
+    {
+        $db = $this->db();
+
+        $alert = (new WpdbAlertRepository($db))->create(
+            $this->request(['target_device_id' => 9]),
+            1_700_000_000,
+        );
+
+        $this->assertSame(9, $db->inserted[0]['data']['target_device_id']);
+        $this->assertSame(9, $alert->targetDeviceId);
+        $this->assertTrue($alert->isDeviceTargeted());
+        $this->assertFalse($alert->isBroadcast());
     }
 
     public function testPendingForReadsOnlyWhetherAContactExists(): void

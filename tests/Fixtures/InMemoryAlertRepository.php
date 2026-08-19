@@ -12,8 +12,9 @@ use Reach\Alerts\AlertRequest;
  * In-memory {@see AlertRepository} for tests.
  *
  * Reproduces the two contract points the delivery paths lean on: the
- * poll returns only live, unacknowledged alerts addressed to the caller,
- * and acknowledgement is idempotent.
+ * poll returns only live, unacknowledged alerts addressed to the caller
+ * — by device where one is named, by responder otherwise — and
+ * acknowledgement is idempotent.
  */
 final class InMemoryAlertRepository implements AlertRepository
 {
@@ -39,6 +40,7 @@ final class InMemoryAlertRepository implements AlertRepository
             $request->targetEmail,
             $now,
             $request->expiresAt($now),
+            targetDeviceId: $request->targetDeviceId,
         );
 
         $this->alerts[] = $alert;
@@ -66,7 +68,15 @@ final class InMemoryAlertRepository implements AlertRepository
                 continue;
             }
 
-            if (!$alert->isBroadcast() && $alert->targetEmail !== $memberEmail) {
+            if ($alert->isDeviceTargeted() && $alert->targetDeviceId !== $deviceId) {
+                continue;
+            }
+
+            if (
+                !$alert->isDeviceTargeted()
+                && !$alert->isBroadcast()
+                && $alert->targetEmail !== $memberEmail
+            ) {
                 continue;
             }
 

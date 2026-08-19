@@ -219,6 +219,48 @@ final class AlertRequestTest extends ReachTestCase
         $this->assertSame(86400, $tooLong->ttlSeconds);
     }
 
+    /**
+     * @dataProvider deviceTargets
+     */
+    public function testTheDeviceTargetOnlyEverWidensToEverybody(mixed $given, int $expected): void
+    {
+        // Nonsense becomes 0 — "any handset this alert's address resolves
+        // to" — rather than an invented row id. Getting it wrong towards
+        // a broadcast is recoverable; getting it wrong towards some other
+        // responder's phone is not.
+        $request = AlertRequest::fromArray([
+            'kind' => 'a',
+            'title' => 'b',
+            'target_device_id' => $given,
+        ]);
+
+        $this->assertInstanceOf(AlertRequest::class, $request);
+        $this->assertSame($expected, $request->targetDeviceId);
+    }
+
+    /** @return array<string, array{0: mixed, 1: int}> */
+    public static function deviceTargets(): array
+    {
+        return [
+            'an id'           => [7, 7],
+            'a numeric string' => ['7', 7],
+            'zero'            => [0, 0],
+            'negative'        => [-3, 0],
+            'a word'          => ['nonsense', 0],
+            'an array'        => [[7], 0],
+            'null'            => [null, 0],
+            'a float'         => [7.5, 0],
+        ];
+    }
+
+    public function testAnAlertIsForAnyHandsetUnlessOneIsNamed(): void
+    {
+        $request = AlertRequest::fromArray(['kind' => 'a', 'title' => 'b']);
+
+        $this->assertInstanceOf(AlertRequest::class, $request);
+        $this->assertSame(0, $request->targetDeviceId);
+    }
+
     public function testExpiryIsComputedFromTtl(): void
     {
         $request = AlertRequest::fromArray(['kind' => 'a', 'title' => 'b', 'ttl' => 600]);

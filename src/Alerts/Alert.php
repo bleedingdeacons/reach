@@ -36,6 +36,15 @@ if (!defined('ABSPATH')) {
  * — the normal case for a helpline, where whoever is free picks it up.
  * A named target is for the narrower case of an alert that concerns one
  * responder specifically.
+ *
+ * `targetDeviceId` narrows it further still, to one handset. A responder
+ * with a phone and a tablet has two devices behind one address, and
+ * there are two things that must reach only one of them: the admin
+ * test alert, whose entire value is answering "does *that* handset
+ * ring", and the removal notice a handset is sent as it is taken off
+ * the rota. Both are about a device rather than a person, so neither
+ * can be addressed by email. Zero means "any handset the address
+ * resolves to", which is every alert a plugin will ever raise.
  */
 final class Alert
 {
@@ -77,16 +86,34 @@ final class Alert
          * knows whether to offer the button.
          */
         public readonly bool $hasContact = false,
+        /**
+         * The one handset this alert is for, or 0 for any. See the class
+         * docblock; {@see \Reach\Alerts\AlertDispatcher} resolves it and
+         * {@see \Reach\Rest\AlertController} enforces it on the way back.
+         */
+        public readonly int $targetDeviceId = 0,
     ) {
     }
 
     /**
      * Whether this alert is addressed to every eligible responder
-     * rather than to one named person.
+     * rather than to one named person or one named handset.
      */
     public function isBroadcast(): bool
     {
-        return $this->targetEmail === '';
+        return $this->targetEmail === '' && $this->targetDeviceId === 0;
+    }
+
+    /**
+     * Whether this alert is for one specific handset.
+     *
+     * Checked before the address, not after: a device-targeted alert
+     * carries no email at all, so testing the email first would read it
+     * as a broadcast and ring the whole rota.
+     */
+    public function isDeviceTargeted(): bool
+    {
+        return $this->targetDeviceId > 0;
     }
 
     public function isExpired(int $now): bool

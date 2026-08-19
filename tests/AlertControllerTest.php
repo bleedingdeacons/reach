@@ -76,6 +76,46 @@ final class AlertControllerTest extends ReachTestCase
         $this->assertSame('Everybody', $result->get_data()['alerts'][0]['title']);
     }
 
+    public function testPollReturnsADeviceTargetedAlertToThatHandsetOnly(): void
+    {
+        // One responder, two handsets, an alert addressed to the second.
+        // It carries no email, so the poll must be looking at the device
+        // id rather than reading the empty address as a broadcast.
+        $phone  = $this->enrol('responder@example.com');
+        $tablet = $this->enrol('responder@example.com');
+        $tabletId = $this->devices->devices[1]->id;
+
+        $this->raise(['kind' => 'test', 'title' => 'That one', 'target_device_id' => $tabletId]);
+
+        $onTablet = $this->controller()->pending($this->authed($tablet));
+        $onPhone  = $this->controller()->pending($this->authed($phone));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $onTablet);
+        $this->assertInstanceOf(WP_REST_Response::class, $onPhone);
+        $this->assertCount(1, $onTablet->get_data()['alerts']);
+        $this->assertSame([], $onPhone->get_data()['alerts']);
+    }
+
+    public function testAnotherHandsetCannotAcknowledgeADeviceTargetedAlert(): void
+    {
+        // Same 404 as an alert that does not exist: which alerts exist is
+        // not something one handset should learn about another.
+        $phone = $this->enrol('responder@example.com');
+        $this->enrol('responder@example.com');
+        $tabletId = $this->devices->devices[1]->id;
+
+        $alert = $this->raise([
+            'kind' => 'test',
+            'title' => 'That one',
+            'target_device_id' => $tabletId,
+        ]);
+
+        $result = $this->controller()->acknowledge($this->authed($phone, ['id' => $alert->id]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame(404, $result->get_error_data()['status'] ?? null);
+    }
+
     public function testPollDoesNotReturnAnotherRespondersTargetedAlert(): void
     {
         $token = $this->enrol('responder@example.com');

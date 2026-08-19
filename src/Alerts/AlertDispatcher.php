@@ -32,6 +32,9 @@ use function do_action;
  * <b>Who receives an alert.</b> A broadcast alert (the normal case for
  * a helpline) goes to every enrolled handset whose responder still
  * passes {@see ResponderGate} — certified telephone responders only.
+ * An alert may instead name one responder, or — for the two cases that
+ * are about a handset rather than a person, the admin test alert and a
+ * removal notice — one device.
  * The gate is re-run here rather than trusted from the device row for
  * the same reason it is re-run on every authenticated request: roles
  * change, and an alert containing a live callback is precisely the
@@ -124,10 +127,33 @@ final class AlertDispatcher
     /**
      * The live handsets an alert should reach.
      *
+     * Three addresses, narrowest first: one device, one responder, or
+     * everybody.
+     *
      * @return array<int, Device>
      */
     private function resolveTargets(Alert $alert): array
     {
+        if ($alert->isDeviceTargeted()) {
+            // One named handset. The gate still applies: an admin
+            // testing a handset whose owner has stepped down should
+            // find it silent, which is the answer they needed.
+            $device = $this->devices->findById($alert->targetDeviceId);
+            if (
+                $device === null
+                || $device->isRevoked()
+                || $this->gate->authorisedMember($device->memberEmail) === null
+            ) {
+                self::logNotice('Alert targeted a handset that cannot receive it', [
+                    'alert_id'  => $alert->id,
+                    'device_id' => $alert->targetDeviceId,
+                ]);
+                return [];
+            }
+
+            return [$device];
+        }
+
         if (!$alert->isBroadcast()) {
             // A named target that is no longer eligible gets nothing,
             // and that is not an error worth failing the dispatch over —
