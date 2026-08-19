@@ -203,7 +203,7 @@ final class DevicesPage
                                        name="device_ids[]"
                                        class="reach-device-select"
                                        value="<?php echo (int) $device->id; ?>"
-                                       aria-label="Select this handset for a test alert">
+                                       aria-label="<?php echo esc_attr($this->selectLabel($device)); ?>">
                                 <?php endif; ?>
                             </th>
                             <td><?php echo esc_html($this->responderName($device)); ?></td>
@@ -514,6 +514,21 @@ final class DevicesPage
     }
 
     /**
+     * The accessible label for a row's tick box.
+     *
+     * Every row carrying the same label leaves a screen-reader user hearing
+     * "select this handset" eight times with nothing to tell the rows apart.
+     * The id is always included because it is the only thing guaranteed
+     * unique — two handsets may share a label, or have none.
+     */
+    private function selectLabel(Device $device): string
+    {
+        return $device->label !== ''
+            ? sprintf('Select handset %d, %s, for a test alert', $device->id, $device->label)
+            : sprintf('Select handset %d for a test alert', $device->id);
+    }
+
+    /**
      * The responder a handset belongs to, by name where Unity knows one
      * and by email otherwise — matching how the call-requests list
      * identifies people.
@@ -567,7 +582,7 @@ final class DevicesPage
         $messages = [
             'revoked'       => ['success', 'Handset revoked. It will stop receiving alerts immediately.'],
             'revoke_failed' => ['error', 'That handset could not be revoked — it may already have been.'],
-            'removed'       => ['success', 'Handset removed. It has been told it is off the rota, and its record here is gone.'],
+            'removed'       => ['success', 'Handset removed. Its record here is gone, and a notice has been sent telling it so &mdash; a handset that is out of signal will simply stop authenticating instead.'],
             'remove_failed' => ['error', 'That handset could not be removed — it may already have been.'],
             'test_sent'     => ['success', 'Test alert sent. Every live handset should be ringing.'],
             'test_sent_selected' => ['success', 'Test alert sent. The selected handsets should be ringing.'],

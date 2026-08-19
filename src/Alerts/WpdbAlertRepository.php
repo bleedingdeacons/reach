@@ -181,6 +181,17 @@ final class WpdbAlertRepository implements AlertRepository
         // never the encrypted column itself. Personal data must not travel
         // on the path every handset runs every few seconds; the app is told
         // there is a contact and fetches it separately, once, audited.
+        //
+        // <b>The address filter branches on target type rather than being
+        // ANDed with it.</b> A device target overrides the address, which is
+        // what {@see \Reach\Alerts\AlertDispatcher::resolveTargets()} and
+        // {@see \Reach\Rest\AlertController::maySee()} both already do.
+        // Conjoining the two instead meant an alert carrying a device id and
+        // somebody else's address was pushed to that handset and then hidden
+        // from it on the poll — an alert only the fast path could deliver,
+        // which is precisely the failure the store-first design exists to
+        // rule out. It would have gone missing on the pull-only heads and
+        // after any push failure.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
             "SELECT a.id, a.kind, a.source, a.priority, a.title, a.body, a.reference,
                     a.payload, a.target_email, a.target_device_id, a.created_at, a.expires_at,
@@ -190,14 +201,17 @@ final class WpdbAlertRepository implements AlertRepository
                LEFT JOIN {$contacts} c ON c.alert_id = a.id
               WHERE k.alert_id IS NULL
                 AND a.expires_at > %d
-                AND (a.target_email = '' OR a.target_email = %s)
-                AND (a.target_device_id = 0 OR a.target_device_id = %d)
+                AND (
+                      (a.target_device_id > 0 AND a.target_device_id = %d)
+                   OR (a.target_device_id = 0
+                       AND (a.target_email = '' OR a.target_email = %s))
+                )
               ORDER BY a.id ASC
               LIMIT %d",
             $deviceId,
             $now,
-            $memberEmail,
             $deviceId,
+            $memberEmail,
             $limit,
         ), ARRAY_A);
 

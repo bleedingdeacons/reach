@@ -96,6 +96,28 @@ final class AlertControllerTest extends ReachTestCase
         $this->assertSame([], $onPhone->get_data()['alerts']);
     }
 
+    public function testADeviceTargetOverridesAnAddressThatDisagreesWithIt(): void
+    {
+        // Both fields set, and pointing at different people. The dispatcher
+        // pushes by device id, so the poll must hand it over by device id too
+        // — otherwise the handset is rung about an alert it can never fetch.
+        $phone = $this->enrol('responder@example.com');
+        $deviceId = $this->devices->devices[0]->id;
+
+        $this->raise([
+            'kind' => 'test',
+            'title' => 'That handset',
+            'target_email' => 'someone-else@example.com',
+            'target_device_id' => $deviceId,
+        ]);
+
+        $result = $this->controller()->pending($this->authed($phone));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+        $this->assertCount(1, $result->get_data()['alerts']);
+        $this->assertSame('That handset', $result->get_data()['alerts'][0]['title']);
+    }
+
     public function testAnotherHandsetCannotAcknowledgeADeviceTargetedAlert(): void
     {
         // Same 404 as an alert that does not exist: which alerts exist is
