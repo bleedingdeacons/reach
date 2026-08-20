@@ -103,14 +103,36 @@ final class AlertDispatcher
             }
         }
 
-        self::logInfo('Alert dispatched', [
+        $context = [
             'alert_id'  => $alert->id,
             'kind'      => $alert->kind,
             'source'    => $alert->source,
             'reference' => $alert->reference,
             'devices'   => count($devices),
             'pushed'    => $pushed,
-        ]);
+        ];
+
+        // Every handset refused is not the same event as a quiet rota, and
+        // logging both at info is how a broken push stays invisible. A
+        // service account missing cloudmessaging.messages.create returned
+        // 403 on every send for weeks here: each alert was stored, each
+        // dispatch logged 'pushed' => 0 at info, and the only reason
+        // anybody was alerted at all was the handsets polling. Nothing
+        // said so. An alert that reached no handset it had one for is a
+        // delivery failure and is recorded as one.
+        //
+        // Deliberately not conditioned on the transport's reason. From
+        // here the causes are indistinguishable and the consequence is
+        // not: a responder was not told.
+        if ($pushed === 0 && $devices !== []) {
+            self::logError(
+                'Alert reached no handset — every push was refused. Check the FCM service '
+                . 'account and its permissions on the Firebase project.',
+                $context,
+            );
+        } else {
+            self::logInfo('Alert dispatched', $context);
+        }
 
         /**
          * Fires after an alert has been stored and delivery attempted.

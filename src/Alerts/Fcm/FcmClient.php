@@ -105,14 +105,35 @@ final class FcmClient
             return true;
         }
 
-        // 404 and 403 from FCM mean the registration token is dead —
-        // the app was uninstalled, or the token was rotated and we are
-        // holding the old one. The caller reads the status to decide
-        // whether to clear the stored token, so log it at the level its
-        // seriousness deserves and no higher.
+        $body = substr((string) wp_remote_retrieve_body($response), 0, 500);
+
+        // 401 and 403 are almost never about the handset. They mean this
+        // server cannot send at all: the service account lacks
+        // cloudmessaging.messages.create on the project, the Firebase
+        // Cloud Messaging API is not enabled, or the credentials are for
+        // somewhere else. That is every alert to every responder failing,
+        // not one dead phone, and it is worth waking somebody for.
+        //
+        // This exact case ran undetected here for weeks, logged at
+        // warning alongside the ordinary refusals it is nothing like.
+        if ($status === 401 || $status === 403) {
+            self::logError(
+                'FCM refused to send. This is a configuration fault, not a handset fault — '
+                . 'no alert can be pushed to anyone until it is fixed. Check that the service '
+                . 'account has the Firebase Cloud Messaging API Admin role on the project and '
+                . 'that the FCM API is enabled.',
+                ['status' => $status, 'body' => $body],
+            );
+
+            return false;
+        }
+
+        // Everything else is about this one message: a dead registration
+        // token, a malformed payload, a rate limit, a bad hour at Google.
+        // Ordinary, survivable, and not worth more than a warning.
         self::logWarning('FCM rejected a message', [
             'status' => $status,
-            'body'   => substr((string) wp_remote_retrieve_body($response), 0, 500),
+            'body'   => $body,
         ]);
 
         return false;
@@ -122,10 +143,24 @@ final class FcmClient
      * Whether a failure status means "stop using this registration
      * token". Separated from {@see send()} so the caller can act on it
      * without parsing log lines.
+     *
+     * <b>404 only, and 403 deliberately not.</b> 404 is FCM's UNREGISTERED
+     * — the app was uninstalled or the token was replaced, and the stored
+     * one will never work again. 403 was treated the same way here and is
+     * not the same thing: the common 403 is PERMISSION_DENIED against the
+     * project, which says nothing whatever about the handset. Acting on it
+     * would have thrown away a perfectly good registration token for every
+     * device on the rota, on every alert, while the actual fault sat in
+     * the service account's IAM roles.
+     *
+     * SENDER_ID_MISMATCH is also a 403 and does mean the token is unusable
+     * here, so telling the two apart needs the error body rather than the
+     * status. Nothing needs that yet; when something does, it belongs in a
+     * method that reads the body, not in this one.
      */
     public function isDeadTokenStatus(int $status): bool
     {
-        return $status === 404 || $status === 403;
+        return $status === 404;
     }
 
     /**
