@@ -262,7 +262,10 @@ final class FcmClientTest extends ReachTestCase
     {
         return [
             'app uninstalled'   => [404, true],
-            'token rotated'     => [403, true],
+            // 403 is PERMISSION_DENIED far more often than it is a dead
+            // token, and clearing a good token on it would take every
+            // handset on the rota off push. See isDeadTokenStatus().
+            'permission denied' => [403, false],
             'bad request'       => [400, false],
             'unauthorised'      => [401, false],
             'rate limited'      => [429, false],
