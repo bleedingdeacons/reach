@@ -204,26 +204,64 @@ final class WpdbDeviceRepository implements DeviceRepository
         return $this->hydrateAll($rows);
     }
 
-    public function list(int $limit, int $offset): array
+    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
     {
         $limit  = max(1, min(500, $limit));
         $offset = max(0, $offset);
         $table  = self::tableName($this->wpdb);
 
-        // Live handsets first, then newest-first within each group, so
-        // the admin page opens on what is currently enrolled rather than
-        // on a wall of history. id DESC stabilises pagination when rows
-        // share a timestamp.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
             "SELECT {$this->columns()}
                FROM {$table}
-              ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC
+              {$this->orderClause($orderBy, $order)}
               LIMIT %d OFFSET %d",
             $limit,
             $offset,
         ), ARRAY_A);
 
         return $this->hydrateAll($rows);
+    }
+
+    /**
+     * The ORDER BY for an admin-requested sort.
+     *
+     * <b>A match rather than an escape.</b> ORDER BY takes no prepared
+     * placeholder, so a column arriving from a request can only be made
+     * safe by refusing anything not named here — and naming them in a
+     * match arm is also what keeps the composed query a literal-string,
+     * which is the property {@see wpdb::prepare()} is entitled to
+     * assume of everything around its placeholders.
+     *
+     * id DESC always tails the clause: without it, rows sharing a value
+     * — every handset on the same platform, say — come back in whatever
+     * order the storage engine felt like, and a row can appear on two
+     * pages or on neither.
+     *
+     * @return literal-string
+     */
+    private function orderClause(string $orderBy, string $order): string
+    {
+        $column = match (strtolower($orderBy)) {
+            'member_email'  => 'member_email',
+            'label'         => 'label',
+            'platform'      => 'platform',
+            'push_provider' => 'push_provider',
+            'created_at'    => 'created_at',
+            'last_seen_at'  => 'last_seen_at',
+            'revoked_at'    => 'revoked_at',
+            default         => '',
+        };
+
+        if ($column === '') {
+            // Live handsets first, then newest-first within each group,
+            // so the admin page opens on what is currently enrolled
+            // rather than on a wall of history.
+            return 'ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC';
+        }
+
+        $direction = strtolower($order) === 'asc' ? 'ASC' : 'DESC';
+
+        return "ORDER BY {$column} {$direction}, id DESC";
     }
 
     public function countAll(): int

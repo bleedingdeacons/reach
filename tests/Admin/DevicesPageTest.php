@@ -175,6 +175,58 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
+    public function a_responder_name_links_to_their_member_record(): void
+    {
+        // The screen answers "whose handset is this"; the next question
+        // is always "and who are they". Same link the call-attempts list
+        // puts under a responder's name.
+        $page = $this->page(
+            devices: $this->devicesWith($this->device(memberEmail: 'jo@example.test')),
+            members: [new MemberStub(id: 7, personalEmail: 'jo@example.test', anonymousName: 'Jo M.')],
+        );
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('post.php?post=7', $html);
+        $this->assertStringContainsString('>Jo M.</a>', $html);
+    }
+
+    /** @test */
+    public function a_responder_the_admin_cannot_edit_is_named_without_a_link(): void
+    {
+        // get_edit_post_link() answers null when the current user cannot
+        // edit the member. The name still has to appear — as plain text
+        // rather than a link that only leads to a permissions error.
+        Functions\when('get_edit_post_link')->justReturn(null);
+
+        $page = $this->page(
+            devices: $this->devicesWith($this->device(memberEmail: 'jo@example.test')),
+            members: [new MemberStub(id: 7, personalEmail: 'jo@example.test', anonymousName: 'Jo M.')],
+        );
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Jo M.', $html);
+        $this->assertStringNotContainsString('>Jo M.</a>', $html);
+    }
+
+    /** @test */
+    public function a_handset_whose_responder_unity_does_not_know_is_not_linked(): void
+    {
+        // There is no record to link to. The address is the diagnostic:
+        // the member was deleted, or the address no longer matches one.
+        $page = $this->page(
+            devices: $this->devicesWith($this->device(memberEmail: 'unknown@example.test')),
+            members: [],
+        );
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('unknown@example.test', $html);
+        $this->assertStringNotContainsString('>unknown@example.test</a>', $html);
+    }
+
+    /** @test */
     public function a_revoked_handset_is_shown_as_history_with_no_revoke_button(): void
     {
         // Rows are kept rather than deleted so the list is a record of
@@ -306,6 +358,139 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
+    /** @test */
+    public function sorting_a_handset_column_reaches_the_repository_as_its_own_column_name(): void
+    {
+        // The list is paginated over the whole table, so the sort has to
+        // happen in SQL: ordering only the rows in hand would order the
+        // page rather than the list.
+        $_GET = ['orderby' => 'last_seen', 'order' => 'asc'];
+        $devices = new PagingDeviceRepository();
+
+        $this->renderList($this->page(devices: $devices));
+
+        $this->assertSame([['orderBy' => 'last_seen_at', 'order' => 'asc']], $devices->sorting);
+    }
+
+    /** @test */
+    public function an_unsortable_handset_column_leaves_the_list_in_its_default_order(): void
+    {
+        // Both tables on this screen read the same `orderby`, so the
+        // alerts table's columns arrive here too and must mean nothing.
+        $_GET = ['orderby' => 'acknowledged', 'order' => 'asc'];
+        $devices = new PagingDeviceRepository();
+
+        $this->renderList($this->page(devices: $devices));
+
+        $this->assertSame([['orderBy' => '', 'order' => 'asc']], $devices->sorting);
+    }
+
+    /** @test */
+    public function sorting_by_responder_orders_by_the_name_shown_not_the_email_behind_it(): void
+    {
+        // The name comes from Unity, not from the devices table, so there
+        // is no ORDER BY that produces it — and a header that reorders
+        // the list by something other than what the column displays is a
+        // header that lies. These two rows disagree on purpose: by name
+        // Alan comes first, by address Zoe's does.
+        $devices = $this->devicesWith(
+            $this->device(id: 1, memberEmail: 'zoe@example.test'),
+            $this->device(id: 2, memberEmail: 'alan@example.test'),
+        );
+        $members = [
+            new MemberStub(personalEmail: 'zoe@example.test', anonymousName: 'Alan B.'),
+            new MemberStub(personalEmail: 'alan@example.test', anonymousName: 'Zoe T.'),
+        ];
+
+        $_GET = ['orderby' => 'responder', 'order' => 'asc'];
+
+        $html = $this->renderList($this->page(devices: $devices, members: $members));
+
+        $this->assertLessThan(
+            strpos($html, 'Zoe T.'),
+            strpos($html, 'Alan B.'),
+            'ascending by Responder should put Alan B. above Zoe T.',
+        );
+    }
+
+    /** @test */
+    public function sorting_by_responder_ignores_the_markup_around_the_name(): void
+    {
+        // The cell is a link, so sorting the rendered cell would sort
+        // every linked name under "<" and leave the unlinked ones — the
+        // addresses of responders Unity has lost — in a block of their
+        // own. Alan's row is linked and Zoe's is not; by name Alan still
+        // comes first.
+        $devices = $this->devicesWith(
+            $this->device(id: 1, memberEmail: 'alan@example.test'),
+            $this->device(id: 2, memberEmail: 'zoe@example.test'),
+        );
+
+        $_GET = ['orderby' => 'responder', 'order' => 'asc'];
+
+        $html = $this->renderList($this->page(
+            devices: $devices,
+            members: [new MemberStub(id: 7, personalEmail: 'alan@example.test', anonymousName: 'Alan B.')],
+        ));
+
+        $this->assertStringContainsString('>Alan B.</a>', $html, 'Alan is linked');
+        $this->assertStringNotContainsString('>zoe@example.test</a>', $html, 'Zoe is not');
+        $this->assertLessThan(
+            strpos($html, 'zoe@example.test'),
+            strpos($html, 'Alan B.'),
+            'ascending by Responder should still put Alan B. above zoe@example.test',
+        );
+    }
+
+    /** @test */
+    public function sorting_by_responder_reverses_on_a_descending_request(): void
+    {
+        $devices = $this->devicesWith(
+            $this->device(id: 1, memberEmail: 'zoe@example.test'),
+            $this->device(id: 2, memberEmail: 'alan@example.test'),
+        );
+        $members = [
+            new MemberStub(personalEmail: 'zoe@example.test', anonymousName: 'Alan B.'),
+            new MemberStub(personalEmail: 'alan@example.test', anonymousName: 'Zoe T.'),
+        ];
+
+        $_GET = ['orderby' => 'responder', 'order' => 'desc'];
+
+        $html = $this->renderList($this->page(devices: $devices, members: $members));
+
+        $this->assertLessThan(
+            strpos($html, 'Alan B.'),
+            strpos($html, 'Zoe T.'),
+            'descending by Responder should put Zoe T. above Alan B.',
+        );
+    }
+
+    /** @test */
+    public function sorting_by_responder_asks_the_repository_for_no_ordering_of_its_own(): void
+    {
+        // The ordering cannot happen in SQL, so the read is the whole
+        // table in the repository's default order and the sort happens
+        // after it. Asking for member_email here is what this replaced.
+        $devices = new PagingDeviceRepository();
+        $devices->total = 2;
+
+        $_GET = ['orderby' => 'responder', 'order' => 'asc'];
+
+        $this->renderList($this->page(devices: $devices));
+
+        $this->assertSame([['orderBy' => '', 'order' => 'desc']], $devices->sorting);
+        $this->assertSame([['limit' => 500, 'offset' => 0]], $devices->paging);
+    }
+
+    /** @test */
+    public function a_sortable_handset_column_is_offered_as_a_link_in_the_header(): void
+    {
+        $html = $this->renderList($this->page());
+
+        $this->assertStringContainsString('orderby=enrolled', $html);
+        $this->assertStringContainsString('orderby=responder', $html);
+    }
+
     // ── the recent-alerts table ───────────────────────────────────────
 
     /** @test */
@@ -367,6 +552,108 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
+    public function an_acknowledging_responder_is_linked_to_their_member_record(): void
+    {
+        // "Who answered this" is only half the question; the other half
+        // is "and who are they". Same link the Responder column carries.
+        $alerts = new InMemoryAlertRepository();
+        $alert = $alerts->create($this->alertRequest(), $this->createdAt());
+        $alerts->acknowledge($alert->id, 7, 'jo@example.test', $this->createdAt() + 30);
+
+        $html = $this->renderList($this->page(
+            alerts: $alerts,
+            members: [new MemberStub(id: 7, personalEmail: 'jo@example.test', anonymousName: 'Jo M.')],
+        ));
+
+        $this->assertStringContainsString('post.php?post=7', $html);
+        $this->assertStringContainsString('>Jo M.</a>', $html);
+    }
+
+    /** @test */
+    public function an_acknowledging_responder_the_admin_cannot_edit_is_named_without_a_link(): void
+    {
+        Functions\when('get_edit_post_link')->justReturn(null);
+
+        $alerts = new InMemoryAlertRepository();
+        $alert = $alerts->create($this->alertRequest(), $this->createdAt());
+        $alerts->acknowledge($alert->id, 7, 'jo@example.test', $this->createdAt() + 30);
+
+        $html = $this->renderList($this->page(
+            alerts: $alerts,
+            members: [new MemberStub(id: 7, personalEmail: 'jo@example.test', anonymousName: 'Jo M.')],
+        ));
+
+        $this->assertStringContainsString('Jo M.', $html);
+        $this->assertStringNotContainsString('>Jo M.</a>', $html);
+    }
+
+    /** @test */
+    public function an_acknowledgement_from_someone_unity_does_not_know_is_not_linked(): void
+    {
+        $alerts = new InMemoryAlertRepository();
+        $alert = $alerts->create($this->alertRequest(), $this->createdAt());
+        $alerts->acknowledge($alert->id, 7, 'stranger@example.test', $this->createdAt() + 30);
+
+        $html = $this->renderList($this->page(alerts: $alerts, members: []));
+
+        $this->assertStringContainsString('stranger@example.test', $html);
+        $this->assertStringNotContainsString('>stranger@example.test</a>', $html);
+    }
+
+    /** @test */
+    public function two_responders_sharing_an_anonymous_name_are_both_listed(): void
+    {
+        // Deduplication is by address, not by name: two people who happen
+        // to be called the same thing are two answers, and they link to
+        // two different records.
+        $alerts = new InMemoryAlertRepository();
+        $alert = $alerts->create($this->alertRequest(), $this->createdAt());
+        $alerts->acknowledge($alert->id, 7, 'jo.b@example.test', $this->createdAt() + 30);
+        $alerts->acknowledge($alert->id, 8, 'jo.c@example.test', $this->createdAt() + 40);
+
+        $html = $this->renderList($this->page(
+            alerts: $alerts,
+            members: [
+                new MemberStub(id: 7, personalEmail: 'jo.b@example.test', anonymousName: 'Jo M.'),
+                new MemberStub(id: 8, personalEmail: 'jo.c@example.test', anonymousName: 'Jo M.'),
+            ],
+        ));
+
+        $this->assertSame(2, substr_count($html, '>Jo M.</a>'));
+        $this->assertStringContainsString('post.php?post=7', $html);
+        $this->assertStringContainsString('post.php?post=8', $html);
+    }
+
+    /** @test */
+    public function sorting_by_acknowledged_by_ignores_the_markup_around_the_names(): void
+    {
+        // The linked names would otherwise all sort under "<", leaving
+        // the unanswered alerts and the unlinked strangers in blocks of
+        // their own instead of under the text the column shows.
+        $alerts = new InMemoryAlertRepository();
+        $zoe = $alerts->create($this->alertRequest(kind: 'first'), $this->createdAt());
+        $ann = $alerts->create($this->alertRequest(kind: 'second'), $this->createdAt() + 60);
+        $alerts->acknowledge($zoe->id, 7, 'zoe@example.test', $this->createdAt() + 30);
+        $alerts->acknowledge($ann->id, 8, 'ann@example.test', $this->createdAt() + 90);
+
+        $_GET = ['orderby' => 'acknowledged', 'order' => 'asc'];
+
+        $html = $this->renderList($this->page(
+            alerts: $alerts,
+            members: [
+                new MemberStub(id: 7, personalEmail: 'zoe@example.test', anonymousName: 'Zoe T.'),
+                new MemberStub(id: 8, personalEmail: 'ann@example.test', anonymousName: 'Ann B.'),
+            ],
+        ));
+
+        $this->assertLessThan(
+            strpos($html, '>Zoe T.</a>'),
+            strpos($html, '>Ann B.</a>'),
+            'ascending by Acknowledged by should put Ann B. above Zoe T.',
+        );
+    }
+
+    /** @test */
     public function one_responder_answering_on_two_handsets_is_named_once(): void
     {
         // The same person acknowledging from a phone and a tablet is one
@@ -394,6 +681,46 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString(
             'stranger@example.test',
             $this->renderList($this->page(alerts: $alerts, members: [])),
+        );
+    }
+
+    /** @test */
+    public function the_alerts_table_sorts_the_window_it_shows_rather_than_the_whole_table(): void
+    {
+        // Pushing this sort down to the database would apply it before
+        // the limit, so sorting by title would answer with the alerts
+        // whose titles start earliest in the alphabet rather than
+        // reordering the ones on the screen.
+        $alerts = new InMemoryAlertRepository();
+        $alerts->create($this->alertRequest(kind: 'aardvark'), $this->createdAt());
+        $alerts->create($this->alertRequest(kind: 'zebra'), $this->createdAt() + 60);
+
+        $_GET = ['orderby' => 'kind', 'order' => 'asc'];
+
+        $html = $this->renderList($this->page(alerts: $alerts));
+
+        $this->assertLessThan(
+            strpos($html, 'zebra'),
+            strpos($html, 'aardvark'),
+            'ascending by Kind should put aardvark above zebra',
+        );
+    }
+
+    /** @test */
+    public function the_alerts_table_ignores_a_sort_that_belongs_to_the_handsets_table(): void
+    {
+        $alerts = new InMemoryAlertRepository();
+        $alerts->create($this->alertRequest(kind: 'aardvark'), $this->createdAt());
+        $alerts->create($this->alertRequest(kind: 'zebra'), $this->createdAt() + 60);
+
+        $_GET = ['orderby' => 'last_seen', 'order' => 'asc'];
+
+        $html = $this->renderList($this->page(alerts: $alerts));
+
+        $this->assertLessThan(
+            strpos($html, 'aardvark'),
+            strpos($html, 'zebra'),
+            'the repository order — newest first — should survive untouched',
         );
     }
 
@@ -993,10 +1320,10 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    private function alertRequest(string $priority = 'normal'): AlertRequest
+    private function alertRequest(string $priority = 'normal', string $kind = 'call_request'): AlertRequest
     {
         $request = AlertRequest::fromArray([
-            'kind'     => 'call_request',
+            'kind'     => $kind,
             'source'   => 'reach',
             'title'    => 'Callback wanted',
             'priority' => $priority,
@@ -1071,16 +1398,23 @@ final class PagingDeviceRepository implements DeviceRepository
     /** @var array<int, array{limit: int, offset: int}> */
     public array $paging = [];
 
-    public function list(int $limit, int $offset): array
+    /** @var array<int, array{orderBy: string, order: string}> */
+    public array $sorting = [];
+
+    /** What countAll() reports — the Responder sort loops until it has this many. */
+    public int $total = 0;
+
+    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
     {
         $this->paging[] = ['limit' => $limit, 'offset' => $offset];
+        $this->sorting[] = ['orderBy' => $orderBy, 'order' => $order];
 
         return [];
     }
 
     public function countAll(): int
     {
-        return 0;
+        return $this->total;
     }
 
     public function create(

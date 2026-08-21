@@ -156,6 +156,13 @@ spl_autoload_register(static function (string $class) use ($scrutinySrc): void {
     }
 });
 
+// WP_List_Table, likewise a wp-admin/includes class rather than loaded core,
+// so no shared stub group covers it either. The Hand devices screen renders
+// two list tables for real inside an output buffer, so its subclasses need a
+// parent to extend. Loaded after Bootstrap::load() for the reason at the top
+// of this file: Patchwork has to come first.
+require_once __DIR__ . '/stubs/class-wp-list-table.php';
+
 // dbDelta() is the one WordPress function still defined here: it lives in
 // wp-admin/includes rather than the loaded core, so no shared stub group
 // covers it. The Wpdb repositories call it from their install() routines, and

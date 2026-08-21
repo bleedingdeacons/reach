@@ -242,6 +242,60 @@ final class WpdbDeviceRepositoryTest extends ReachTestCase
         );
     }
 
+    public function testListOrdersByARequestedColumn(): void
+    {
+        $db = new WpdbStub();
+        $repo = new WpdbDeviceRepository($db);
+
+        $repo->list(50, 0, 'last_seen_at', 'asc');
+
+        $this->assertStringContainsString('ORDER BY last_seen_at ASC, id DESC', $db->queries[0]);
+    }
+
+    public function testListTreatsAnythingOtherThanAscAsDescending(): void
+    {
+        $db = new WpdbStub();
+        $repo = new WpdbDeviceRepository($db);
+
+        $repo->list(50, 0, 'platform', 'sideways');
+
+        $this->assertStringContainsString('ORDER BY platform DESC, id DESC', $db->queries[0]);
+    }
+
+    /**
+     * @dataProvider unsortableColumns
+     */
+    public function testListRefusesAColumnItDoesNotRecognise(string $column): void
+    {
+        // ORDER BY takes no prepared placeholder, so the column can only
+        // be made safe by refusing anything not on the whitelist. An
+        // unrecognised name is not an error either: the admin screen puts
+        // two tables behind one `orderby`, so a column belonging to the
+        // other one has to mean "leave this list in its default order".
+        $db = new WpdbStub();
+        $repo = new WpdbDeviceRepository($db);
+
+        $repo->list(50, 0, $column, 'asc');
+
+        $this->assertStringContainsString(
+            'ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC',
+            $db->queries[0],
+        );
+        // And exactly one of them: a refused column must not be appended
+        // to the default clause, only dropped in favour of it.
+        $this->assertSame(1, substr_count($db->queries[0], 'ORDER BY'));
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function unsortableColumns(): array
+    {
+        return [
+            'a column of another table on the same screen' => ['acknowledged'],
+            'a real column that is not offered'            => ['token_hash'],
+            'an injection attempt'                         => ['id; DROP TABLE wp_users'],
+        ];
+    }
+
     public function testListClampsLimitAndOffset(): void
     {
         $db = new WpdbStub();

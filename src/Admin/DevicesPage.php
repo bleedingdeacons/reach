@@ -69,10 +69,15 @@ final class DevicesPage
 {
     public const PAGE_SLUG = 'reach-devices';
     private const CAPABILITY = PersonalDataPolicy::VIEW_CAPABILITY;
-    private const REVOKE_ACTION = 'reach_revoke_device';
-    private const REMOVE_ACTION = 'reach_remove_device';
+    /**
+     * The two row actions are public because the rows are rendered by
+     * {@see DevicesListTable}, while the handlers stay here with the
+     * rest of the screen's POST plumbing. Same reasoning as
+     * {@see PAGE_SLUG}.
+     */
+    public const REVOKE_ACTION = 'reach_revoke_device';
+    public const REMOVE_ACTION = 'reach_remove_device';
     private const TEST_ALERT_ACTION = 'reach_send_test_alert';
-    private const PER_PAGE = 50;
 
     /**
      * Id of the test-alert form.
@@ -122,13 +127,22 @@ final class DevicesPage
             return;
         }
 
-        $page   = max(1, (int) ($_GET['paged'] ?? 1));
-        $offset = ($page - 1) * self::PER_PAGE;
+        // WP_List_Table lives in wp-admin/includes and is not loaded on
+        // every admin request — only on the core screens that use it. A
+        // plugin screen has to ask for it, and has to ask before the two
+        // subclasses are autoloaded, or they extend a class that is not
+        // there yet.
+        if (!class_exists('WP_List_Table')) {
+            require_once ABSPATH . 'wp-admin/includes/class-wp-list-table.php';
+        }
 
-        $rows     = $this->devices->list(self::PER_PAGE, $offset);
-        $total    = $this->devices->countAll();
-        $recent   = $this->alerts->list(10, 0);
-        $notice   = $this->notice();
+        $handsets = new DevicesListTable($this->devices, $this->members, self::TEST_FORM_ID);
+        $handsets->prepare_items();
+
+        $alerts = new AlertsListTable($this->alerts, $this->members);
+        $alerts->prepare_items();
+
+        $notice = $this->notice();
         ?>
         <div class="wrap">
             <h1>Hand devices</h1>
@@ -171,141 +185,58 @@ final class DevicesPage
             </form>
 
             <h2 class="title">Enrolled handsets</h2>
-            <p class="description"><?php echo (int) $total; ?> in total.</p>
+            <p class="description"><?php echo (int) $handsets->get_pagination_arg('total_items'); ?> in total.</p>
 
-            <table class="wp-list-table widefat fixed striped" style="width: auto;">
-                <thead>
-                    <tr>
-                        <td class="manage-column column-cb check-column">
-                            <input type="checkbox" id="reach-select-all"
-                                   aria-label="Select every live handset">
-                        </td>
-                        <th scope="col" style="width: 200px;">Responder</th>
-                        <th scope="col" style="width: 200px;">Device</th>
-                        <th scope="col" style="width: 110px;">Platform</th>
-                        <th scope="col" style="width: 110px;">Delivery</th>
-                        <th scope="col" style="width: 150px;">Enrolled</th>
-                        <th scope="col" style="width: 150px;">Last seen</th>
-                        <th scope="col" style="width: 140px;">Status</th>
-                        <th scope="col" style="width: 180px;">&nbsp;</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($rows === []) : ?>
-                        <tr><td colspan="9">No handsets have been enrolled yet.</td></tr>
-                    <?php else :
-                        foreach ($rows as $device) : ?>
-                        <tr>
-                            <th scope="row" class="check-column">
-                                <?php if (!$device->isRevoked()) : ?>
-                                <input type="checkbox"
-                                       form="<?php echo esc_attr(self::TEST_FORM_ID); ?>"
-                                       name="device_ids[]"
-                                       class="reach-device-select"
-                                       value="<?php echo (int) $device->id; ?>"
-                                       aria-label="<?php echo esc_attr($this->selectLabel($device)); ?>">
-                                <?php endif; ?>
-                            </th>
-                            <td><?php echo esc_html($this->responderName($device)); ?></td>
-                            <td><?php echo esc_html($device->label !== '' ? $device->label : '—'); ?></td>
-                            <td><?php echo esc_html($device->platform); ?></td>
-                            <td>
-                                <?php echo $device->wantsPush()
-                                    ? 'Push'
-                                    : '<span title="This handset collects alerts by polling.">Poll</span>'; ?>
-                            </td>
-                            <td><?php echo esc_html($this->when($device->createdAt)); ?></td>
-                            <td><?php echo esc_html($device->lastSeenAt > 0 ? $this->when($device->lastSeenAt) : '—'); ?></td>
-                            <td>
-                                <?php if ($device->isRevoked()) : ?>
-                                    <span style="color:#b32d2e;">Revoked</span>
-                                <?php else : ?>
-                                    <span style="color:#008a20;">Live</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php if (!$device->isRevoked()) : ?>
-                                <form method="post" style="display:inline-block;"
-                                      action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
-                                      onsubmit="return confirm('Revoke this handset? It will stop receiving alerts immediately and the responder will need to sign in again.');">
-                                    <input type="hidden" name="action" value="<?php echo esc_attr(self::REVOKE_ACTION); ?>">
-                                    <input type="hidden" name="device_id" value="<?php echo (int) $device->id; ?>">
-                                    <?php wp_nonce_field(self::REVOKE_ACTION . '_' . $device->id); ?>
-                                    <button type="submit" class="button button-small">Revoke</button>
-                                </form>
-                                <?php endif; ?>
-                                <form method="post" style="display:inline-block;"
-                                      action="<?php echo esc_url(admin_url('admin-post.php')); ?>"
-                                      onsubmit="return confirm('Remove this handset? It will be told to sign out, and its record here is deleted rather than kept as history. This cannot be undone.');">
-                                    <input type="hidden" name="action" value="<?php echo esc_attr(self::REMOVE_ACTION); ?>">
-                                    <input type="hidden" name="device_id" value="<?php echo (int) $device->id; ?>">
-                                    <?php wp_nonce_field(self::REMOVE_ACTION . '_' . $device->id); ?>
-                                    <button type="submit" class="button button-small button-link-delete">Remove</button>
-                                </form>
-                            </td>
-                        </tr>
-                        <?php endforeach;
-                    endif; ?>
-                </tbody>
-            </table>
+            <?php $handsets->display(); ?>
 
             <script>
                 // Tick-all for the handset selection. Written here rather
-                // than leaned on from core's list-table JS, which binds
-                // only to tables core itself rendered.
+                // than left to core's list-table JS, which this screen
+                // cannot rely on: the boxes belong to the test-alert form
+                // by their `form` attribute and sit in one of two tables
+                // on the page, so the binding is scoped to this table by
+                // class rather than to every list table on the screen.
                 (function () {
-                    var all = document.getElementById('reach-select-all');
-                    if (!all) {
+                    var table = document.querySelector('table.reach-handsets');
+                    if (!table) {
                         return;
                     }
-                    var boxes = document.querySelectorAll('.reach-device-select');
-                    all.addEventListener('change', function () {
-                        boxes.forEach(function (box) {
-                            box.checked = all.checked;
+
+                    var boxes = table.querySelectorAll('.reach-device-select');
+                    // Core renders one tick-all in the head and another in
+                    // the foot, and they have to agree with each other.
+                    var alls = table.querySelectorAll('.check-column input[type="checkbox"]:not(.reach-device-select)');
+                    if (boxes.length === 0 || alls.length === 0) {
+                        return;
+                    }
+
+                    function setAll(checked) {
+                        alls.forEach(function (all) {
+                            all.checked = checked;
+                        });
+                    }
+
+                    alls.forEach(function (all) {
+                        all.addEventListener('change', function () {
+                            boxes.forEach(function (box) {
+                                box.checked = all.checked;
+                            });
+                            setAll(all.checked);
                         });
                     });
+
                     boxes.forEach(function (box) {
                         box.addEventListener('change', function () {
-                            all.checked = Array.prototype.every.call(boxes, function (b) {
+                            setAll(Array.prototype.every.call(boxes, function (b) {
                                 return b.checked;
-                            });
+                            }));
                         });
                     });
                 })();
             </script>
 
             <h2 class="title">Recent alerts</h2>
-            <table class="wp-list-table widefat fixed striped" style="width: auto;">
-                <thead>
-                    <tr>
-                        <th scope="col" style="width: 150px;">When</th>
-                        <th scope="col" style="width: 140px;">Kind</th>
-                        <th scope="col" style="width: 120px;">Source</th>
-                        <th scope="col" style="width: 300px;">Title</th>
-                        <th scope="col" style="width: 200px;">Acknowledged by</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($recent === []) : ?>
-                        <tr><td colspan="5">No alerts have been raised yet.</td></tr>
-                    <?php else :
-                        foreach ($recent as $alert) : ?>
-                        <tr>
-                            <td><?php echo esc_html($this->when($alert->createdAt)); ?></td>
-                            <td><code><?php echo esc_html($alert->kind); ?></code></td>
-                            <td><?php echo esc_html($alert->source); ?></td>
-                            <td>
-                                <?php echo esc_html($alert->title); ?>
-                                <?php if ($alert->isUrgent()) : ?>
-                                    <strong style="color:#b32d2e;">(urgent)</strong>
-                                <?php endif; ?>
-                            </td>
-                            <td><?php echo esc_html($this->acknowledgedBy($alert)); ?></td>
-                        </tr>
-                        <?php endforeach;
-                    endif; ?>
-                </tbody>
-            </table>
+            <?php $alerts->display(); ?>
         </div>
         <?php
     }
@@ -513,66 +444,9 @@ final class DevicesPage
             : 'an administrator';
     }
 
-    /**
-     * The accessible label for a row's tick box.
-     *
-     * Every row carrying the same label leaves a screen-reader user hearing
-     * "select this handset" eight times with nothing to tell the rows apart.
-     * The id is always included because it is the only thing guaranteed
-     * unique — two handsets may share a label, or have none.
-     */
-    private function selectLabel(Device $device): string
-    {
-        return $device->label !== ''
-            ? sprintf('Select handset %d, %s, for a test alert', $device->id, $device->label)
-            : sprintf('Select handset %d for a test alert', $device->id);
-    }
 
-    /**
-     * The responder a handset belongs to, by name where Unity knows one
-     * and by email otherwise — matching how the call-requests list
-     * identifies people.
-     */
-    private function responderName(Device $device): string
-    {
-        $member = $this->members->findByEmail($device->memberEmail);
-        if ($member !== null) {
-            $name = trim($member->getAnonymousName());
-            if ($name !== '') {
-                return $name;
-            }
-        }
 
-        return $device->memberEmail;
-    }
 
-    /**
-     * A short summary of who has alarmed for an alert — the answer to
-     * "did this reach anybody".
-     */
-    private function acknowledgedBy(Alert $alert): string
-    {
-        $acks = $this->alerts->acknowledgementsFor($alert->id);
-        if ($acks === []) {
-            return 'Nobody yet';
-        }
-
-        $names = [];
-        foreach ($acks as $ack) {
-            $member = $this->members->findByEmail($ack['member_email']);
-            $name = $member !== null ? trim($member->getAnonymousName()) : '';
-            $names[] = $name !== '' ? $name : $ack['member_email'];
-        }
-
-        return implode(', ', array_unique($names));
-    }
-
-    private function when(int $timestamp): string
-    {
-        return function_exists('wp_date')
-            ? (string) wp_date('Y-m-d H:i', $timestamp)
-            : gmdate('Y-m-d H:i', $timestamp) . ' UTC';
-    }
 
     /**
      * The admin notice for whatever the last action did, if anything.
