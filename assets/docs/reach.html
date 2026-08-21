@@ -1003,6 +1003,12 @@
         <p>Every handset that has ever been enrolled, live ones and revoked ones together — the list is a record
         of what has been enrolled, not only of what is enrolled now.</p>
 
+        <p>Both tables on this page are ordinary WordPress lists: click a column heading to sort by it, click
+        again to reverse it. Every sort covers the whole list, not just the page you are looking at. The handsets
+        list opens with live handsets first and the newest first within each group, and pages fifty at a time.
+        <strong>Responder</strong> sorts by the name shown in that column, so a responder's handsets sit together
+        under their name — where the column falls back to an email address, that address is what it sorts under.</p>
+
         <div class="screen-mock">
             <div class="mock-bar">
                 <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
@@ -1017,17 +1023,17 @@
                     </thead>
                     <tbody>
                         <tr>
-                            <td>Sarah T.</td><td>Pixel 8</td><td>android</td><td>Push</td>
+                            <td><a href="#">Sarah T.</a></td><td>Pixel 8</td><td>android</td><td>Push</td>
                             <td>2026-07-02 19:14</td><td>2026-08-16 08:40</td>
                             <td style="color:#008a20;">Live</td><td><span class="mock-btn">Revoke</span></td>
                         </tr>
                         <tr>
-                            <td>Mike R.</td><td>Office PC</td><td>windows</td><td>Poll</td>
+                            <td><a href="#">Mike R.</a></td><td>Office PC</td><td>windows</td><td>Poll</td>
                             <td>2026-07-11 10:02</td><td>2026-08-16 08:12</td>
                             <td style="color:#008a20;">Live</td><td><span class="mock-btn">Revoke</span></td>
                         </tr>
                         <tr>
-                            <td>Mike R.</td><td>Old iPhone</td><td>ios</td><td>Push</td>
+                            <td><a href="#">Mike R.</a></td><td>Old iPhone</td><td>ios</td><td>Push</td>
                             <td>2026-03-04 21:37</td><td>2026-06-28 07:55</td>
                             <td style="color:#b32d2e;">Revoked</td><td></td>
                         </tr>
@@ -1040,7 +1046,7 @@
             <table class="status-table">
                 <thead><tr><th>Column</th><th>What it tells you</th></tr></thead>
                 <tbody>
-                <tr><td class="field-name">Responder</td><td>Who the handset belongs to, by their anonymous name where the member record has one, and by email otherwise. An email here usually means the record was deleted or the address no longer matches.</td></tr>
+                <tr><td class="field-name">Responder</td><td>Who the handset belongs to, by their anonymous name where the member record has one, and by email otherwise. The name links straight to that member record. An email here usually means the record was deleted or the address no longer matches — there is nothing to link to, so it is shown plain. A name shown plain means something different: you don't have permission to edit that member.</td></tr>
                 <tr><td class="field-name">Device</td><td>The name the app reported — a phone model, a machine name. Cosmetic; it exists so you can tell one of somebody's handsets from another.</td></tr>
                 <tr><td class="field-name">Platform</td><td><code>android</code>, <code>ios</code>, <code>windows</code>, <code>macos</code>.</td></tr>
                 <tr><td class="field-name">Delivery</td><td><span class="badge badge-push">Push</span> — this handset has a working push registration and can be rung instantly. <span class="badge badge-poll">Poll</span> — it collects alerts when it checks in. Every Windows and macOS handset is Poll; a phone showing Poll is worth investigating (see <a href="#troubleshooting">Troubleshooting</a>).</td></tr>
@@ -1082,6 +1088,13 @@
         <p>Afterwards, look at <strong>Recent alerts</strong> further down the same page: the test appears there
         with <strong>Acknowledged by</strong> filling in as handsets alarm. That is your proof of delivery, not
         the "Test alert sent" notice, which only means Reach accepted it.</p>
+
+        <p>That table shows the ten most recent alerts and its headings sort too — including
+        <strong>Acknowledged by</strong>, which is the quick way to pull the unanswered ones together after
+        ringing a selection of handsets. It sorts the ten on the screen, not the whole alert history, which is
+        short-lived in any case: alerts are purged an hour after they expire. The responders named there link to
+        their member records, the same way the <strong>Responder</strong> column does, and one person answering
+        from two handsets is named once.</p>
 
         <div class="callout warning">
             <span class="callout-icon">⚠️</span>

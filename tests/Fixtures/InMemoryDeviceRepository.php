@@ -132,9 +132,34 @@ final class InMemoryDeviceRepository implements DeviceRepository
         ));
     }
 
-    public function list(int $limit, int $offset): array
+    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
     {
-        return array_slice($this->devices, $offset, $limit);
+        $compare = match (strtolower($orderBy)) {
+            'member_email'  => static fn(Device $a, Device $b): int => strcmp($a->memberEmail, $b->memberEmail),
+            'label'         => static fn(Device $a, Device $b): int => strcmp($a->label, $b->label),
+            'platform'      => static fn(Device $a, Device $b): int => strcmp($a->platform, $b->platform),
+            'push_provider' => static fn(Device $a, Device $b): int => strcmp($a->pushProvider, $b->pushProvider),
+            'created_at'    => static fn(Device $a, Device $b): int => $a->createdAt <=> $b->createdAt,
+            'last_seen_at'  => static fn(Device $a, Device $b): int => $a->lastSeenAt <=> $b->lastSeenAt,
+            'revoked_at'    => static fn(Device $a, Device $b): int => ($a->revokedAt ?? 0) <=> ($b->revokedAt ?? 0),
+            default         => null,
+        };
+
+        $devices = $this->devices;
+
+        if ($compare !== null) {
+            $descending = strtolower($order) !== 'asc';
+
+            usort($devices, static function (Device $a, Device $b) use ($compare, $descending): int {
+                $result = $compare($a, $b);
+
+                return $result !== 0
+                    ? ($descending ? -$result : $result)
+                    : $b->id <=> $a->id;
+            });
+        }
+
+        return array_slice($devices, $offset, $limit);
     }
 
     public function countAll(): int

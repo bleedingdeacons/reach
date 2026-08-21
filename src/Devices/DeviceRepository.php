@@ -60,13 +60,27 @@ interface DeviceRepository
     public function findAllLive(): array;
 
     /**
-     * Newest-first page of devices for the admin list, revoked rows
-     * included — the admin screen shows history, unlike the delivery
-     * paths which only ever see live rows.
+     * A page of devices for the admin list, revoked rows included — the
+     * admin screen shows history, unlike the delivery paths which only
+     * ever see live rows.
+     *
+     * $orderBy names one of this repository's own columns:
+     * `member_email`, `label`, `platform`, `push_provider`,
+     * `created_at`, `last_seen_at` or `revoked_at`. Anything else, the
+     * empty string included, means the default order — live handsets
+     * first, newest first within each group. $order is `asc` or `desc`;
+     * anything else reads as `desc`.
+     *
+     * <b>A column name rather than a screen's column key.</b> ORDER BY
+     * cannot take a prepared placeholder, so the only safe way to accept
+     * a sort from a request is a whitelist, and the whitelist has to sit
+     * next to the SQL it guards: an implementation can only vouch for
+     * its own columns. The admin list table maps its column keys onto
+     * these names on the way in.
      *
      * @return array<int, Device>
      */
-    public function list(int $limit, int $offset): array;
+    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array;
 
     public function countAll(): int;
 

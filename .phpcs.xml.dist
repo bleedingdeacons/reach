@@ -26,9 +26,20 @@
         <exclude name="PSR1.Files.SideEffects"/>
     </rule>
 
-    <!-- Tests use snake_case BDD method names (it_returns_null_when_absent). -->
+    <!-- Tests use snake_case BDD method names (it_returns_null_when_absent).
+         The admin list tables are snake_case for a different reason: they
+         override WP_List_Table, whose contract is prepare_items(),
+         get_columns(), column_default(). An override cannot be renamed. -->
     <rule ref="PSR1.Methods.CamelCapsMethodName">
         <exclude-pattern>tests/*</exclude-pattern>
+        <exclude-pattern>src/Admin/*ListTable\.php</exclude-pattern>
+    </rule>
+
+    <!-- The WP_List_Table stand-in reproduces core's own property names,
+         $_args and $_column_headers among them. Renaming them would stop it
+         standing in for the thing it exists to stand in for. -->
+    <rule ref="PSR2.Classes.PropertyDeclaration.Underscore">
+        <exclude-pattern>tests/stubs/*</exclude-pattern>
     </rule>
 
     <!-- Test doubles, fakes and WP_* stubs are deliberately global, deliberately not
