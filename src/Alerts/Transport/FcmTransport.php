@@ -12,7 +12,10 @@ use Reach\Alerts\Alert;
 use Reach\Alerts\Fcm\FcmClient;
 use Reach\Alerts\Fcm\ServiceAccount;
 use Reach\Core\Settings;
+use Reach\Alerts\PayloadCipher;
+use Reach\Logger\HasLogger;
 use Reach\Devices\Device;
+use Reach\Devices\DeviceRepository;
 
 /**
  * Delivers alerts through Firebase Cloud Messaging.
@@ -64,6 +67,8 @@ use Reach\Devices\Device;
  */
 final class FcmTransport implements AlertTransport
 {
+    use HasLogger;
+
     /**
      * Notification channel id on Android. Must match the channel Hand
      * creates, or the alert lands on the default channel with the
@@ -86,9 +91,15 @@ final class FcmTransport implements AlertTransport
     private const ANDROID_SOUND = 'reach_alert';
     private const IOS_SOUND = 'reach_alert.wav';
 
+    protected static function logChannel(): string
+    {
+        return 'reach';
+    }
+
     public function __construct(
         private readonly FcmClient $client,
         private readonly Settings $settings,
+        private readonly DeviceRepository $devices,
     ) {
     }
 
@@ -115,16 +126,28 @@ final class FcmTransport implements AlertTransport
             return false;
         }
 
-        return $this->client->send($account, $this->message($alert, $device));
+        $message = $this->message($alert, $device);
+        if ($message === null) {
+            return false;
+        }
+
+        return $this->client->send($account, $message);
     }
 
     /**
      * Build the FCM `message` body for one alert to one device.
      *
-     * @return array<string, mixed>
+     * Null when this handset cannot be sent to. See {@see dataFor()}.
+     *
+     * @return array<string, mixed>|null
      */
-    private function message(Alert $alert, Device $device): array
+    private function message(Alert $alert, Device $device): ?array
     {
+        $data = $this->dataFor($alert, $device);
+        if ($data === null) {
+            return null;
+        }
+
         $ttlSeconds = max(1, $alert->expiresAt - time());
 
         return [
@@ -132,7 +155,7 @@ final class FcmTransport implements AlertTransport
             // Top-level data only. See the class docblock: adding a
             // `notification` here would stop Android's app-side handler
             // from ever running.
-            'data'  => $this->data($alert),
+            'data'  => $data,
             'android' => [
                 'priority' => 'high',
                 'ttl'      => $ttlSeconds . 's',
@@ -152,6 +175,76 @@ final class FcmTransport implements AlertTransport
                 ],
             ],
         ];
+    }
+
+    /**
+     * The data block for one handset, encrypted where that handset can
+     * read it.
+     *
+     * <b>Android only, and only with a key.</b> An iOS handset is served
+     * the plaintext block it has always been served: its lock screen is
+     * rendered by the system from the `aps` dictionary, so ciphertext
+     * there would put base64 on the lock screen rather than hide
+     * anything, and the fix for that is a Notification Service Extension
+     * that does not exist yet. A handset enrolled before payload keys
+     * existed has no key, and is likewise served plaintext until it
+     * enrols again.
+     *
+     * <b>An Android handset that cannot be encrypted for is not sent
+     * to.</b> Null rather than a plaintext fallback, and the refusal is
+     * logged as an error so it surfaces on the Sentinel dashboard rather
+     * than only in a file nobody opens.
+     *
+     * This is a deliberate reversal of the obvious instinct, which is
+     * that a degraded alert beats no alert. The reasoning against it: a
+     * silent downgrade means a handset quietly receiving caller-adjacent
+     * text in the clear through Google for as long as nobody notices,
+     * and nobody would, because everything keeps working. A refusal is
+     * loud, appears on the dashboard, and is fixed by the responder
+     * signing in again — which is a minute's work and the same recovery
+     * as a lost token.
+     *
+     * @return array<string, string>|null
+     */
+    private function dataFor(Alert $alert, Device $device): ?array
+    {
+        if ($device->platform !== 'android') {
+            return $this->data($alert);
+        }
+
+        $key = $this->devices->payloadKeyFor($device->id);
+        if ($key === '') {
+            self::logError('Handset has no payload key; alert not sent', [
+                'device'    => $device->id,
+                'responder' => $device->memberEmail,
+                'alert'     => $alert->id,
+                'remedy'    => 'The responder should sign in again to be issued one.',
+            ]);
+
+            return null;
+        }
+
+        $sealed = PayloadCipher::seal($alert, $key);
+        if ($sealed === '') {
+            // The same outcome for the same reason: this handset cannot be
+            // sent to in the only form it should be sent to. A key that
+            // will not seal is a key that has been corrupted in storage,
+            // and re-enrolling replaces it.
+            self::logError('Handset payload key could not be used; alert not sent', [
+                'device'    => $device->id,
+                'responder' => $device->memberEmail,
+                'alert'     => $alert->id,
+                'remedy'    => 'The responder should sign in again to be issued a new key.',
+            ]);
+
+            return null;
+        }
+
+        $data = $this->data($alert);
+        unset($data['title'], $data['body'], $data['reference']);
+        $data['ciphertext'] = $sealed;
+
+        return $data;
     }
 
     /**
