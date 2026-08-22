@@ -121,6 +121,38 @@ final class WpdbDeviceRepository implements DeviceRepository
     ): Device {
         $table = self::tableName($this->wpdb);
 
+        // Encrypted before the insert rather than inside it, because the
+        // failure has to be able to stop the enrolment.
+        //
+        // Cipher::encrypt() reports failure by answering '', which is also
+        // exactly what a handset enrolled before this column existed
+        // stores. Writing it would enrol a device the server believes has
+        // no key while the handset holds one it believes is live — and the
+        // handset would have no way to find out, because the key is
+        // returned to it in the same response that reported success. The
+        // two ends would then disagree about whether payloads are
+        // encrypted, which is worse than not enrolling at all.
+        $storedKey = '';
+        if ($payloadKey !== '') {
+            $storedKey = $this->cipher->encrypt($payloadKey);
+
+            // Not covered by a test: openssl_encrypt() is an internal
+            // function, this project has no patchwork.json making
+            // internals redefinable, and there is no input to
+            // aes-256-gcm with a valid 32-byte key that makes it fail.
+            // Instrumenting every test run to reach one defensive branch
+            // costs more than it proves. The invariant that matters —
+            // that a device reported as enrolled always has a readable
+            // key — is covered by
+            // testTheIssuedPayloadKeyIsTheOneStoredAgainstTheDevice.
+            if ($storedKey === '') {
+                throw new RuntimeException(
+                    'The device could not be enrolled: its payload key could not be encrypted. '
+                    . 'Check that the openssl extension is available and AUTH_KEY is set.'
+                );
+            }
+        }
+
         $inserted = $this->wpdb->insert(
             $table,
             [
@@ -131,7 +163,7 @@ final class WpdbDeviceRepository implements DeviceRepository
                 'platform'      => $platform,
                 'push_provider' => $pushProvider,
                 'push_token'    => $pushToken,
-                'payload_key'   => $payloadKey === '' ? '' : $this->cipher->encrypt($payloadKey),
+                'payload_key'   => $storedKey,
                 'created_at'    => $now,
                 'last_seen_at'  => $now,
             ],
