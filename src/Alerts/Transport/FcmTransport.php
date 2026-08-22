@@ -181,14 +181,23 @@ final class FcmTransport implements AlertTransport
      * The data block for one handset, encrypted where that handset can
      * read it.
      *
-     * <b>Android only, and only with a key.</b> An iOS handset is served
-     * the plaintext block it has always been served: its lock screen is
-     * rendered by the system from the `aps` dictionary, so ciphertext
-     * there would put base64 on the lock screen rather than hide
-     * anything, and the fix for that is a Notification Service Extension
-     * that does not exist yet. A handset enrolled before payload keys
-     * existed has no key, and is likewise served plaintext until it
-     * enrols again.
+     * <b>Android only, for now.</b> An iOS lock screen is rendered by
+     * the system from the `aps` dictionary before the app sees anything,
+     * so ciphertext there would put base64 on the lock screen rather
+     * than hide anything. The way round it is a Notification Service
+     * Extension in Hand, which is wanted and not yet built: it needs its
+     * own project, an App Group entitlement the app does not have, the
+     * payload key moved to a shared keychain, and Apple provisioning —
+     * none of it doable without a Mac and a developer account to hand.
+     *
+     * So iOS is waiting on hardware rather than on a decision. When the
+     * extension ships, this branch collapses and the transport encrypts
+     * for both platforms.
+     *
+     * Until then, what keeps iOS survivable is the rule that governed
+     * every handset before any of this existed: an alert carries no
+     * personal data. On iOS that rule is currently the only protection
+     * rather than the second layer, which is the reason to finish this.
      *
      * <b>An Android handset that cannot be encrypted for is not sent
      * to.</b> Null rather than a plaintext fallback, and the refusal is
