@@ -54,6 +54,16 @@ final class Device
         public readonly int $createdAt,
         public readonly int $lastSeenAt = 0,
         public readonly ?int $revokedAt = null,
+        /**
+         * When this handset last reported it could not read an alert, or
+         * null if it never has.
+         *
+         * Reported by the handset rather than inferred: Reach can see
+         * that a row has no key, but not that a handset has lost its own
+         * copy. From here such a handset looks healthy right up until an
+         * alert it cannot open.
+         */
+        public readonly ?int $keyFaultAt = null,
     ) {
     }
 
@@ -66,6 +76,12 @@ final class Device
      * off. Nothing authenticates against it: the repository's lookup by
      * token hash refuses revoked rows outright.
      */
+    /** Whether this handset has told us it cannot read its alerts. */
+    public function hasKeyFault(): bool
+    {
+        return $this->keyFaultAt !== null;
+    }
+
     public function isRevoked(): bool
     {
         return $this->revokedAt !== null;

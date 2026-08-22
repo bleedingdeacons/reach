@@ -328,12 +328,39 @@ final class DevicesListTable extends WP_List_Table
                 : '<span title="This handset collects alerts by polling.">Poll</span>',
             'enrolled'  => esc_html($this->when($item->createdAt)),
             'last_seen' => esc_html($item->lastSeenAt > 0 ? $this->when($item->lastSeenAt) : '—'),
-            'status'    => $item->isRevoked()
-                ? '<span style="color:#b32d2e;">Revoked</span>'
-                : '<span style="color:#008a20;">Live</span>',
+            'status'    => $this->status($item),
             'actions'   => $this->rowForms($item),
             default     => '',
         };
+    }
+
+    /**
+     * Live, revoked, or live but unable to read its alerts.
+     *
+     * <b>A handset with a key fault is worse than a revoked one, and
+     * looks better.</b> Revoked is a decision somebody made and can see
+     * the consequences of. A key fault is a handset still on the rota,
+     * still counted as covering a shift, that cannot read what it is sent
+     * — and the only other symptom is a responder who does not answer.
+     * So it reads as a warning here rather than being folded into Live.
+     *
+     * The date is included because "when" is what tells an admin whether
+     * this is a handset that broke months ago and was quietly replaced,
+     * or one that broke during last night's shift.
+     */
+    private function status(Device $device): string
+    {
+        if ($device->isRevoked()) {
+            return '<span style="color:#b32d2e;">Revoked</span>';
+        }
+
+        if ($device->hasKeyFault()) {
+            return '<span style="color:#8a6d00;" title="This handset reported it could not read an alert. '
+                . 'The responder should sign in again.">Cannot read alerts</span><br>'
+                . '<small>' . esc_html($this->when((int) $device->keyFaultAt)) . '</small>';
+        }
+
+        return '<span style="color:#008a20;">Live</span>';
     }
 
     /**

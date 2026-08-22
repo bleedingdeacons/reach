@@ -223,6 +223,65 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
+    public function a_handset_that_cannot_read_its_alerts_is_flagged_rather_than_shown_live(): void
+    {
+        // Worse than revoked, and looks better: this handset is still on
+        // the rota and still counted as covering a shift, but cannot read
+        // what it is sent. The only other symptom is a responder who does
+        // not answer.
+        $page = $this->page(devices: $this->devicesWith(
+            $this->device(id: 7, keyFaultAt: $this->revokedAt()),
+        ));
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Cannot read alerts', $html);
+        $this->assertStringNotContainsString('>Live<', $html);
+    }
+
+    /** @test */
+    public function a_healthy_handset_is_not_flagged(): void
+    {
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringNotContainsString('Cannot read alerts', $html);
+        $this->assertStringContainsString('Live', $html);
+    }
+
+    /** @test */
+    public function a_superseded_handset_keeps_its_warning_until_it_is_revoked(): void
+    {
+        // Signing in again does not repair a faulted row — it creates a
+        // new one, and the old row's report stays true of the old row.
+        // What retires the warning is revoking or removing it, and
+        // enrolment already revokes the oldest rows past the handset cap.
+        $page = $this->page(devices: $this->devicesWith(
+            $this->device(id: 7, keyFaultAt: $this->revokedAt()),
+            $this->device(id: 8),
+        ));
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Cannot read alerts', $html);
+        $this->assertStringContainsString('Live', $html);
+    }
+
+    /** @test */
+    public function a_revoked_handset_reads_as_revoked_even_with_a_key_fault(): void
+    {
+        // Revoked is the more final of the two and the one an admin acted
+        // on; a handset that is off the rota cannot also be a rota problem.
+        $page = $this->page(devices: $this->devicesWith(
+            $this->device(id: 7, revokedAt: $this->revokedAt(), keyFaultAt: $this->revokedAt()),
+        ));
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Revoked', $html);
+        $this->assertStringNotContainsString('Cannot read alerts', $html);
+    }
+
+    /** @test */
     public function a_revoked_handset_is_shown_as_history_with_no_revoke_button(): void
     {
         // Rows are kept rather than deleted so the list is a record of
@@ -1689,6 +1748,7 @@ final class DevicesPageTest extends ReachTestCase
         string $pushToken = 'fcm-token',
         int $lastSeenAt = 0,
         ?int $revokedAt = null,
+        ?int $keyFaultAt = null,
     ): Device {
         return new Device(
             id: $id,
@@ -1701,6 +1761,7 @@ final class DevicesPageTest extends ReachTestCase
             createdAt: $this->createdAt(),
             lastSeenAt: $lastSeenAt,
             revokedAt: $revokedAt,
+            keyFaultAt: $keyFaultAt,
         );
     }
 
@@ -1829,6 +1890,12 @@ final class PagingDeviceRepository implements DeviceRepository
     {
         return '';
     }
+
+    public function markKeyFault(int $id, int $now): bool
+    {
+        return false;
+    }
+
 
     public function findByTokenHash(string $tokenHash): ?Device
     {
