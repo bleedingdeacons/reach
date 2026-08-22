@@ -694,7 +694,11 @@ final class DevicesPage
      */
     private function testAlertFromRequest(): string
     {
-        check_admin_referer(self::TEST_ALERT_ACTION);
+        // ACTIONS_NONCE, not TEST_ALERT_ACTION: the test buttons and the
+        // message buttons share one form and therefore one nonce field.
+        // Verifying the handler's own action name here instead sent every
+        // test alert to "Are you sure you want to do this?".
+        check_admin_referer(self::ACTIONS_NONCE);
 
         $who = $this->adminName();
 
@@ -798,13 +802,18 @@ final class DevicesPage
 
     /**
      * The admin notice for whatever the last action did, if anything.
+     *
+     * These are plain text, not markup: the whole string goes through
+     * esc_html() below. An HTML entity written here reaches the admin as
+     * the literal characters &mdash; so punctuation is the character
+     * itself.
      */
     private function notice(): string
     {
         $messages = [
             'revoked'       => ['success', 'Handset revoked. It will stop receiving alerts immediately.'],
             'revoke_failed' => ['error', 'That handset could not be revoked — it may already have been.'],
-            'removed'       => ['success', 'Handset removed. Its record here is gone, and a notice has been sent telling it so &mdash; a handset that is out of signal will simply stop authenticating instead.'],
+            'removed'       => ['success', 'Handset removed. Its record here is gone, and a notice has been sent telling it so — a handset that is out of signal will simply stop authenticating instead.'],
             'remove_failed' => ['error', 'That handset could not be removed — it may already have been.'],
             'test_sent'     => ['success', 'Test alert sent. Every live handset should be ringing.'],
             'test_sent_selected' => ['success', 'Test alert sent. The selected handsets should be ringing.'],
@@ -813,7 +822,7 @@ final class DevicesPage
             'message_sent'  => ['success', 'Message sent. Every live handset should be ringing.'],
             'message_sent_selected' => ['success', 'Message sent. The selected handsets should be ringing.'],
             'message_none_selected' => ['warning', 'Tick at least one live handset before sending to a selection.'],
-            'message_no_subject'    => ['warning', 'A message needs a subject &mdash; that is the line the responder reads first.'],
+            'message_no_subject'    => ['warning', 'A message needs a subject — that is the line the responder reads first.'],
             'message_no_scope'      => ['warning', 'Choose who the message goes to: every live handset, or the ticked ones.'],
             'message_failed'        => ['error', 'The message could not be sent. Check the Reach log for the reason.'],
         ];
