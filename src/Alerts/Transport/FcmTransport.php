@@ -67,6 +67,8 @@ use Reach\Devices\DeviceRepository;
  */
 final class FcmTransport implements AlertTransport
 {
+    use HasLogger;
+
     /**
      * Notification channel id on Android. Must match the channel Hand
      * creates, or the alert lands on the default channel with the
@@ -88,8 +90,6 @@ final class FcmTransport implements AlertTransport
      */
     private const ANDROID_SOUND = 'reach_alert';
     private const IOS_SOUND = 'reach_alert.wav';
-
-    use HasLogger;
 
     protected static function logChannel(): string
     {
