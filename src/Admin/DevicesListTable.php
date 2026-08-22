@@ -97,6 +97,7 @@ final class DevicesListTable extends WP_List_Table
         MemberRepository $members,
         private readonly string $testFormId,
         private readonly bool $canSend = true,
+        private readonly bool $canManage = true,
     ) {
         $this->responders = new ResponderPresenter($members);
 
@@ -108,10 +109,13 @@ final class DevicesListTable extends WP_List_Table
     }
 
     /**
-     * The tick column is offered only to a reader who can actually send.
-     * Its whole purpose is choosing who a test or a message goes to, so
-     * for anyone without that capability it is a column of controls
-     * wired to a form that is not on the page.
+     * Two columns exist only for readers who can act on a row.
+     *
+     * The tick column's whole purpose is choosing who a test or a
+     * message goes to, so without the send capability it is a column of
+     * controls wired to a form that is not on the page. The actions
+     * column holds nothing but the Revoke and Remove buttons, so without
+     * the manage capability it is an empty column with a blank heading.
      *
      * @return array<string, string>
      */
@@ -126,7 +130,7 @@ final class DevicesListTable extends WP_List_Table
             'enrolled'  => 'Enrolled',
             'last_seen' => 'Last seen',
             'status'    => 'Status',
-            'actions'   => '&nbsp;',
+            'actions'   => $this->canManage ? '&nbsp;' : '',
         ], static fn(string $label): bool => $label !== '');
     }
 
@@ -339,9 +343,17 @@ final class DevicesListTable extends WP_List_Table
      * change state, so both post with a nonce of their own. Revoke is
      * absent from a row that is already revoked — re-revoking would only
      * move a timestamp this list exists to preserve.
+     *
+     * Unreachable without the manage capability, because the column is
+     * dropped entirely; the guard here is belt and braces, and the one
+     * that counts is in {@see DevicesPage::handleRevoke()}.
      */
     private function rowForms(Device $device): string
     {
+        if (!$this->canManage) {
+            return '';
+        }
+
         $post = esc_url(admin_url('admin-post.php'));
         $html = '';
 

@@ -13,15 +13,17 @@ use WP_Role;
 /**
  * Reach's own capabilities.
  *
- * <b>Why one exists at all.</b> The Hand devices screen used to gate
+ * <b>Why they exist at all.</b> The Hand devices screen used to gate
  * everything on {@see \Scrutiny\Privacy\PersonalDataPolicy::VIEW_CAPABILITY},
  * because the list names the responder each handset belongs to and that
- * is a personal-data read. Sending is not a read. Pressing a button here
- * makes every enrolled handset on the rota ring, wherever those phones
- * are and whatever time it is, and "may see an unmasked email address"
- * is not the same permission as that. Scrutiny's other capabilities are
- * no better a fit — they are about editing personal data and changing a
- * responder's certification — so this is Reach's own.
+ * is a personal-data read. Nothing else on that screen is a read.
+ * Sending makes every enrolled handset on the rota ring, wherever those
+ * phones are and whatever time it is; revoking cuts one off, possibly
+ * mid-shift; removing erases its record. "May see an unmasked email
+ * address" is not the same permission as any of those. Scrutiny's other
+ * capabilities are no better a fit — they are about editing personal
+ * data and changing a responder's certification — so these are Reach's
+ * own.
  *
  * <b>Granted on load, not only on activation.</b> The same trap
  * {@see Schema} documents: WordPress fires the activation hook on
@@ -39,16 +41,26 @@ final class Capabilities
     /**
      * May raise an alert from the admin — the test alert and the
      * administrator's own message.
-     *
-     * Deliberately not a capability to revoke or remove a handset. Those
-     * stay on Scrutiny's view capability where they have always been;
-     * moving them is a separate decision about who administers the rota,
-     * not part of separating "may read" from "may ring".
      */
     public const SEND_ALERTS = 'reach_send_alerts';
 
+    /**
+     * May revoke or remove an enrolled handset.
+     *
+     * Separate from {@see SEND_ALERTS} because they are different powers
+     * over different things: one rings phones, the other takes a
+     * responder off the rota. Someone trusted to tell the duty team the
+     * line is down is not automatically someone who should be able to
+     * cut a handset off mid-shift, and the reverse holds too.
+     *
+     * Both are separate from Scrutiny's view capability, which is what
+     * these used to sit on. Revoking is not a personal-data read; the
+     * screen happens to be gated on one because it names responders.
+     */
+    public const MANAGE_DEVICES = 'reach_manage_devices';
+
     /** Every capability this plugin defines. */
-    public const ALL = [self::SEND_ALERTS];
+    public const ALL = [self::SEND_ALERTS, self::MANAGE_DEVICES];
 
     /**
      * Give administrators the capabilities they should have.

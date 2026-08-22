@@ -30,6 +30,7 @@ final class CapabilitiesTest extends ReachTestCase
         Capabilities::ensureAssigned();
 
         $this->assertTrue($role->has_cap(Capabilities::SEND_ALERTS));
+        $this->assertTrue($role->has_cap(Capabilities::MANAGE_DEVICES));
     }
 
     /** @test */
@@ -38,7 +39,10 @@ final class CapabilitiesTest extends ReachTestCase
         // add_cap() writes to the options table, and this runs on every
         // request. The has_cap() guard is what keeps the common path free.
         $granted = [];
-        $role = new class ('administrator', [Capabilities::SEND_ALERTS => true]) extends WP_Role {
+        $role = new class ('administrator', [
+            Capabilities::SEND_ALERTS    => true,
+            Capabilities::MANAGE_DEVICES => true,
+        ]) extends WP_Role {
             /** @var array<int, string> */
             public array $granted = [];
 
@@ -79,6 +83,16 @@ final class CapabilitiesTest extends ReachTestCase
             \Scrutiny\Privacy\PersonalDataPolicy::VIEW_CAPABILITY,
             Capabilities::SEND_ALERTS,
         );
+        $this->assertNotSame(
+            \Scrutiny\Privacy\PersonalDataPolicy::VIEW_CAPABILITY,
+            Capabilities::MANAGE_DEVICES,
+        );
+        $this->assertNotSame(
+            Capabilities::SEND_ALERTS,
+            Capabilities::MANAGE_DEVICES,
+            'ringing a handset and cutting one off are different powers',
+        );
         $this->assertSame('reach_send_alerts', Capabilities::SEND_ALERTS);
+        $this->assertSame('reach_manage_devices', Capabilities::MANAGE_DEVICES);
     }
 }

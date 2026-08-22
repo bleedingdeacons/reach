@@ -122,9 +122,9 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function revoking_without_the_personal_data_capability_dies(): void
+    public function revoking_without_the_manage_capability_dies(): void
     {
-        WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
+        WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
 
         $_POST = ['device_id' => '7'];
         $devices = $this->devicesWith($this->device(id: 7));
@@ -795,11 +795,11 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function revoking_still_needs_only_the_personal_data_capability(): void
+    public function revoking_is_not_affected_by_the_send_capability(): void
     {
-        // Deliberately unchanged. Moving revoke and remove is a separate
-        // decision about who administers the rota, not part of splitting
-        // "may read" from "may ring".
+        // Three separate powers over the same screen: reading it, ringing
+        // the handsets on it, and cutting one off. Losing one must not
+        // take another with it.
         WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
         $devices = $this->devicesWith($this->device(id: 7));
         $_POST = ['device_id' => '7'];
@@ -807,6 +807,54 @@ final class DevicesPageTest extends ReachTestCase
         $target = $this->revokeFromRequest($this->page(devices: $devices));
 
         $this->assertStringContainsString('reach_result=revoked', $target);
+    }
+
+    /** @test */
+    public function a_reader_who_cannot_manage_is_offered_no_revoke_or_remove(): void
+    {
+        // The actions column holds nothing else, so it goes with them
+        // rather than sitting there empty under a blank heading.
+        WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
+
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringNotContainsString('Revoke</button>', $html);
+        $this->assertStringNotContainsString('Remove</button>', $html);
+        $this->assertStringNotContainsString('reach_revoke_device', $html);
+    }
+
+    /** @test */
+    public function a_reader_who_cannot_manage_still_sees_the_handsets(): void
+    {
+        WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
+
+        $html = $this->renderList($this->page(
+            devices: $this->devicesWith($this->device(id: 7, label: 'Duty handset')),
+            members: [new MemberStub(id: 7, personalEmail: 'jo@example.test', anonymousName: 'Jo M.')],
+        ));
+
+        $this->assertStringContainsString('Duty handset', $html);
+        $this->assertStringContainsString('Jo M.', $html);
+        $this->assertStringContainsString('Live', $html);
+    }
+
+    /** @test */
+    public function managing_is_not_affected_by_the_send_capability(): void
+    {
+        // The mirror of revoking_is_not_affected_by_the_send_capability:
+        // someone who may ring handsets need not be able to cut one off.
+        WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
+        $devices = $this->devicesWith($this->device(id: 7));
+        $_POST = [
+            'reach_scope'   => 'all',
+            'reach_subject' => 'Still allowed',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $target = $this->messageFromRequest($this->page(devices: $devices, alerts: $alerts));
+
+        $this->assertStringContainsString('reach_result=message_sent', $target);
+        $this->assertCount(1, $alerts->alerts);
     }
 
     // ── the custom message ────────────────────────────────────────────
@@ -1567,9 +1615,9 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function removing_without_the_personal_data_capability_dies(): void
+    public function removing_without_the_manage_capability_dies(): void
     {
-        WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
+        WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
 
         $_POST = ['device_id' => '7'];
         $devices = $this->devicesWith($this->device(id: 7));
