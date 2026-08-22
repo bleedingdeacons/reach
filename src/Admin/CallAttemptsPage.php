@@ -79,23 +79,20 @@ final class CallAttemptsPage
         . '<rect x="3.2" y="10" width="1.8" height="5.5" rx="0.9" fill="black" transform="rotate(-18 4.1 12.75)"/>'
         . '</svg>';
 
+    /**
+     * Names and linked cells for the Responder column, memoised per
+     * request. A paginated list often shows several attempts by the same
+     * responder, and the presenter resolves each address once.
+     */
+    private readonly ResponderPresenter $responders;
+
     public function __construct(
         private readonly CallAttemptRepository $repository,
         private readonly MemberViewFactory $memberViews,
-        private readonly MemberRepository $members,
+        MemberRepository $members,
     ) {
+        $this->responders = new ResponderPresenter($members);
     }
-
-    /**
-     * Per-request memo for responder lookups by email. A paginated
-     * list often shows multiple attempts by the same responder, so
-     * caching the rendered cell (name + edit link, or fallback email)
-     * avoids redundant MemberRepository::findByEmail() calls within
-     * a single render. Values are pre-escaped HTML.
-     *
-     * @var array<string, string>
-     */
-    private array $responderCellMemo = [];
 
     public function register(): void
     {
@@ -208,7 +205,7 @@ final class CallAttemptsPage
                                     echo esc_html($this->formatTime($row->createdAt));
                                 ?></a>
                             </td>
-                            <td><?php echo $this->responderCell($row->viewerEmail); ?></td>
+                            <td><?php echo $this->responders->cell($row->viewerEmail); ?></td>
                             <td><?php echo $this->memberCell($memberView); ?></td>
                             <td><?php echo esc_html($this->outcomeLabel($row->outcome)); ?></td>
                         </tr>
@@ -396,7 +393,7 @@ final class CallAttemptsPage
                         </tr>
                         <tr>
                             <th scope="row">Responder</th>
-                            <td><?php echo $this->responderCell($attempt->viewerEmail); ?></td>
+                            <td><?php echo $this->responders->cell($attempt->viewerEmail); ?></td>
                         </tr>
                         <tr>
                             <th scope="row">Outcome</th>
@@ -682,31 +679,6 @@ final class CallAttemptsPage
      * Memoised per-request to avoid repeated lookups on paginated
      * lists where the same responder appears on multiple rows.
      */
-    private function responderCell(string $email): string
-    {
-        if ($email === '') {
-            return '';
-        }
-        if (isset($this->responderCellMemo[$email])) {
-            return $this->responderCellMemo[$email];
-        }
-
-        $member = $this->members->findByEmail($email);
-        if ($member === null) {
-            return $this->responderCellMemo[$email] = esc_html($email);
-        }
-
-        $name  = trim($member->getAnonymousName());
-        $label = esc_html($name !== '' ? $name : $email);
-
-        $editUrl = get_edit_post_link($member->getId());
-        if (is_string($editUrl) && $editUrl !== '') {
-            $label = '<a href="' . esc_url($editUrl) . '">' . $label . '</a>';
-        }
-
-        return $this->responderCellMemo[$email] = $label;
-    }
-
     /**
      * Render the "12th Stepper" cell. Returns pre-escaped HTML so it
      * can be echoed without further wrapping.
