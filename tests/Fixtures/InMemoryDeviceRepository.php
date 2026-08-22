@@ -244,7 +244,11 @@ final class InMemoryDeviceRepository implements DeviceRepository
                 continue;
             }
 
-            unset($this->devices[$index], $this->hashes[$id]);
+            // The payload key goes with the row, as it does in the real
+            // table where it is a column on it. Leaving it behind would
+            // let payloadKeyFor() answer with a secret for a handset that
+            // no longer exists.
+            unset($this->devices[$index], $this->hashes[$id], $this->payloadKeys[$id]);
             $this->devices = array_values($this->devices);
 
             return true;
