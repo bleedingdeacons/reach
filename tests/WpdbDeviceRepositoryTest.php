@@ -242,6 +242,101 @@ final class WpdbDeviceRepositoryTest extends ReachTestCase
         );
     }
 
+    public function testInstallCreatesThePayloadKeyColumn(): void
+    {
+        $db = new WpdbStub();
+
+        WpdbDeviceRepository::install($db);
+
+        $sql = implode("\n", array_map('strval', $GLOBALS['__reach_dbdelta']));
+
+        $this->assertStringContainsString('payload_key', $sql);
+    }
+
+    public function testCreateNeverStoresThePayloadKeyInTheClear(): void
+    {
+        // The column exists so a database dump on its own yields nothing
+        // usable. Writing the key as given would defeat the whole point.
+        $db = new WpdbStub();
+        $repo = new WpdbDeviceRepository($db);
+
+        $repo->create(
+            str_repeat('a', 64),
+            'jo@example.test',
+            7,
+            'Pixel 8',
+            'android',
+            Device::PUSH_FCM,
+            'fcm-token',
+            1_700_000_000,
+            'the-secret-key',
+        );
+
+        $this->assertCount(1, $db->inserted);
+        $stored = $db->inserted[0]['data']['payload_key'];
+
+        $this->assertIsString($stored);
+        $this->assertNotSame('', $stored);
+        $this->assertStringNotContainsString('the-secret-key', $stored);
+    }
+
+    public function testCreateWithNoPayloadKeyStoresNothing(): void
+    {
+        // Rather than an encrypted empty string, which would be
+        // indistinguishable from a real key to everything downstream.
+        $db = new WpdbStub();
+        $repo = new WpdbDeviceRepository($db);
+
+        $repo->create(
+            str_repeat('a', 64),
+            'jo@example.test',
+            7,
+            'Pixel 8',
+            'android',
+            Device::PUSH_FCM,
+            'fcm-token',
+            1_700_000_000,
+        );
+
+        $this->assertSame('', $db->inserted[0]['data']['payload_key']);
+    }
+
+    public function testPayloadKeyForReadsBackWhatCreateWrote(): void
+    {
+        // The round trip through the column, which is what proves the
+        // width is sufficient and the domain matches on both sides.
+        $db = new WpdbStub();
+        $repo = new WpdbDeviceRepository($db);
+
+        $repo->create(
+            str_repeat('a', 64),
+            'jo@example.test',
+            7,
+            'Pixel 8',
+            'android',
+            Device::PUSH_FCM,
+            'fcm-token',
+            1_700_000_000,
+            'the-secret-key',
+        );
+
+        $stored = $db->inserted[0]['data']['payload_key'];
+        $this->assertIsString($stored);
+        $this->assertLessThanOrEqual(255, strlen($stored), 'must fit the column');
+
+        $db->nextVar = $stored;
+
+        $this->assertSame('the-secret-key', $repo->payloadKeyFor(7));
+    }
+
+    public function testPayloadKeyForIsEmptyForAHandsetEnrolledBeforeTheColumn(): void
+    {
+        $db = new WpdbStub();
+        $db->nextVar = '';
+
+        $this->assertSame('', (new WpdbDeviceRepository($db))->payloadKeyFor(7));
+    }
+
     public function testListOrdersByARequestedColumn(): void
     {
         $db = new WpdbStub();

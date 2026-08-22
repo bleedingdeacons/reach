@@ -1820,8 +1820,14 @@ final class PagingDeviceRepository implements DeviceRepository
         string $pushProvider,
         string $pushToken,
         int $now,
+        string $payloadKey = '',
     ): Device {
         throw new LogicException('not reachable from the devices screen');
+    }
+
+    public function payloadKeyFor(int $id): string
+    {
+        return '';
     }
 
     public function findByTokenHash(string $tokenHash): ?Device

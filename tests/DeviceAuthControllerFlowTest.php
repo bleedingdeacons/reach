@@ -256,6 +256,86 @@ final class DeviceAuthControllerFlowTest extends ReachTestCase
         $this->assertCount(1, $this->devices->devices);
     }
 
+    public function testEnrolmentIssuesAPayloadKeyBesideTheToken(): void
+    {
+        // The secret alert payloads will be encrypted to. Emitted once,
+        // like the token: a handset that loses it enrols afresh, because
+        // there is no way to ask for it again.
+        $this->credentials->seedPassword('responder@example.com', 'correct horse battery');
+        $controller = $this->controller($this->certified('responder@example.com'));
+
+        $result = $controller->password($this->request([
+            'email'    => 'responder@example.com',
+            'password' => 'correct horse battery',
+            'platform' => 'android',
+            'label'    => 'Pixel 8',
+        ]));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+
+        $data = $result->get_data();
+        $key = $data['payload_key'];
+
+        $this->assertIsString($key);
+        $this->assertNotSame('', $key);
+        $this->assertNotSame($data['token'], $key, 'the two credentials must be independent');
+
+        // 32 bytes, base64. Anything shorter is not an AES-256 key.
+        $raw = base64_decode($key, true);
+        $this->assertIsString($raw);
+        $this->assertSame(32, strlen($raw));
+    }
+
+    public function testEveryEnrolmentGetsItsOwnPayloadKey(): void
+    {
+        // A key shared between handsets would mean one lost phone reads
+        // every other responder's alerts.
+        $this->credentials->seedPassword('responder@example.com', 'correct horse battery');
+        $controller = $this->controller($this->certified('responder@example.com'));
+
+        $first = $controller->password($this->request([
+            'email'    => 'responder@example.com',
+            'password' => 'correct horse battery',
+            'platform' => 'android',
+            'label'    => 'One',
+        ]));
+        $second = $controller->password($this->request([
+            'email'    => 'responder@example.com',
+            'password' => 'correct horse battery',
+            'platform' => 'android',
+            'label'    => 'Two',
+        ]));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $first);
+        $this->assertInstanceOf(WP_REST_Response::class, $second);
+        $this->assertNotSame(
+            $first->get_data()['payload_key'],
+            $second->get_data()['payload_key'],
+        );
+    }
+
+    public function testTheIssuedPayloadKeyIsTheOneStoredAgainstTheDevice(): void
+    {
+        $this->credentials->seedPassword('responder@example.com', 'correct horse battery');
+        $controller = $this->controller($this->certified('responder@example.com'));
+
+        $result = $controller->password($this->request([
+            'email'    => 'responder@example.com',
+            'password' => 'correct horse battery',
+            'platform' => 'android',
+            'label'    => 'Pixel 8',
+        ]));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+
+        $device = $this->devices->devices[0];
+
+        $this->assertSame(
+            $result->get_data()['payload_key'],
+            $this->devices->payloadKeyFor($device->id),
+        );
+    }
+
     public function testPasswordEnrolmentIsAudited(): void
     {
         // A device token is a long-lived credential over personal data,
