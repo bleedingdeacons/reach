@@ -255,15 +255,38 @@ final class DevicesPageTest extends ReachTestCase
         // new one, and the old row's report stays true of the old row.
         // What retires the warning is revoking or removing it, and
         // enrolment already revokes the oldest rows past the handset cap.
+        //
+        // Asserted per row rather than across the page: the warning
+        // landing on the replacement instead of the faulted handset would
+        // satisfy any page-wide check while telling an admin to go and
+        // fix the wrong phone.
         $page = $this->page(devices: $this->devicesWith(
-            $this->device(id: 7, keyFaultAt: $this->revokedAt()),
-            $this->device(id: 8),
+            $this->device(id: 7, label: 'The old one', keyFaultAt: $this->revokedAt()),
+            $this->device(id: 8, label: 'Its replacement'),
         ));
 
         $html = $this->renderList($page);
 
-        $this->assertStringContainsString('Cannot read alerts', $html);
-        $this->assertStringContainsString('Live', $html);
+        $this->assertStringContainsString('Cannot read alerts', $this->rowFor($html, 'The old one'));
+        $this->assertStringNotContainsString('Cannot read alerts', $this->rowFor($html, 'Its replacement'));
+        $this->assertStringContainsString('Live', $this->rowFor($html, 'Its replacement'));
+    }
+
+    /**
+     * The rendered table row carrying a given handset label.
+     *
+     * A status is only meaningful next to the handset it describes, so a
+     * test that asserts one has to say which row it read it from.
+     */
+    private function rowFor(string $html, string $label): string
+    {
+        foreach (explode('<tr', $html) as $row) {
+            if (str_contains($row, $label)) {
+                return $row;
+            }
+        }
+
+        $this->fail('No row found for handset "' . $label . '"');
     }
 
     /** @test */
