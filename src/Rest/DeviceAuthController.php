@@ -551,12 +551,6 @@ final class DeviceAuthController
             'Hand device enrolled via ' . $provider,
         );
 
-        // Enrolling again is the remedy for a key fault, so the warning
-        // goes with it. A stale warning about a handset that has since
-        // been repaired is worse than none: it trains an admin to ignore
-        // the column.
-        $this->devices->clearKeyFault($device->id);
-
         // The only time either secret is ever emitted. The handset stores
         // both and cannot ask for them again; losing them means enrolling
         // afresh, which is the same recovery either way.

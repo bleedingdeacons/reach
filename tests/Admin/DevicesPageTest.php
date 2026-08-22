@@ -249,6 +249,24 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
+    public function a_superseded_handset_keeps_its_warning_until_it_is_revoked(): void
+    {
+        // Signing in again does not repair a faulted row — it creates a
+        // new one, and the old row's report stays true of the old row.
+        // What retires the warning is revoking or removing it, and
+        // enrolment already revokes the oldest rows past the handset cap.
+        $page = $this->page(devices: $this->devicesWith(
+            $this->device(id: 7, keyFaultAt: $this->revokedAt()),
+            $this->device(id: 8),
+        ));
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Cannot read alerts', $html);
+        $this->assertStringContainsString('Live', $html);
+    }
+
+    /** @test */
     public function a_revoked_handset_reads_as_revoked_even_with_a_key_fault(): void
     {
         // Revoked is the more final of the two and the one an admin acted
@@ -1878,10 +1896,6 @@ final class PagingDeviceRepository implements DeviceRepository
         return false;
     }
 
-    public function clearKeyFault(int $id): bool
-    {
-        return false;
-    }
 
     public function findByTokenHash(string $tokenHash): ?Device
     {

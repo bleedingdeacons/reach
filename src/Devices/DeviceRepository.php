@@ -67,16 +67,17 @@ interface DeviceRepository
      * invalidated it. From the server's side that handset looks
      * perfectly healthy right up until an alert it cannot open, and
      * without this the only symptom is a responder who does not answer.
+     *
+     * <b>There is no way to clear it, and that is deliberate.</b> Signing
+     * in again does not repair this row — it creates a new one, and the
+     * old row's report stays true of the old row. What retires the
+     * warning is the same thing that retires the row: revoking it, which
+     * the admin list shows in preference, or removing it. Enrolment
+     * already revokes the oldest rows once a responder is over the
+     * handset cap, so an abandoned faulted row ages out on its own.
      */
     public function markKeyFault(int $id, int $now): bool;
 
-    /**
-     * Forget a recorded fault. Called when the handset enrols again,
-     * which is the fix — a stale warning on the admin list about a
-     * handset that has since been repaired is worse than none, because
-     * it trains an admin to ignore the column.
-     */
-    public function clearKeyFault(int $id): bool;
 
     /**
      * The live device holding this token hash, or null when there is

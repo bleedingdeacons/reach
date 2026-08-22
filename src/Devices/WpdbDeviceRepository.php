@@ -340,20 +340,6 @@ final class WpdbDeviceRepository implements DeviceRepository
         return is_int($updated) && $updated > 0;
     }
 
-    public function clearKeyFault(int $id): bool
-    {
-        $table = self::tableName($this->wpdb);
-
-        $updated = $this->wpdb->update(
-            $table,
-            ['key_fault_at' => null],
-            ['id' => $id],
-            ['%d'],
-            ['%d'],
-        );
-
-        return is_int($updated) && $updated > 0;
-    }
 
     public function payloadKeyFor(int $id): string
     {
