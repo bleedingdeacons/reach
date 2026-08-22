@@ -1390,6 +1390,17 @@
         </div>
 
         <div class="card">
+            <h3>Every handset gets &ldquo;This endpoint requires HTTPS&rdquo;</h3>
+            <p style="margin-bottom:0;">Reach refuses to enrol a handset, or answer one, over plain http —
+            those requests carry the handset&rsquo;s credentials. If the site really is on https and you see this,
+            WordPress is not being told so: that happens behind a proxy or load balancer that terminates TLS, and
+            the fix is the standard one your host documents, setting <code>$_SERVER['HTTPS']</code> in
+            <code>wp-config.php</code>. On a local development copy running over http, define
+            <code>REACH_ALLOW_INSECURE_TRANSPORT</code> as <code>true</code> in <code>wp-config.php</code>
+            instead. Do not set that on a live site.</p>
+        </div>
+
+        <div class="card">
             <h3>Everyone's handsets stopped working at once</h3>
             <p style="margin-bottom:0;">If nobody's handset works and nothing on the member records changed, the
             site's authentication salts have almost certainly been rotated — which invalidates every enrolled
