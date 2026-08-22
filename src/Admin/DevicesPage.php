@@ -12,6 +12,7 @@ use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertRepository;
 use Reach\Devices\Device;
+use Reach\Core\Capabilities;
 use Reach\Devices\DeviceRepository;
 use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\MemberRepository;
@@ -68,7 +69,28 @@ use WP_Error;
 final class DevicesPage
 {
     public const PAGE_SLUG = 'reach-devices';
+    /**
+     * Reading the screen: it names the responder each handset belongs
+     * to, which is a personal-data read. Revoking and removing a handset
+     * are gated on this too, as they always have been.
+     */
     private const CAPABILITY = PersonalDataPolicy::VIEW_CAPABILITY;
+
+    /**
+     * Raising an alert — the test and the admin's own message.
+     *
+     * Its own capability rather than the one above, because pressing
+     * those buttons makes every handset on the rota ring wherever it is
+     * and whatever time it is, and "may see an unmasked email address"
+     * does not imply that. See {@see Capabilities::SEND_ALERTS}, which
+     * also explains why it is Reach's rather than one of Scrutiny's.
+     *
+     * Administrators hold both, so on an ordinary site nothing about the
+     * screen changes. The split only bites where someone has given the
+     * view capability to a role that should not be ringing phones —
+     * which is the case it exists for.
+     */
+    private const SEND_CAPABILITY = Capabilities::SEND_ALERTS;
     /**
      * The two row actions are public because the rows are rendered by
      * {@see DevicesListTable}, while the handlers stay here with the
@@ -168,7 +190,13 @@ final class DevicesPage
             require_once ABSPATH . 'wp-admin/includes/class-wp-list-table.php';
         }
 
-        $handsets = new DevicesListTable($this->devices, $this->members, self::ACTIONS_FORM_ID);
+        // A reader who cannot send is shown no send form and no tick
+        // boxes, rather than buttons that answer 403. The handler checks
+        // again regardless: what the page chose to render is not a
+        // permission check.
+        $canSend = current_user_can(self::SEND_CAPABILITY);
+
+        $handsets = new DevicesListTable($this->devices, $this->members, self::ACTIONS_FORM_ID, $canSend);
         $handsets->prepare_items();
 
         $alerts = new AlertsListTable($this->alerts, $this->members);
@@ -190,6 +218,7 @@ final class DevicesPage
                 altogether, rather than keeping it as history.
             </p>
 
+            <?php if ($canSend) : ?>
             <h2 class="title">Send to handsets</h2>
             <p class="description">
                 Both of these ring handsets now, through the real delivery path. Tick handsets in
@@ -276,12 +305,14 @@ final class DevicesPage
                     </button>
                 </p>
             </form>
+            <?php endif; ?>
 
             <h2 class="title">Enrolled handsets</h2>
             <p class="description"><?php echo (int) $handsets->get_pagination_arg('total_items'); ?> in total.</p>
 
             <?php $handsets->display(); ?>
 
+            <?php if ($canSend) : ?>
             <script>
                 // Tick-all for the handset selection. Written here rather
                 // than left to core's list-table JS, which this screen
@@ -327,6 +358,7 @@ final class DevicesPage
                     });
                 })();
             </script>
+            <?php endif; ?>
 
             <h2 class="title">Recent alerts</h2>
             <p class="description">
@@ -410,7 +442,7 @@ final class DevicesPage
 
     public function handleMessage(): void
     {
-        if (!current_user_can(self::CAPABILITY)) {
+        if (!current_user_can(self::SEND_CAPABILITY)) {
             wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
         }
 
@@ -674,7 +706,7 @@ final class DevicesPage
 
     public function handleTestAlert(): void
     {
-        if (!current_user_can(self::CAPABILITY)) {
+        if (!current_user_can(self::SEND_CAPABILITY)) {
             wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
         }
 

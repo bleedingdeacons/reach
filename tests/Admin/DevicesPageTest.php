@@ -12,6 +12,7 @@ use Reach\Admin\DevicesPage;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
+use Reach\Core\Capabilities;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Reach\Devices\ResponderGate;
@@ -136,21 +137,6 @@ final class DevicesPageTest extends ReachTestCase
                 $devices->findById(7)?->isRevoked(),
                 'nothing may be revoked behind the guard',
             );
-        }
-    }
-
-    /** @test */
-    public function sending_a_test_alert_without_the_personal_data_capability_dies(): void
-    {
-        WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
-
-        $alerts = new InMemoryAlertRepository();
-
-        try {
-            $this->page(alerts: $alerts)->handleTestAlert();
-            $this->fail('expected wp_die() for a user without the capability');
-        } catch (WpDieException) {
-            $this->assertSame([], $alerts->alerts, 'no alert may be raised behind the guard');
         }
     }
 
@@ -734,6 +720,95 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
+    // ── sending is its own capability ─────────────────────────────────
+
+    /** @test */
+    public function a_reader_who_cannot_send_is_offered_no_send_form(): void
+    {
+        // Buttons that answer 403 are worse than no buttons. The handler
+        // checks again anyway — what the page rendered is not a guard.
+        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
+
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringNotContainsString('reach-handset-actions', $html);
+        $this->assertStringNotContainsString('name="reach_subject"', $html);
+        $this->assertStringNotContainsString('Send a test to every live handset', $html);
+    }
+
+    /** @test */
+    public function a_reader_who_cannot_send_is_offered_no_tick_boxes(): void
+    {
+        // The tick column exists to choose who a send goes to. Without
+        // the send form it is a column of controls wired to nothing.
+        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
+
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringNotContainsString('name="device_ids[]"', $html);
+        $this->assertStringNotContainsString('reach-device-select', $html);
+    }
+
+    /** @test */
+    public function a_reader_who_cannot_send_still_sees_the_handsets(): void
+    {
+        // Reading the screen is a personal-data read and stays on
+        // Scrutiny's view capability; only sending moved.
+        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
+
+        $html = $this->renderList($this->page(
+            devices: $this->devicesWith($this->device(id: 7, label: 'Duty handset')),
+            members: [new MemberStub(id: 7, personalEmail: 'jo@example.test', anonymousName: 'Jo M.')],
+        ));
+
+        $this->assertStringContainsString('Duty handset', $html);
+        $this->assertStringContainsString('Jo M.', $html);
+        $this->assertStringContainsString('Revoke</button>', $html);
+    }
+
+    /** @test */
+    public function a_test_alert_is_refused_without_the_send_capability(): void
+    {
+        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
+        $alerts = new InMemoryAlertRepository();
+
+        try {
+            $this->page(alerts: $alerts)->handleTestAlert();
+            $this->fail('expected wp_die() for a user who may read but not send');
+        } catch (WpDieException) {
+            $this->assertSame([], $alerts->alerts);
+        }
+    }
+
+    /** @test */
+    public function a_message_is_refused_without_the_send_capability(): void
+    {
+        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
+        $alerts = new InMemoryAlertRepository();
+
+        try {
+            $this->page(alerts: $alerts)->handleMessage();
+            $this->fail('expected wp_die() for a user who may read but not send');
+        } catch (WpDieException) {
+            $this->assertSame([], $alerts->alerts);
+        }
+    }
+
+    /** @test */
+    public function revoking_still_needs_only_the_personal_data_capability(): void
+    {
+        // Deliberately unchanged. Moving revoke and remove is a separate
+        // decision about who administers the rota, not part of splitting
+        // "may read" from "may ring".
+        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
+        $devices = $this->devicesWith($this->device(id: 7));
+        $_POST = ['device_id' => '7'];
+
+        $target = $this->revokeFromRequest($this->page(devices: $devices));
+
+        $this->assertStringContainsString('reach_result=revoked', $target);
+    }
+
     // ── the custom message ────────────────────────────────────────────
 
     /** @test */
@@ -865,20 +940,6 @@ final class DevicesPageTest extends ReachTestCase
 
         $this->assertStringContainsString('reach_result=message_none_selected', $target);
         $this->assertSame([], $alerts->alerts);
-    }
-
-    /** @test */
-    public function sending_a_message_without_the_personal_data_capability_dies(): void
-    {
-        WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
-        $alerts = new InMemoryAlertRepository();
-
-        try {
-            $this->page(alerts: $alerts)->handleMessage();
-            $this->fail('expected wp_die() for a user without the capability');
-        } catch (WpDieException) {
-            $this->assertSame([], $alerts->alerts, 'no message may be raised behind the guard');
-        }
     }
 
     /** @test */
