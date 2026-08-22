@@ -96,6 +96,7 @@ final class DevicesListTable extends WP_List_Table
         private readonly DeviceRepository $devices,
         MemberRepository $members,
         private readonly string $testFormId,
+        private readonly bool $canSend = true,
     ) {
         $this->responders = new ResponderPresenter($members);
 
@@ -106,11 +107,18 @@ final class DevicesListTable extends WP_List_Table
         ]);
     }
 
-    /** @return array<string, string> */
+    /**
+     * The tick column is offered only to a reader who can actually send.
+     * Its whole purpose is choosing who a test or a message goes to, so
+     * for anyone without that capability it is a column of controls
+     * wired to a form that is not on the page.
+     *
+     * @return array<string, string>
+     */
     public function get_columns(): array
     {
-        return [
-            'cb'        => '<input type="checkbox" />',
+        return array_filter([
+            'cb'        => $this->canSend ? '<input type="checkbox" />' : '',
             'responder' => 'Responder',
             'device'    => 'Device',
             'platform'  => 'Platform',
@@ -119,7 +127,7 @@ final class DevicesListTable extends WP_List_Table
             'last_seen' => 'Last seen',
             'status'    => 'Status',
             'actions'   => '&nbsp;',
-        ];
+        ], static fn(string $label): bool => $label !== '');
     }
 
     /**

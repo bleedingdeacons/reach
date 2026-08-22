@@ -203,6 +203,11 @@ register_activation_hook(__FILE__, function () {
     \Reach\Core\Schema::install($wpdb);
     \Reach\Core\Schema::markInstalled();
 
+    // Reach's own capabilities. Plugin::init() does this on every load
+    // too, for updates over an active plugin; doing it here as well means
+    // a fresh activation has them before the first screen renders.
+    \Reach\Core\Capabilities::ensureAssigned();
+
     // Requests are now durable history, so there is no retention purge to
     // schedule. Clear any purge event left by an earlier version.
     wp_clear_scheduled_hook(\Reach\Plugin::PURGE_CRON_HOOK);

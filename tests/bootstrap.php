@@ -163,6 +163,11 @@ spl_autoload_register(static function (string $class) use ($scrutinySrc): void {
 // of this file: Patchwork has to come first.
 require_once __DIR__ . '/stubs/class-wp-list-table.php';
 
+// WP_Role, likewise. get_role() in the shared stubs answers with a plain
+// stdClass, which is enough to read a role's name and not enough to grant a
+// capability to one; Reach\Core\Capabilities does the latter.
+require_once __DIR__ . '/stubs/class-wp-role.php';
+
 // dbDelta() is the one WordPress function still defined here: it lives in
 // wp-admin/includes rather than the loaded core, so no shared stub group
 // covers it. The Wpdb repositories call it from their install() routines, and

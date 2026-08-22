@@ -19,6 +19,7 @@ use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertRepository;
 use Reach\Auth\PasswordCredentialRepository;
 use Reach\Core\ReachServiceProvider;
+use Reach\Core\Capabilities;
 use Reach\Core\Schema;
 use Reach\Devices\DeviceRepository;
 use Reach\Frontend\PageRouter;
@@ -111,6 +112,13 @@ class Plugin
         // expecting a table nothing had created. Cheap on the common path,
         // one option read; see Schema for the failure that prompted it.
         Schema::ensureInstalled();
+
+        // Likewise granted on load rather than only at activation, and
+        // for exactly the reason above: an update over an active plugin
+        // never fires the activation hook, so a capability introduced in
+        // a release would otherwise never reach an existing site and the
+        // buttons it guards would go dead for everyone.
+        Capabilities::ensureAssigned();
 
         (new ReachServiceProvider())->register($unityContainer);
 
