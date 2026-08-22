@@ -537,7 +537,7 @@
             <tr><td><strong>Call attempts</strong></td><td>Read-only history of every "Spoke / No answer / Wrong number" a Reach user recorded.</td><td>Personal-data permission</td></tr>
             <tr><td><strong>Call requests</strong></td><td>Callbacks asked for out of hours, waiting to be actioned.</td><td>Personal-data permission</td></tr>
             <tr><td><strong>Find a 12th Stepper</strong></td><td>The same finder the public sees, from inside the admin.</td><td>Personal-data permission</td></tr>
-            <tr><td><strong>Hand devices</strong></td><td>Enrolled handsets, the test-alert button, and recent alerts. <a href="#hand-list">Covered below.</a></td><td>Personal-data permission</td></tr>
+            <tr><td><strong>Hand devices</strong></td><td>Enrolled handsets, the test-alert and custom-message buttons, and a self-refreshing list of recent alerts. <a href="#hand-list">Covered below.</a></td><td>Personal-data permission</td></tr>
             <tr><td><strong>Settings</strong></td><td>Find-page options, Firebase push, and the sign-in providers.</td><td>Site administrator</td></tr>
             <tr><td><strong>Help</strong></td><td>This guide.</td><td>Personal-data permission</td></tr>
             </tbody>
@@ -1089,6 +1089,12 @@
         with <strong>Acknowledged by</strong> filling in as handsets alarm. That is your proof of delivery, not
         the "Test alert sent" notice, which only means Reach accepted it.</p>
 
+        <p><strong>That table refreshes itself every five seconds</strong>, so you can send a test or a message
+        and watch it land without touching the page — the selection you ticked and anything half-typed
+        in the message box stay where they are. It stops polling while the tab is in the background, and gives
+        up after three failed attempts, so a screen left open overnight goes quiet rather than hammering the
+        site; reload to start it again.</p>
+
         <p>That table shows the ten most recent alerts and its headings sort too — including
         <strong>Acknowledged by</strong>, which is the quick way to pull the unanswered ones together after
         ringing a selection of handsets. It sorts the ten on the screen, not the whole alert history, which is
@@ -1102,6 +1108,27 @@
             Firebase service account first. If it says it was sent but no handset rings, the break is further
             down the chain; <a href="#troubleshooting">Troubleshooting</a> walks through it.</div>
         </div>
+
+        <h3>Sending your own message</h3>
+
+        <p>Under the test buttons is a <strong>Custom message</strong> box: a subject, an optional body, and the
+        same two choices of who it goes to. It travels the identical path a real alert does, so it is the way to
+        tell the duty responders something now &mdash; &ldquo;line down until 18:00, calls are being diverted&rdquo;,
+        &ldquo;shift change moved to 19:00&rdquo;. The subject is required, because it is the line that appears on
+        the lock screen. A message lives for an hour, so a handset briefly out of signal still gets it, but one
+        switched on tomorrow is not told about a shift change that has been and gone.</p>
+
+        <div class="callout warning">
+            <span class="callout-icon">⚠️</span>
+            <div><strong>Keep personal data out of it.</strong> What you type goes through Google&rsquo;s servers,
+            onto a lock screen anyone standing near the phone can read, and into the handset&rsquo;s notification
+            history. Reach refuses to store a caller&rsquo;s name and number anywhere else for exactly that
+            reason; this box is the one place you could undo that by hand. Say what happened and give a reference
+            to look it up by &mdash; the caller&rsquo;s details are already in the email.</div>
+        </div>
+
+        <p>You must pick a button &mdash; pressing Enter in the subject box will not send to everyone by default.
+        That is deliberate: a broadcast to the whole rota is not something to arrive at by accident.</p>
     </section>
 
     <section id="hand-revoke">

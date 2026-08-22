@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
 
 /**
@@ -23,16 +24,25 @@ use Unity\Members\Interfaces\MemberRepository;
  * takes {@see name()} and the column takes {@see cell()}, and the two
  * always agree because the second is built from the first.
  *
- * <b>Why a class.</b> {@see DevicesListTable} and {@see AlertsListTable}
- * both needed this, and both needed it memoised: a responder with a
- * phone and a tablet is one lookup, an alert acknowledged twice by the
- * same person is one lookup, and a sort comparator that fetched would
- * fetch O(n log n) times. One presenter per render holds that cache for
- * both.
+ * <b>Why a class.</b> Three screens wanted this and all three needed it
+ * memoised: {@see DevicesListTable} (a responder with a phone and a
+ * tablet is one lookup), {@see AlertsListTable} (an alert acknowledged
+ * twice by the same person is one lookup), and {@see CallAttemptsPage},
+ * where this shape started and where a paginated list often shows
+ * several attempts by the same responder. A sort comparator that fetched
+ * would fetch O(n log n) times.
  *
- * ({@see CallAttemptsPage::responderCell()} is a third copy of the same
- * idea, predating this and left alone: it is a different screen with its
- * own tests, and folding it in is a tidy-up rather than part of this.)
+ * The memo is on the *member*, not on either output, so asking for a
+ * name and then a cell for the same address is still one
+ * MemberRepository::findByEmail(). That is not a micro-optimisation —
+ * {@see \Reach\Tests\Admin\CallAttemptsPageTest} asserts the count, and
+ * it caught this class doing it twice.
+ *
+ * {@see CallAttemptsPage::memberCell()} is deliberately not folded in:
+ * it renders "name &middot; area" from a MemberView already in hand,
+ * with its own "(member not found)" and "(no name)" markers, and that is
+ * a different presenter for a different column rather than another copy
+ * of this one.
  *
  * The fallbacks are the ones the whole suite uses. No member record
  * means the address is all there is to show, and an address here is
@@ -42,8 +52,14 @@ use Unity\Members\Interfaces\MemberRepository;
  */
 final class ResponderPresenter
 {
-    /** @var array<string, string> */
-    private array $names = [];
+    /**
+     * Members already looked up, keyed by address. A null value is a
+     * resolved absence and must not send the lookup round again, which
+     * is why every read of this is array_key_exists() and not isset().
+     *
+     * @var array<string, Member|null>
+     */
+    private array $resolved = [];
 
     /** @var array<string, string> */
     private array $cells = [];
@@ -59,14 +75,19 @@ final class ResponderPresenter
      */
     public function name(string $email): string
     {
-        if (array_key_exists($email, $this->names)) {
-            return $this->names[$email];
+        if ($email === '') {
+            return '';
         }
 
-        $member = $this->members->findByEmail($email);
-        $name   = $member !== null ? trim($member->getAnonymousName()) : '';
+        $member = $this->member($email);
+        if ($member !== null) {
+            $name = trim($member->getAnonymousName());
+            if ($name !== '') {
+                return $name;
+            }
+        }
 
-        return $this->names[$email] = $name !== '' ? $name : $email;
+        return $email;
     }
 
     /**
@@ -76,12 +97,16 @@ final class ResponderPresenter
      */
     public function cell(string $email): string
     {
+        if ($email === '') {
+            return '';
+        }
+
         if (array_key_exists($email, $this->cells)) {
             return $this->cells[$email];
         }
 
         $label  = esc_html($this->name($email));
-        $member = $this->members->findByEmail($email);
+        $member = $this->member($email);
 
         if ($member !== null) {
             $editUrl = get_edit_post_link($member->getId());
@@ -91,5 +116,22 @@ final class ResponderPresenter
         }
 
         return $this->cells[$email] = $label;
+    }
+
+    /**
+     * The member behind an address, at most one lookup per address per
+     * request.
+     *
+     * The empty address never reaches here. findByEmail('') is not a
+     * harmless miss: a member with no address on file would match it,
+     * and the cell would name a stranger.
+     */
+    private function member(string $email): ?Member
+    {
+        if (array_key_exists($email, $this->resolved)) {
+            return $this->resolved[$email];
+        }
+
+        return $this->resolved[$email] = $this->members->findByEmail($email);
     }
 }
