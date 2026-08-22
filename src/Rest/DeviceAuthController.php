@@ -489,6 +489,14 @@ final class DeviceAuthController
         // the responder is told sign-in failed and can try again, instead
         // of being handed a token that 401s on its next use and sends them
         // round the sign-in loop with no explanation.
+        // The secret alert payloads will be encrypted to. Minted here
+        // beside the bearer token because they are the same kind of
+        // thing — credentials this handset gets once, at enrolment — and
+        // one place that mints them is easier to reason about than two.
+        // 32 bytes because that is an AES-256 key; base64 so it survives
+        // JSON and a string column.
+        $payloadKey = base64_encode(random_bytes(32));
+
         try {
             $device = $this->devices->create(
                 $this->minter->hash($token),
@@ -499,6 +507,7 @@ final class DeviceAuthController
                 $pushProvider,
                 $pushToken,
                 $now,
+                $payloadKey,
             );
         } catch (RuntimeException $e) {
             self::logError('Handset enrolment failed', [
@@ -521,9 +530,12 @@ final class DeviceAuthController
             'Hand device enrolled via ' . $provider,
         );
 
-        // The only time the plaintext token is ever emitted.
+        // The only time either secret is ever emitted. The handset stores
+        // both and cannot ask for them again; losing them means enrolling
+        // afresh, which is the same recovery either way.
         return new WP_REST_Response([
             'token'         => $token,
+            'payload_key'   => $payloadKey,
             'device_id'     => $device->id,
             'responder'     => $member->getAnonymousName(),
             'platform'      => $platform,

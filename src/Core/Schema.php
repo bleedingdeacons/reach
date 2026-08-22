@@ -53,13 +53,16 @@ final class Schema
     /**
      * Schema version. Bump on any change to a CREATE TABLE above.
      *
+     * 4 — added devices.payload_key, the per-handset secret alert
+     *     payloads will be encrypted to. Written at enrolment from this
+     *     version on; nothing reads it yet.
      * 3 — added alerts.target_device_id, so an alert can be addressed to
      *     one handset rather than to a responder or to everyone.
      * 2 — added the Hand tables: devices, alerts, alert acknowledgements
      *     and alert contacts.
      * 1 — everything before schema versioning existed.
      */
-    public const VERSION = 3;
+    public const VERSION = 4;
 
     public const OPTION = 'reach_schema_version';
 

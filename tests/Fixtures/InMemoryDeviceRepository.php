@@ -31,6 +31,16 @@ final class InMemoryDeviceRepository implements DeviceRepository
      */
     public array $hashes = [];
 
+    /**
+     * Device id => the secret alert payloads are encrypted to.
+     *
+     * Held beside the hashes for the same reason: the real table stores
+     * it on the row, and Device deliberately does not carry it.
+     *
+     * @var array<int, string>
+     */
+    public array $payloadKeys = [];
+
     private int $nextId = 1;
 
     /** @param array<int, Device> $devices */
@@ -61,6 +71,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
         string $pushProvider,
         string $pushToken,
         int $now,
+        string $payloadKey = '',
     ): Device {
         if ($this->failOnCreate) {
             throw new \RuntimeException('The device could not be enrolled: the write failed.');
@@ -80,6 +91,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
 
         $this->devices[] = $device;
         $this->hashes[$device->id] = $tokenHash;
+        $this->payloadKeys[$device->id] = $payloadKey;
 
         return $device;
     }
@@ -165,6 +177,11 @@ final class InMemoryDeviceRepository implements DeviceRepository
     public function countAll(): int
     {
         return count($this->devices);
+    }
+
+    public function payloadKeyFor(int $id): string
+    {
+        return $this->payloadKeys[$id] ?? '';
     }
 
     public function touch(int $id, int $now): bool

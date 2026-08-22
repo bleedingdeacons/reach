@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use LogicException;
+use Reach\Core\Cipher;
 use RuntimeException;
 use wpdb;
 
@@ -49,8 +50,14 @@ final class WpdbDeviceRepository implements DeviceRepository
         return $prefix . self::TABLE_SUFFIX;
     }
 
+    /** Domain separator for the encryption key. See {@see Cipher}. */
+    private const CIPHER_DOMAIN = 'reach-device-payload-key';
+
+    private readonly Cipher $cipher;
+
     public function __construct(private readonly wpdb $wpdb)
     {
+        $this->cipher = new Cipher(self::CIPHER_DOMAIN);
     }
 
     /**
@@ -62,6 +69,13 @@ final class WpdbDeviceRepository implements DeviceRepository
      * generously sized: FCM registration tokens have no documented
      * maximum and have grown twice, and a truncated one is a handset
      * that silently never rings.
+     *
+     * payload_key holds the base64 of an encrypted 32-byte secret, so it
+     * is about 120 characters; 255 leaves room without another migration.
+     * It is not indexed and never searched — the only way in is by device
+     * id. Defaulted to empty rather than made nullable so that handsets
+     * enrolled before this column existed read as "no key" without a
+     * null check at every call site; they get one by enrolling again.
      */
     public static function install(wpdb $wpdb): void
     {
@@ -81,6 +95,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             platform VARCHAR(32) NOT NULL DEFAULT '',
             push_provider VARCHAR(16) NOT NULL DEFAULT '',
             push_token VARCHAR(512) NOT NULL DEFAULT '',
+            payload_key VARCHAR(255) NOT NULL DEFAULT '',
             created_at BIGINT UNSIGNED NOT NULL,
             last_seen_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
             revoked_at BIGINT UNSIGNED NULL,
@@ -102,6 +117,7 @@ final class WpdbDeviceRepository implements DeviceRepository
         string $pushProvider,
         string $pushToken,
         int $now,
+        string $payloadKey = '',
     ): Device {
         $table = self::tableName($this->wpdb);
 
@@ -115,10 +131,11 @@ final class WpdbDeviceRepository implements DeviceRepository
                 'platform'      => $platform,
                 'push_provider' => $pushProvider,
                 'push_token'    => $pushToken,
+                'payload_key'   => $payloadKey === '' ? '' : $this->cipher->encrypt($payloadKey),
                 'created_at'    => $now,
                 'last_seen_at'  => $now,
             ],
-            ['%s', '%s', '%d', '%s', '%s', '%s', '%s', '%d', '%d'],
+            ['%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d'],
         );
 
         // $wpdb->insert() reports failure by returning false, and a missing
@@ -268,6 +285,22 @@ final class WpdbDeviceRepository implements DeviceRepository
     {
         $table = self::tableName($this->wpdb);
         return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+    }
+
+    public function payloadKeyFor(int $id): string
+    {
+        $table = self::tableName($this->wpdb);
+
+        $stored = $this->wpdb->get_var($this->wpdb->prepare(
+            "SELECT payload_key FROM {$table} WHERE id = %d LIMIT 1",
+            $id,
+        ));
+
+        if (!is_string($stored) || $stored === '') {
+            return '';
+        }
+
+        return $this->cipher->decrypt($stored);
     }
 
     public function touch(int $id, int $now): bool

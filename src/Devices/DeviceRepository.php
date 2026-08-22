@@ -22,6 +22,12 @@ interface DeviceRepository
      *
      * $tokenHash is the SHA-256 of the bearer token; the raw token is
      * the caller's to hand to the app and is never passed here.
+     *
+     * $payloadKey is the opposite: the raw secret, which an
+     * implementation is expected to encrypt at rest. It is handed over
+     * rather than generated here so that the one place that mints
+     * credentials for a handset stays the one place — the enrolment
+     * controller, which already mints the token.
      */
     public function create(
         string $tokenHash,
@@ -32,7 +38,24 @@ interface DeviceRepository
         string $pushProvider,
         string $pushToken,
         int $now,
+        string $payloadKey = '',
     ): Device;
+
+    /**
+     * The secret alert payloads for this handset are encrypted to, or ''
+     * when it has none.
+     *
+     * Not on {@see Device}, for the reason its token hash is not either:
+     * a device object is passed around the admin screens and the
+     * dispatcher, and a secret that rides along in it is a secret that
+     * ends up somewhere nobody meant it to. The one caller that needs it
+     * asks for it by id.
+     *
+     * Empty is the ordinary answer for a handset enrolled before the
+     * column existed, and means "send this one an unencrypted payload"
+     * rather than an error.
+     */
+    public function payloadKeyFor(int $id): string;
 
     /**
      * The live device holding this token hash, or null when there is
