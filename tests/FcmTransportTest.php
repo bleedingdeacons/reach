@@ -235,29 +235,29 @@ final class FcmTransportTest extends ReachTestCase
         $this->assertSame('Callback wanted', $message['data']['title']);
     }
 
-    public function testAHandsetEnrolledBeforeKeysExistedIsNotEncrypted(): void
+    public function testAnAndroidHandsetWithNoKeyIsNotSentTo(): void
     {
-        // No key, so nothing to encrypt to. It keeps working until its
-        // responder signs in again, rather than going quiet.
-        $device = $this->device('android');
+        // Deliberately not a plaintext fallback. A silent downgrade means
+        // a handset quietly receiving readable text through Google for as
+        // long as nobody notices — and nobody would, because everything
+        // would keep working. Refusing is loud, and re-enrolling fixes it.
+        $transport = new FcmTransport($this->client(), $this->configuredSettings(), $this->devices);
 
-        $message = $this->deliver($this->alert(title: 'Callback wanted'), $device);
-
-        $this->assertArrayNotHasKey('ciphertext', $message['data']);
-        $this->assertSame('Callback wanted', $message['data']['title']);
+        $this->assertFalse($transport->deliver($this->alert(), $this->device('android')));
+        $this->assertSame([], $this->sent, 'nothing may go to a handset that cannot be encrypted for');
     }
 
-    public function testAnUnusableKeyFallsBackToPlaintextRatherThanSilence(): void
+    public function testAnUnusableKeyIsAlsoARefusal(): void
     {
-        // Confidentiality is why this exists; a working alarm is why the
-        // plugin exists. Where they conflict at 3am, the alarm wins.
+        // Same outcome for the same reason: this handset cannot be sent to
+        // in the only form it should be sent to.
         $device = $this->device('android');
         $this->devices->payloadKeys[$device->id] = 'not-a-32-byte-key';
 
-        $message = $this->deliver($this->alert(title: 'Callback wanted'), $device);
+        $transport = new FcmTransport($this->client(), $this->configuredSettings(), $this->devices);
 
-        $this->assertArrayNotHasKey('ciphertext', $message['data']);
-        $this->assertSame('Callback wanted', $message['data']['title']);
+        $this->assertFalse($transport->deliver($this->alert(), $device));
+        $this->assertSame([], $this->sent);
     }
 
     public function testTheEncryptedMessageStaysInsideFcmsSizeCap(): void
@@ -329,7 +329,7 @@ final class FcmTransportTest extends ReachTestCase
     {
         $transport = new FcmTransport($this->client(), new Settings(), $this->devices);
 
-        $this->assertFalse($transport->deliver($this->alert(), $this->device()));
+        $this->assertFalse($transport->deliver($this->alert(), $this->device('ios')));
         $this->assertSame([], $this->sent);
     }
 
@@ -339,7 +339,7 @@ final class FcmTransportTest extends ReachTestCase
         // stop the dispatcher reaching the other handsets in the list.
         $transport = new FcmTransport($this->client(500), $this->configuredSettings(), $this->devices);
 
-        $this->assertFalse($transport->deliver($this->alert(), $this->device()));
+        $this->assertFalse($transport->deliver($this->alert(), $this->device('ios')));
     }
 
     public function testTheMessageCarriesNoTopLevelNotificationBlock(): void
@@ -348,7 +348,7 @@ final class FcmTransportTest extends ReachTestCase
         // `notification` key here means Android's system tray handles the
         // message while Hand is backgrounded, and Hand never gets to
         // raise its full-screen intent or start the looping alarm.
-        $message = $this->deliver($this->alert(), $this->device());
+        $message = $this->deliver($this->alert(), $this->device('ios'));
 
         $this->assertArrayNotHasKey('notification', $message);
         $this->assertArrayHasKey('data', $message);
@@ -360,7 +360,7 @@ final class FcmTransportTest extends ReachTestCase
         // window and can arrive an hour late. The TTL matches the alert's
         // expiry — there is no value in FCM retrying an alert that has
         // already gone stale.
-        $message = $this->deliver($this->alert(), $this->device());
+        $message = $this->deliver($this->alert(), $this->device('ios'));
 
         $this->assertSame('high', $message['android']['priority']);
         $this->assertMatchesRegularExpression('/^\d+s$/', $message['android']['ttl']);
@@ -373,14 +373,14 @@ final class FcmTransportTest extends ReachTestCase
         // delivery into no delivery at all.
         $stale = new Alert(1, 'k', 'reach', 'normal', 't', '', '', [], '', 1_000, time() - 3_600);
 
-        $message = $this->deliver($stale, $this->device());
+        $message = $this->deliver($stale, $this->device('ios'));
 
         $this->assertSame('1s', $message['android']['ttl']);
     }
 
     public function testTheDeviceTokenAddressesTheMessage(): void
     {
-        $message = $this->deliver($this->alert(), $this->device());
+        $message = $this->deliver($this->alert(), $this->device('ios'));
 
         $this->assertSame('device-token', $message['token']);
     }
@@ -389,7 +389,7 @@ final class FcmTransportTest extends ReachTestCase
     {
         // FCM's data block is a string→string map and silently rejects
         // anything else — the worst failure mode available here.
-        $message = $this->deliver($this->alert(payload: ['area' => 'BS5']), $this->device());
+        $message = $this->deliver($this->alert(payload: ['area' => 'BS5']), $this->device('ios'));
 
         foreach ($message['data'] as $key => $value) {
             $this->assertIsString($key);
@@ -399,7 +399,7 @@ final class FcmTransportTest extends ReachTestCase
 
     public function testTheDataBlockDescribesTheAlertAndTheChannel(): void
     {
-        $data = $this->deliver($this->alert(), $this->device())['data'];
+        $data = $this->deliver($this->alert(), $this->device('ios'))['data'];
 
         $this->assertSame('12', $data['alert_id']);
         $this->assertSame('call_request', $data['kind']);
@@ -417,7 +417,7 @@ final class FcmTransportTest extends ReachTestCase
         // win a name collision.
         $data = $this->deliver(
             $this->alert(payload: ['kind' => 'spoofed', 'channel' => 'other', 'area' => 'BS5']),
-            $this->device(),
+            $this->device('ios'),
         )['data'];
 
         $this->assertSame('call_request', $data['kind']);
