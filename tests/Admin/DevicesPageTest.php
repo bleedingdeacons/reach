@@ -881,6 +881,58 @@ final class DevicesPageTest extends ReachTestCase
         }
     }
 
+    /** @test */
+    public function the_send_form_and_both_its_handlers_agree_on_one_nonce(): void
+    {
+        // One form, one nonce field, two handlers behind it. When the
+        // test-alert handler went on verifying its own action name after
+        // the form moved to the shared one, every test alert died on
+        // WordPress's "Are you sure you want to do this?" screen.
+        //
+        // Nothing caught it, because the shared stubs answer
+        // check_admin_referer() true whatever action they are handed --
+        // a nonce mismatch is invisible to a test that only checks the
+        // outcome. This one watches the argument instead.
+        // The shared stub renders a nonce field as value="nonce-<action>",
+        // so the action the form issued is readable straight off the page.
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $verified = [];
+        Functions\when('check_admin_referer')->alias(
+            static function (string $action = '', string $name = '_wpnonce') use (&$verified): bool {
+                $verified[] = $action;
+
+                return true;
+            },
+        );
+
+        $_POST = ['reach_scope' => 'all'];
+        $this->testAlertFromRequest($this->page());
+
+        $_POST = ['reach_scope' => 'all', 'reach_subject' => 'Line down until 18:00'];
+        $this->messageFromRequest($this->page());
+
+        $this->assertSame(['reach_handset_actions', 'reach_handset_actions'], $verified);
+        $this->assertStringContainsString(
+            'value="nonce-reach_handset_actions"',
+            $html,
+            'the send form must issue the nonce its handlers verify',
+        );
+    }
+
+    /** @test */
+    public function notices_are_plain_text_because_they_are_escaped_on_the_way_out(): void
+    {
+        // The whole string goes through esc_html(), so an HTML entity
+        // written into the table arrives as the literal characters.
+        $_GET = ['reach_result' => 'message_no_subject'];
+
+        $html = $this->renderList($this->page());
+
+        $this->assertStringNotContainsString('&amp;mdash;', $html);
+        $this->assertStringContainsString('A message needs a subject', $html);
+    }
+
     // ── the Recent alerts refresh ─────────────────────────────────────
 
     /** @test */
