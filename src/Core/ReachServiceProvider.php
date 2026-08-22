@@ -132,6 +132,7 @@ final class ReachServiceProvider
         $container->register(FcmTransport::class, fn(ContainerInterface $c) => new FcmTransport(
             $c->get(FcmClient::class),
             $c->get(Settings::class),
+            $c->get(DeviceRepository::class),
         ));
 
         // Transports are passed as a list so adding one — WNS for the

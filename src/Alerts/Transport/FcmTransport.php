@@ -12,7 +12,9 @@ use Reach\Alerts\Alert;
 use Reach\Alerts\Fcm\FcmClient;
 use Reach\Alerts\Fcm\ServiceAccount;
 use Reach\Core\Settings;
+use Reach\Alerts\PayloadCipher;
 use Reach\Devices\Device;
+use Reach\Devices\DeviceRepository;
 
 /**
  * Delivers alerts through Firebase Cloud Messaging.
@@ -89,6 +91,7 @@ final class FcmTransport implements AlertTransport
     public function __construct(
         private readonly FcmClient $client,
         private readonly Settings $settings,
+        private readonly DeviceRepository $devices,
     ) {
     }
 
@@ -132,7 +135,7 @@ final class FcmTransport implements AlertTransport
             // Top-level data only. See the class docblock: adding a
             // `notification` here would stop Android's app-side handler
             // from ever running.
-            'data'  => $this->data($alert),
+            'data'  => $this->dataFor($alert, $device),
             'android' => [
                 'priority' => 'high',
                 'ttl'      => $ttlSeconds . 's',
@@ -152,6 +155,51 @@ final class FcmTransport implements AlertTransport
                 ],
             ],
         ];
+    }
+
+    /**
+     * The data block for one handset, encrypted where that handset can
+     * read it.
+     *
+     * <b>Android only, and only with a key.</b> An iOS handset is served
+     * the plaintext block it has always been served: its lock screen is
+     * rendered by the system from the `aps` dictionary, so ciphertext
+     * there would put base64 on the lock screen rather than hide
+     * anything, and the fix for that is a Notification Service Extension
+     * that does not exist yet. A handset enrolled before payload keys
+     * existed has no key, and is likewise served plaintext until it
+     * enrols again.
+     *
+     * <b>A failed seal sends plaintext rather than nothing.</b> The
+     * alternative is a handset that rings with no readable content, or
+     * does not ring at all, because of a key problem the responder
+     * cannot see and cannot fix at 3am. Confidentiality is the reason
+     * this exists; a working alarm is the reason the whole plugin
+     * exists, and where they conflict the alarm wins.
+     *
+     * @return array<string, string>
+     */
+    private function dataFor(Alert $alert, Device $device): array
+    {
+        if ($device->platform !== 'android') {
+            return $this->data($alert);
+        }
+
+        $key = $this->devices->payloadKeyFor($device->id);
+        if ($key === '') {
+            return $this->data($alert);
+        }
+
+        $sealed = PayloadCipher::seal($alert, $key);
+        if ($sealed === '') {
+            return $this->data($alert);
+        }
+
+        $data = $this->data($alert);
+        unset($data['title'], $data['body'], $data['reference']);
+        $data['ciphertext'] = $sealed;
+
+        return $data;
     }
 
     /**
