@@ -537,7 +537,7 @@
             <tr><td><strong>Call attempts</strong></td><td>Read-only history of every "Spoke / No answer / Wrong number" a Reach user recorded.</td><td>Personal-data permission</td></tr>
             <tr><td><strong>Call requests</strong></td><td>Callbacks asked for out of hours, waiting to be actioned.</td><td>Personal-data permission</td></tr>
             <tr><td><strong>Find a 12th Stepper</strong></td><td>The same finder the public sees, from inside the admin.</td><td>Personal-data permission</td></tr>
-            <tr><td><strong>Hand devices</strong></td><td>Enrolled handsets, the test-alert and custom-message buttons, and a self-refreshing list of recent alerts. <a href="#hand-list">Covered below.</a></td><td>Personal-data permission</td></tr>
+            <tr><td><strong>Hand devices</strong></td><td>Enrolled handsets, the test-alert and custom-message buttons, and a self-refreshing list of recent alerts. <a href="#hand-list">Covered below.</a></td><td>Personal-data permission to read; see <a href="#hand-permissions">below</a> to send or manage</td></tr>
             <tr><td><strong>Settings</strong></td><td>Find-page options, Firebase push, and the sign-in providers.</td><td>Site administrator</td></tr>
             <tr><td><strong>Help</strong></td><td>This guide.</td><td>Personal-data permission</td></tr>
             </tbody>
@@ -1108,6 +1108,27 @@
             Firebase service account first. If it says it was sent but no handset rings, the break is further
             down the chain; <a href="#troubleshooting">Troubleshooting</a> walks through it.</div>
         </div>
+
+        <h3 id="hand-permissions">Who can do what</h3>
+
+        <p>Three separate permissions cover this screen, and administrators get all three automatically, so on an
+        ordinary site you will not notice them. They matter when someone other than an administrator is given
+        access.</p>
+
+        <div class="table-scroll">
+            <table class="status-table">
+                <thead><tr><th>Permission</th><th>What it allows</th></tr></thead>
+                <tbody>
+                <tr><td class="field-name">Personal-data permission<br><code>scrutiny_view_personal_data</code></td><td>Reading the screen. The list names the responder each handset belongs to, so seeing it at all is a personal-data read. Without this the screen is blank.</td></tr>
+                <tr><td class="field-name">Send alerts<br><code>reach_send_alerts</code></td><td>The test alert and the custom message. Without it, the whole <strong>Send to handsets</strong> section and the tick boxes are simply absent — there are no buttons to press.</td></tr>
+                <tr><td class="field-name">Manage handsets<br><code>reach_manage_devices</code></td><td>Revoking and removing. Without it, the <strong>Revoke</strong> and <strong>Remove</strong> buttons are absent and the column they sat in disappears with them.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p>They are deliberately separate. Reading the list is not the same as making every phone on the rota ring
+        at three in the morning, and neither is the same as cutting a responder&rsquo;s handset off in the middle
+        of a shift. Someone trusted with one is not automatically trusted with the others.</p>
 
         <h3>Sending your own message</h3>
 

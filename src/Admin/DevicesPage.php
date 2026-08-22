@@ -70,11 +70,24 @@ final class DevicesPage
 {
     public const PAGE_SLUG = 'reach-devices';
     /**
-     * Reading the screen: it names the responder each handset belongs
-     * to, which is a personal-data read. Revoking and removing a handset
-     * are gated on this too, as they always have been.
+     * Reading the screen, and the refresh that redraws part of it: the
+     * list names the responder each handset belongs to, which is a
+     * personal-data read.
+     *
+     * Only reading. Everything that changes something has its own
+     * capability below.
      */
     private const CAPABILITY = PersonalDataPolicy::VIEW_CAPABILITY;
+
+    /**
+     * Revoking or removing a handset.
+     *
+     * Neither is a personal-data read, so neither belongs on the
+     * capability above. Revoking cuts a handset off the rota, possibly
+     * in the middle of a shift; removing erases its record outright and
+     * cannot be undone.
+     */
+    private const MANAGE_CAPABILITY = Capabilities::MANAGE_DEVICES;
 
     /**
      * Raising an alert — the test and the admin's own message.
@@ -85,10 +98,10 @@ final class DevicesPage
      * does not imply that. See {@see Capabilities::SEND_ALERTS}, which
      * also explains why it is Reach's rather than one of Scrutiny's.
      *
-     * Administrators hold both, so on an ordinary site nothing about the
-     * screen changes. The split only bites where someone has given the
-     * view capability to a role that should not be ringing phones —
-     * which is the case it exists for.
+     * Administrators hold all three, so on an ordinary site nothing about
+     * the screen changes. The split only bites where someone has given
+     * the view capability to a role that should not be ringing phones or
+     * cutting handsets off — which is the case it exists for.
      */
     private const SEND_CAPABILITY = Capabilities::SEND_ALERTS;
     /**
@@ -195,8 +208,15 @@ final class DevicesPage
         // again regardless: what the page chose to render is not a
         // permission check.
         $canSend = current_user_can(self::SEND_CAPABILITY);
+        $canManage = current_user_can(self::MANAGE_CAPABILITY);
 
-        $handsets = new DevicesListTable($this->devices, $this->members, self::ACTIONS_FORM_ID, $canSend);
+        $handsets = new DevicesListTable(
+            $this->devices,
+            $this->members,
+            self::ACTIONS_FORM_ID,
+            $canSend,
+            $canManage,
+        );
         $handsets->prepare_items();
 
         $alerts = new AlertsListTable($this->alerts, $this->members);
@@ -623,7 +643,7 @@ final class DevicesPage
 
     public function handleRevoke(): void
     {
-        if (!current_user_can(self::CAPABILITY)) {
+        if (!current_user_can(self::MANAGE_CAPABILITY)) {
             wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
         }
 
@@ -652,7 +672,7 @@ final class DevicesPage
 
     public function handleRemove(): void
     {
-        if (!current_user_can(self::CAPABILITY)) {
+        if (!current_user_can(self::MANAGE_CAPABILITY)) {
             wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
         }
 
