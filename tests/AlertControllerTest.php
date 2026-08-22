@@ -503,7 +503,48 @@ final class AlertControllerTest extends ReachTestCase
             $this->contacts,
             new CurrentDevice($this->devices, $this->minter, $gate),
             $this->audit,
+            $this->devices,
         );
+    }
+
+    public function testAHandsetCanReportThatItCouldNotReadAnAlert(): void
+    {
+        // Reach can see that a device row has no key. It cannot see a
+        // handset whose own copy has gone — a reinstall, a restore that
+        // skipped the keystore — and from here that handset looks healthy
+        // right up until an alert it cannot open.
+        $token = $this->enrol('jo@example.test');
+
+        $response = $this->controller()->unreadable($this->authed($token));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $response);
+        $this->assertSame(204, $response->get_status());
+        $this->assertTrue($this->devices->devices[0]->hasKeyFault());
+    }
+
+    public function testReportingIsIdempotent(): void
+    {
+        // A handset reporting the same fault on three alerts in a row is
+        // not an error, and there is nothing it could do with a different
+        // answer.
+        $token = $this->enrol('jo@example.test');
+        $controller = $this->controller();
+
+        $controller->unreadable($this->authed($token));
+        $second = $controller->unreadable($this->authed($token));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $second);
+        $this->assertSame(204, $second->get_status());
+    }
+
+    public function testAnUnauthenticatedReportIsRefused(): void
+    {
+        // Otherwise anyone could mark any handset as broken, and an admin
+        // would revoke a working one.
+        $result = $this->controller()->unreadable(new WP_REST_Request());
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_device_not_authenticated', $result->get_error_code());
     }
 
     /** Enrol a handset directly and return its plaintext token. */

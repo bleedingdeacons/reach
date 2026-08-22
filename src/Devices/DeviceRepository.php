@@ -58,6 +58,27 @@ interface DeviceRepository
     public function payloadKeyFor(int $id): string;
 
     /**
+     * Record that this handset could not read an alert.
+     *
+     * <b>Reported by the handset, not inferred here.</b> Reach can
+     * already see that a device row has no key; what it cannot see is a
+     * handset whose own copy has gone — a reinstall, a restore from a
+     * backup that skipped the keystore, a lock-screen change that
+     * invalidated it. From the server's side that handset looks
+     * perfectly healthy right up until an alert it cannot open, and
+     * without this the only symptom is a responder who does not answer.
+     */
+    public function markKeyFault(int $id, int $now): bool;
+
+    /**
+     * Forget a recorded fault. Called when the handset enrols again,
+     * which is the fix — a stale warning on the admin list about a
+     * handset that has since been repaired is worse than none, because
+     * it trains an admin to ignore the column.
+     */
+    public function clearKeyFault(int $id): bool;
+
+    /**
      * The live device holding this token hash, or null when there is
      * none — unknown, or revoked. Revoked rows are deliberately
      * indistinguishable from absent ones to the caller: both mean "this

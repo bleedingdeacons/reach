@@ -214,6 +214,7 @@ final class AlertContactTest extends ReachTestCase
             $this->contacts,
             new CurrentDevice($this->devices, $this->minter, $this->gate()),
             $this->audit,
+            $this->devices,
         );
     }
 

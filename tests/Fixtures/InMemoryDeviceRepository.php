@@ -184,6 +184,40 @@ final class InMemoryDeviceRepository implements DeviceRepository
         return $this->payloadKeys[$id] ?? '';
     }
 
+    public function markKeyFault(int $id, int $now): bool
+    {
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $d->pushProvider,
+            $d->pushToken,
+            $d->createdAt,
+            $d->lastSeenAt,
+            $d->revokedAt,
+            $now,
+        ));
+    }
+
+    public function clearKeyFault(int $id): bool
+    {
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $d->pushProvider,
+            $d->pushToken,
+            $d->createdAt,
+            $d->lastSeenAt,
+            $d->revokedAt,
+            null,
+        ));
+    }
+
     public function touch(int $id, int $now): bool
     {
         return $this->replace($id, static fn(Device $d): Device => new Device(

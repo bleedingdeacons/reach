@@ -291,6 +291,7 @@ final class ReachServiceProvider
             $c->get(AlertContactRepository::class),
             $c->get(CurrentDevice::class),
             $c->get(AuditLogger::class),
+            $c->get(DeviceRepository::class),
         ));
 
         // Frontend + admin.

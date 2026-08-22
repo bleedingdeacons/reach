@@ -76,6 +76,11 @@ final class WpdbDeviceRepository implements DeviceRepository
      * id. Defaulted to empty rather than made nullable so that handsets
      * enrolled before this column existed read as "no key" without a
      * null check at every call site; they get one by enrolling again.
+     *
+     * key_fault_at is nullable rather than defaulted, because here the
+     * absence genuinely is a third state: null means "this handset has
+     * never reported being unable to read an alert", which is not the
+     * same as reporting it at the epoch.
      */
     public static function install(wpdb $wpdb): void
     {
@@ -96,6 +101,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             push_provider VARCHAR(16) NOT NULL DEFAULT '',
             push_token VARCHAR(512) NOT NULL DEFAULT '',
             payload_key VARCHAR(255) NOT NULL DEFAULT '',
+            key_fault_at BIGINT UNSIGNED NULL,
             created_at BIGINT UNSIGNED NOT NULL,
             last_seen_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
             revoked_at BIGINT UNSIGNED NULL,
@@ -319,6 +325,36 @@ final class WpdbDeviceRepository implements DeviceRepository
         return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
     }
 
+    public function markKeyFault(int $id, int $now): bool
+    {
+        $table = self::tableName($this->wpdb);
+
+        $updated = $this->wpdb->update(
+            $table,
+            ['key_fault_at' => $now],
+            ['id' => $id],
+            ['%d'],
+            ['%d'],
+        );
+
+        return is_int($updated) && $updated > 0;
+    }
+
+    public function clearKeyFault(int $id): bool
+    {
+        $table = self::tableName($this->wpdb);
+
+        $updated = $this->wpdb->update(
+            $table,
+            ['key_fault_at' => null],
+            ['id' => $id],
+            ['%d'],
+            ['%d'],
+        );
+
+        return is_int($updated) && $updated > 0;
+    }
+
     public function payloadKeyFor(int $id): string
     {
         $table = self::tableName($this->wpdb);
@@ -419,7 +455,8 @@ final class WpdbDeviceRepository implements DeviceRepository
     private function columns(): string
     {
         return 'id, token_hash, member_email, member_id, label, platform, '
-            . 'push_provider, push_token, created_at, last_seen_at, revoked_at';
+            . 'push_provider, push_token, created_at, last_seen_at, revoked_at, '
+            . 'key_fault_at';
     }
 
     /**
@@ -450,6 +487,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             (int) $row['created_at'],
             (int) $row['last_seen_at'],
             $row['revoked_at'] !== null ? (int) $row['revoked_at'] : null,
+            ($row['key_fault_at'] ?? null) !== null ? (int) $row['key_fault_at'] : null,
         );
     }
 }

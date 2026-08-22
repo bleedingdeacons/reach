@@ -53,6 +53,8 @@ final class Schema
     /**
      * Schema version. Bump on any change to a CREATE TABLE above.
      *
+     * 5 — added devices.key_fault_at, so a handset that cannot read its
+     *     own alerts can say so and the admin list can show which one.
      * 4 — added devices.payload_key, the per-handset secret alert
      *     payloads will be encrypted to. Written at enrolment from this
      *     version on; nothing reads it yet.
@@ -62,7 +64,7 @@ final class Schema
      *     and alert contacts.
      * 1 — everything before schema versioning existed.
      */
-    public const VERSION = 4;
+    public const VERSION = 5;
 
     public const OPTION = 'reach_schema_version';
 

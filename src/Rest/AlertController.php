@@ -12,6 +12,8 @@ use Reach\Alerts\Alert;
 use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertRepository;
 use Reach\Devices\CurrentDevice;
+use Reach\Devices\DeviceRepository;
+use Reach\Logger\HasLogger;
 use Reach\Devices\Device;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use WP_Error;
@@ -51,7 +53,13 @@ use function register_rest_route;
  */
 final class AlertController
 {
+    use HasLogger;
     use RequiresSecureTransport;
+
+    protected static function logChannel(): string
+    {
+        return 'reach';
+    }
 
     public const NAMESPACE = 'reach/v1';
 
@@ -71,6 +79,7 @@ final class AlertController
         private readonly AlertContactRepository $contacts,
         private readonly CurrentDevice $currentDevice,
         private readonly AuditLogger $auditLogger,
+        private readonly DeviceRepository $devices,
     ) {
     }
 
@@ -105,6 +114,16 @@ final class AlertController
                         'sanitize_callback' => 'absint',
                     ],
                 ],
+            ]
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/alerts/unreadable',
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [$this, 'unreadable'],
+                'permission_callback' => '__return_true',
             ]
         );
 
@@ -267,6 +286,50 @@ final class AlertController
         // idempotent at the storage layer, and a handset retrying after
         // a dropped response has achieved what it asked for.
         return new WP_REST_Response(['acknowledged' => true, 'alert_id' => $alertId], 200);
+    }
+
+    /**
+     * A handset reporting that it could not read an alert.
+     *
+     * <b>Why the handset has to be the one to say.</b> Reach can already
+     * see that a device row has no key — it refuses to send to those, and
+     * says so on the dashboard. What it cannot see is a handset whose own
+     * copy has gone: a reinstall, a restore from a backup that skipped the
+     * keystore, a lock-screen change that invalidated it. From here that
+     * handset looks perfectly healthy, right up until an alert it cannot
+     * open, and the only symptom would be a responder who does not answer.
+     *
+     * <b>Deliberately carries nothing but the fact.</b> No alert id, no
+     * reason, no diagnostic. The remedy is the same whatever the cause —
+     * sign in again — so a taxonomy of failures would be detail nobody
+     * acts on, and every field is one more thing a handset in a bad state
+     * can get wrong.
+     *
+     * Answers 204 whether or not the row moved. A handset reporting the
+     * same fault on three alerts in a row is not an error, and there is
+     * nothing it could usefully do with a different answer.
+     */
+    public function unreadable(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
+        $now = time();
+        $device = $this->currentDevice->fromRequest($request, $now);
+        if ($device === null) {
+            return $this->notAuthenticated();
+        }
+
+        $this->devices->markKeyFault($device->id, $now);
+
+        self::logWarning('Handset reported it could not read an alert', [
+            'device'    => $device->id,
+            'responder' => $device->memberEmail,
+            'remedy'    => 'The responder should sign in again to be issued a new key.',
+        ]);
+
+        return new WP_REST_Response(null, 204);
     }
 
     private function notAuthenticated(): WP_Error
