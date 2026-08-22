@@ -73,6 +73,7 @@ use function rest_url;
 final class DeviceAuthController
 {
     use \Reach\Logger\HasLogger;
+    use RequiresSecureTransport;
 
     protected static function logChannel(): string
     {
@@ -277,6 +278,10 @@ final class DeviceAuthController
      */
     public function start(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         $redirectUri = (string) $request->get_param('redirect_uri');
         if (!$this->redirects->isAllowed($redirectUri)) {
             // See DeviceRedirectValidator: the response says nothing
@@ -315,6 +320,10 @@ final class DeviceAuthController
      */
     public function exchange(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         if ($this->overEnrolmentLimit()) {
             return $this->tooManyAttempts();
         }
@@ -343,6 +352,10 @@ final class DeviceAuthController
      */
     public function password(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         if ($this->overEnrolmentLimit()) {
             return $this->tooManyAttempts();
         }
@@ -379,6 +392,10 @@ final class DeviceAuthController
      */
     public function updatePush(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         $device = $this->currentDevice->fromRequest($request, time());
         if ($device === null) {
             return $this->notAuthenticated();
@@ -416,6 +433,10 @@ final class DeviceAuthController
      */
     public function session(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         $now = time();
         $device = $this->currentDevice->fromRequest($request, $now);
         if ($device === null) {

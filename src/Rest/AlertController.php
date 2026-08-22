@@ -51,6 +51,8 @@ use function register_rest_route;
  */
 final class AlertController
 {
+    use RequiresSecureTransport;
+
     public const NAMESPACE = 'reach/v1';
 
     /**
@@ -129,6 +131,10 @@ final class AlertController
      */
     public function pending(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         $now = time();
         $device = $this->currentDevice->fromRequest($request, $now);
         if ($device === null) {
@@ -167,6 +173,10 @@ final class AlertController
      */
     public function contact(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         $now = time();
         $device = $this->currentDevice->fromRequest($request, $now);
         if ($device === null) {
@@ -227,6 +237,10 @@ final class AlertController
      */
     public function acknowledge(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
         $now = time();
         $device = $this->currentDevice->fromRequest($request, $now);
         if ($device === null) {
