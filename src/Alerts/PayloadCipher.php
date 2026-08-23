@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Encrypts an alert's readable text to one handset's own key.
+ * Encrypts a push payload to one handset's own key.
  *
  * <b>Why this is not {@see \Reach\Core\Cipher}.</b> That one derives its
  * key from a WordPress salt, which is exactly right for data this site
@@ -20,21 +20,38 @@ if (!defined('ABSPATH')) {
  * direction, and folding them together would mean one class where the
  * key source is a mode flag.
  *
- * <b>What is encrypted, and what is not.</b> Only the parts a person
- * could read: the title, the body, and the reference. Everything else in
- * the push has to survive in the clear because the handset needs it
- * before it can decrypt anything — the alert id it will acknowledge
- * against, the kind (so a removal notice never reaches the alarm), the
- * priority, the expiry it checks before ringing, and the channel and
- * sound it builds the notification from. None of those name a person.
+ * <b>What is encrypted: everything.</b> This used to seal the title, the
+ * body and the reference, and let the rest travel in the clear on the
+ * grounds that the handset needed it before it could decrypt anything —
+ * the alert id, the kind, the priority, the channel and sound. It does
+ * not need any of them first. It holds one key, it opens one blob, and
+ * what is inside tells it what it has.
  *
- * <b>Size.</b> FCM caps a data message at 4KB.
- * {@see AlertRequest} already caps a title at 200 bytes, a body at 1000
- * and a reference at 64, and encryption adds an envelope plus base64 —
- * roughly a third. That turns 1264 bytes of worst-case text into about
- * 1770, so the worst-case message grows by around 500 bytes and stays
- * inside the cap. It is not a large margin. A future field added to the
- * encrypted blob should be measured rather than assumed.
+ * The reason to close that gap is that "an alert names nobody" is a
+ * convention rather than a property. {@see AlertRequest} caps lengths
+ * and strips markup; it does not read meaning, and it cannot — detecting
+ * personal data in free text is unreliable in both directions, and a
+ * false positive silences a real 3am alert. So nothing is left readable
+ * to be careless with, and validity becomes "does it decrypt and parse
+ * as JSON" rather than "does its content look sensitive".
+ *
+ * <b>Compressed first, and this is load-bearing.</b> FCM caps a data
+ * message at 4KB. The worst case {@see AlertRequest}'s own caps allow —
+ * title 200, body 1000, reference 64, payload 2000, plus the fixed
+ * fields — is 3433 bytes of JSON, which seals and base64s to 4616:
+ * over the limit. Without the gzip, the largest alerts the API accepts
+ * would be accepted and then silently fail to send.
+ *
+ * How much the gzip buys depends entirely on the text. Prose and
+ * references compress hard — the same worst case built from repeated
+ * characters comes to 248 bytes — but content that does not compress at
+ * all still seals to 2724, and that is the figure the margin should be
+ * read against. It is comfortable rather than generous, and a future
+ * field added to the payload should be measured rather than assumed.
+ *
+ * The envelope is unchanged from when this sealed three fields — 12-byte
+ * nonce, 16-byte tag, ciphertext, base64 — so the Hand side's framing is
+ * the same and only what is inside it moved.
  */
 final class PayloadCipher
 {
@@ -43,27 +60,32 @@ final class PayloadCipher
     private const TAG_BYTES = 16;
 
     /**
-     * Encrypt the readable fields as one JSON blob.
+     * Encrypt one map as a single blob.
      *
      * $base64Key is the handset's key exactly as enrolment issued it.
      * Returns '' when it is unusable or the cipher refuses — a caller
-     * must read that as "send this one in the clear or not at all",
-     * never as an empty payload.
+     * must read that as "this handset cannot be sent to", never as an
+     * empty payload. {@see Transport\FcmTransport::dataFor()} is where
+     * that refusal is turned into a logged error.
+     *
+     * @param array<string, string> $data
      */
-    public static function seal(Alert $alert, string $base64Key): string
+    public static function seal(array $data, string $base64Key): string
     {
         $key = base64_decode($base64Key, true);
         if (!is_string($key) || strlen($key) !== 32) {
             return '';
         }
 
-        $json = wp_json_encode([
-            'title'     => $alert->title,
-            'body'      => $alert->body,
-            'reference' => $alert->reference,
-        ]);
+        $json = wp_json_encode($data);
 
         if (!is_string($json)) {
+            return '';
+        }
+
+        $compressed = gzencode($json);
+
+        if (!is_string($compressed)) {
             return '';
         }
 
@@ -71,7 +93,7 @@ final class PayloadCipher
         $tag = '';
 
         $ciphertext = openssl_encrypt(
-            $json,
+            $compressed,
             self::CIPHER,
             $key,
             OPENSSL_RAW_DATA,
