@@ -273,6 +273,27 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(1, $alerts->alerts, 'the revoked handset is not a destination');
     }
 
+    /** @test */
+    public function a_subject_and_body_are_unslashed_before_they_are_sent(): void
+    {
+        // WordPress runs wp_magic_quotes() on every request, so $_POST
+        // arrives slash-escaped whatever the PHP configuration says. Left
+        // alone, an apostrophe reaches the responder's lock screen with a
+        // backslash in front of it.
+        $_POST = [
+            'reach_scope'   => 'all',
+            'reach_subject' => "Jo\'s phone is down",
+            'reach_body'    => "Use Sam\'s instead",
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertCount(1, $alerts->alerts);
+        $this->assertSame("Jo's phone is down", $alerts->alerts[0]->title);
+        $this->assertSame("Use Sam's instead", $alerts->alerts[0]->body);
+    }
+
     // ── refusals ──────────────────────────────────────────────────────
 
     /** @test */

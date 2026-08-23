@@ -420,10 +420,28 @@ final class SendMessagePage
         return (string) add_query_arg(['page' => DevicesPage::PAGE_SLUG], admin_url('admin.php'));
     }
 
-    /** A trimmed POST string, or '' for anything that is not one. */
+    /**
+     * A trimmed, unslashed POST string, or '' for anything that is not
+     * one.
+     *
+     * <b>wp_unslash() is not optional here.</b> WordPress runs
+     * `wp_magic_quotes()` on every request, which adds slashes to
+     * `$_POST` whatever the PHP configuration says — so a subject typed
+     * as "Jo's phone is down" arrives with a backslash before the
+     * apostrophe, and would
+     * put a literal backslash on a responder's lock screen. The sibling
+     * admin screens all unslash; this one inherited a reader that did
+     * not.
+     *
+     * Nothing is sanitised here on purpose: {@see \Reach\Alerts\AlertRequest}
+     * caps the length and strips the markup on the way in, and doing it
+     * twice would mean two places to keep in step.
+     */
     private function posted(string $key): string
     {
-        return isset($_POST[$key]) && is_string($_POST[$key]) ? trim($_POST[$key]) : '';
+        return isset($_POST[$key]) && is_string($_POST[$key])
+            ? trim(wp_unslash($_POST[$key]))
+            : '';
     }
 
     /**
