@@ -1344,6 +1344,28 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
+    public function no_toolbar_control_is_named_action_because_admin_post_routes_on_it(): void
+    {
+        // admin-post.php picks its handler from $_REQUEST['action'], and
+        // POST beats the query string. So a control called `action` in
+        // this form hijacks the routing of the form it sits in: pressing
+        // anything sent the request to admin_post_reach_test, or to
+        // admin_post_-1 with the dropdown left alone, and WordPress died
+        // with no handler to run. Core names it `action` safely only
+        // because its list screens post to themselves.
+        //
+        // The row forms do use a hidden `action` — that is how they pick
+        // their own handler — so this looks at the toolbar only.
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $toolbar = substr($html, 0, strpos($html, '<table') ?: strlen($html));
+
+        $this->assertStringNotContainsString('name="action"', $toolbar);
+        $this->assertStringNotContainsString('name="action2"', $toolbar);
+        $this->assertStringContainsString('name="reach_bulk"', $toolbar);
+    }
+
+    /** @test */
     public function the_table_controls_are_bound_to_the_form_they_are_not_inside(): void
     {
         // The rows carry POST forms of their own for Revoke and Remove, so
@@ -1516,7 +1538,7 @@ final class DevicesPageTest extends ReachTestCase
         // only way to find out which handset is deaf.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['action' => 'reach_test', 'device_ids' => ['7']];
+        $_POST = ['reach_bulk' => 'reach_test', 'device_ids' => ['7']];
 
         $target = $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
@@ -1537,7 +1559,7 @@ final class DevicesPageTest extends ReachTestCase
         // behind a colleague's answer.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['action' => 'reach_test', 'device_ids' => ['7', '8']];
+        $_POST = ['reach_bulk' => 'reach_test', 'device_ids' => ['7', '8']];
 
         $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7), $this->device(id: 8)),
@@ -1558,7 +1580,7 @@ final class DevicesPageTest extends ReachTestCase
         // same lifetime, same lack of personal data.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['action' => 'reach_test', 'device_ids' => ['7']];
+        $_POST = ['reach_bulk' => 'reach_test', 'device_ids' => ['7']];
 
         $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
@@ -1595,7 +1617,7 @@ final class DevicesPageTest extends ReachTestCase
     {
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['action' => 'reach_test'];
+        $_POST = ['reach_bulk' => 'reach_test'];
 
         $target = $this->testAlertFromRequest($this->page(alerts: $alerts));
 
@@ -1615,7 +1637,7 @@ final class DevicesPageTest extends ReachTestCase
         // must not become testable by editing one in.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['action' => 'reach_test', 'device_ids' => $posted];
+        $_POST = ['reach_bulk' => 'reach_test', 'device_ids' => $posted];
 
         $target = $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith(
@@ -1648,7 +1670,7 @@ final class DevicesPageTest extends ReachTestCase
     {
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['action' => 'reach_test', 'device_ids' => ['7', '7']];
+        $_POST = ['reach_bulk' => 'reach_test', 'device_ids' => ['7', '7']];
 
         $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
