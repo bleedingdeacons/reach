@@ -78,6 +78,24 @@ interface DeviceRepository
      */
     public function markKeyFault(int $id, int $now): bool;
 
+    /**
+     * Record what a handset says its lock screen does with alert text.
+     *
+     * <b>Overwritten every time, unlike {@see markKeyFault()}.</b> A key
+     * fault is a thing that happened and stays true of the row; this is
+     * a *current* setting its owner can change either way at any moment,
+     * so the last thing the handset said is the only answer worth
+     * keeping. A handset that reports "shown" and is then put right
+     * reports "hidden" at its next launch, and the warning clears
+     * itself.
+     *
+     * $lockScreen must be one of {@see Device::LOCK_SCREEN_STATES};
+     * anything else is refused rather than stored, because an
+     * unrecognised value would show on the admin list as neither a
+     * warning nor a reassurance and nobody would know which it meant.
+     */
+    public function recordLockScreen(int $id, string $lockScreen): bool;
+
 
     /**
      * The live device holding this token hash, or null when there is
@@ -125,9 +143,15 @@ interface DeviceRepository
      *
      * @return array<int, Device>
      */
-    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array;
+    public function list(
+        int $limit,
+        int $offset,
+        string $orderBy = '',
+        string $order = 'desc',
+        string $search = '',
+    ): array;
 
-    public function countAll(): int;
+    public function countAll(string $search = ''): int;
 
     /**
      * Record that a device just authenticated. Cheap and frequent — the

@@ -167,18 +167,20 @@ final class DevicesListTable extends WP_List_Table
             'responder',
         ];
 
-        $total  = $this->devices->countAll();
+        $search = $this->requestedSearch();
+        $total  = $this->devices->countAll($search);
         $page   = $this->get_pagenum();
         $column = $this->requestedColumn();
         $order  = $this->requestedOrder();
 
         $this->items = $column === 'responder'
-            ? $this->pageSortedByResponderName($page, $order, $total)
+            ? $this->pageSortedByResponderName($page, $order, $total, $search)
             : $this->devices->list(
                 self::PER_PAGE,
                 ($page - 1) * self::PER_PAGE,
                 self::SORT_FIELDS[$column] ?? '',
                 $order,
+                $search,
             );
 
         $this->set_pagination_args([
@@ -188,9 +190,53 @@ final class DevicesListTable extends WP_List_Table
         ]);
     }
 
+    /**
+     * The search box, in core's own markup.
+     *
+     * <b>Written out rather than calling core's `search_box()`.</b> That
+     * method assumes the whole table sits inside one form and emits
+     * hidden fields to carry the screen's state through it; this table
+     * cannot be wrapped in a form — see {@see bulk_actions()} — and its
+     * state is carried by the fetch that swaps the table instead. The
+     * class names are core's, so it looks like every other search box in
+     * wp-admin.
+     */
+    public function searchBox(): string
+    {
+        $term = $this->requestedSearch();
+
+        return '<p class="search-box">'
+            . '<label class="screen-reader-text" for="reach-handset-search-input">Search handsets:</label>'
+            . '<input type="search" id="reach-handset-search-input" name="s" value="'
+            . esc_attr($term) . '" placeholder="Responder, device or platform">'
+            . '<input type="submit" id="search-submit" class="button" value="Search handsets">'
+            . '</p>';
+    }
+
     public function no_items(): void
     {
-        echo 'No handsets have been enrolled yet.';
+        // Two different nothings, and telling them apart is the whole
+        // value of the message: an intergroup with no handsets at all has
+        // a setup problem, and one whose search matched nothing has a
+        // typo.
+        echo $this->requestedSearch() === ''
+            ? 'No handsets have been enrolled yet.'
+            : 'No handsets match that search.';
+    }
+
+    /**
+     * The search term, trimmed.
+     *
+     * GET, like the sort and the page beside it: the search form submits
+     * with GET so a search is a link somebody can share or reload, and
+     * the fetch that swaps this table in sends the same parameters the
+     * same way.
+     */
+    private function requestedSearch(): string
+    {
+        return isset($_GET['s']) && is_string($_GET['s'])
+            ? trim(sanitize_text_field(wp_unslash($_GET['s'])))
+            : '';
     }
 
     /**
@@ -213,11 +259,18 @@ final class DevicesListTable extends WP_List_Table
      *
      * @return array<int, Device>
      */
-    private function pageSortedByResponderName(int $page, string $order, int $total): array
-    {
+    private function pageSortedByResponderName(
+        int $page,
+        string $order,
+        int $total,
+        string $search = '',
+    ): array {
         $devices = [];
         for ($offset = 0; $offset < $total; $offset += self::FETCH_CHUNK) {
-            $chunk = $this->devices->list(self::FETCH_CHUNK, $offset);
+            // The search goes down with every chunk, or this would sort
+            // the whole table and then page into a slice of it that the
+            // count above never described.
+            $chunk = $this->devices->list(self::FETCH_CHUNK, $offset, '', 'desc', $search);
             if ($chunk === []) {
                 break;
             }
@@ -257,34 +310,123 @@ final class DevicesListTable extends WP_List_Table
     }
 
     /**
-     * The bottom nav bar, pagination only, and nothing at the top.
+     * The one bulk action: ring the ticked handsets.
      *
-     * Core's top nav would bring two things this screen cannot use. One
-     * is the bulk-actions machinery — a nonce and an empty
-     * <div class="bulkactions"> — and this table has no bulk actions:
-     * the test-alert buttons are their own form above it, because the
-     * tick boxes have to reach them from outside the table.
+     * <b>Only this one, deliberately.</b> Revoke and Remove stay as
+     * per-row buttons. Both are destructive — one cuts a handset off the
+     * rota possibly mid-shift, the other deletes its record outright and
+     * cannot be undone — and a dropdown applied to a whole ticked page
+     * turns either into a single mis-click. A test alert applied to the
+     * wrong selection rings some phones that did not need ringing, which
+     * is the sort of mistake that apologises for itself.
      *
-     * The other is the "current page" text box, which only works inside
-     * a <form> wrapped round the table. The rows carry POST forms of
-     * their own, and a form inside a form is not something a browser
-     * will parse — the same constraint that puts the tick boxes on a
-     * `form` attribute. Core renders that box in the top nav only, so
-     * keeping the bottom one alone loses a control that could not have
-     * worked and keeps the arrows, which are links and need no form at
-     * all.
+     * @return array<string, string>
+     */
+    protected function get_bulk_actions(): array
+    {
+        return $this->canSend ? ['reach_test' => 'Send test alert'] : [];
+    }
+
+    /**
+     * WordPress's bulk-action markup, bound to a form it is not inside.
+     *
+     * <b>Why this is not simply core's version.</b> Core assumes the
+     * whole table sits inside one <form>, and this one cannot: the rows
+     * carry POST forms of their own for Revoke and Remove, and a form
+     * inside a form is not something a browser will parse. So the select
+     * and the Apply button carry a `form` attribute naming the test-alert
+     * form instead — the same trick the tick boxes have always used, for
+     * the same reason.
+     *
+     * The markup and class names are core's, so the control looks and
+     * behaves like the one on every other list screen.
+     *
+     * @param string $which
+     */
+    protected function bulk_actions($which = ''): void
+    {
+        $actions = $this->get_bulk_actions();
+        if ($actions === []) {
+            return;
+        }
+
+        // Core suffixes the bottom copy so the two do not collide when
+        // both are submitted; it reads `action` first and `action2` next.
+        $name = $which === 'bottom' ? 'action2' : 'action';
+        $id   = 'bulk-action-selector-' . $which;
+
+        echo '<div class="alignleft actions bulkactions">';
+        echo '<label for="' . esc_attr($id) . '" class="screen-reader-text">Select bulk action</label>';
+        echo '<select name="' . esc_attr($name) . '" id="' . esc_attr($id) . '"'
+            . ' form="' . esc_attr($this->testFormId) . '">';
+        echo '<option value="-1">Bulk actions</option>';
+
+        foreach ($actions as $value => $label) {
+            echo '<option value="' . esc_attr($value) . '">' . esc_html($label) . '</option>';
+        }
+
+        echo '</select>';
+        echo '<input type="submit" id="doaction' . ($which === 'bottom' ? '2' : '')
+            . '" class="button action" value="Apply"'
+            . ' form="' . esc_attr($this->testFormId) . '">';
+        echo '</div>';
+    }
+
+    /**
+     * The toolbar either side of the table.
+     *
+     * <b>The top bar is core's, minus the one control that cannot work
+     * here.</b> That is the "current page" text box, which only submits
+     * from inside a <form> wrapped round the table — see
+     * {@see bulk_actions()} for why there is no such form. It appears in
+     * core's top nav only, so leaving it out costs a control that could
+     * not have worked and keeps the arrows, which are links.
      *
      * @param string $which
      */
     protected function display_tablenav($which): void
     {
-        if ($which !== 'bottom') {
+        // Narrowed rather than passed through: core types pagination()
+        // as taking 'top' or 'bottom' and this parameter is a bare string
+        // on the way in, so anything unexpected is treated as the bottom
+        // bar — which is the half that carries no actions.
+        $where = $which === 'top' ? 'top' : 'bottom';
+
+        echo '<div class="tablenav ' . esc_attr($where) . '">';
+
+        $this->bulk_actions($where);
+        $this->extra_tablenav($where);
+        $this->pagination($where);
+
+        echo '<br class="clear" /></div>';
+    }
+
+    /**
+     * The broadcast button, beside the bulk actions.
+     *
+     * Top bar only: it is an action rather than a summary, and core puts
+     * actions at the top. Kept as a button of its own rather than folded
+     * into the dropdown because "is the whole rota covered" is the
+     * commonest question this screen answers, and making it require
+     * ticking every row first would be a step backwards.
+     *
+     * @param string $which
+     */
+    protected function extra_tablenav($which): void
+    {
+        if ($which !== 'top' || !$this->canSend) {
             return;
         }
 
-        echo '<div class="tablenav bottom">';
-        $this->pagination('bottom');
-        echo '<br class="clear" /></div>';
+        // Written out rather than through submit_button(), for the same
+        // reason as the search box: what matters is the exact name and
+        // the `form` attribute, and core's helper would be one more thing
+        // between this and the markup the handler reads.
+        echo '<div class="alignleft actions">';
+        echo '<input type="submit" name="reach_scope_all" class="button"'
+            . ' value="Send test to all live handsets"'
+            . ' form="' . esc_attr($this->testFormId) . '">';
+        echo '</div>';
     }
 
     /**
@@ -358,6 +500,20 @@ final class DevicesListTable extends WP_List_Table
             return '<span style="color:#8a6d00;" title="This handset reported it could not read an alert. '
                 . 'The responder should sign in again.">Cannot read alerts</span><br>'
                 . '<small>' . esc_html($this->when((int) $device->keyFaultAt)) . '</small>';
+        }
+
+        // Below the key fault, because a handset that cannot read its
+        // alerts at all has a larger problem than one reading them too
+        // publicly. Alongside Live rather than instead of it: this
+        // handset is working, and the note is about who else can read it.
+        if ($device->showsAlertsOnLockScreen()) {
+            return '<span style="color:#008a20;">Live</span><br>'
+                . '<span style="color:#8a6d00;" title="This handset is set to show notification '
+                . 'content on its lock screen, so alert text is readable by anyone near it. Hand asks '
+                . 'Android to redact it, but that only takes effect when the phone is set to hide '
+                . 'sensitive content. Only the responder can change it: Settings, Notifications, '
+                . 'Notifications on lock screen, Hide sensitive content.">Alerts readable when '
+                . 'locked</span>';
         }
 
         return '<span style="color:#008a20;">Live</span>';

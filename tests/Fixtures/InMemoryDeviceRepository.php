@@ -144,8 +144,13 @@ final class InMemoryDeviceRepository implements DeviceRepository
         ));
     }
 
-    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
-    {
+    public function list(
+        int $limit,
+        int $offset,
+        string $orderBy = '',
+        string $order = 'desc',
+        string $search = '',
+    ): array {
         $compare = match (strtolower($orderBy)) {
             'member_email'  => static fn(Device $a, Device $b): int => strcmp($a->memberEmail, $b->memberEmail),
             'label'         => static fn(Device $a, Device $b): int => strcmp($a->label, $b->label),
@@ -157,7 +162,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             default         => null,
         };
 
-        $devices = $this->devices;
+        $devices = self::matching($this->devices, $search);
 
         if ($compare !== null) {
             $descending = strtolower($order) !== 'asc';
@@ -174,9 +179,34 @@ final class InMemoryDeviceRepository implements DeviceRepository
         return array_slice($devices, $offset, $limit);
     }
 
-    public function countAll(): int
+    public function countAll(string $search = ''): int
     {
-        return count($this->devices);
+        return count(self::matching($this->devices, $search));
+    }
+
+    /**
+     * The same fields the real repository's WHERE covers, matched the
+     * same way — case-insensitively, anywhere in the value. A double
+     * that searched differently would let a test pass against behaviour
+     * the site does not have.
+     *
+     * @param array<int, Device> $devices
+     * @return array<int, Device>
+     */
+    private static function matching(array $devices, string $search): array
+    {
+        if ($search === '') {
+            return $devices;
+        }
+
+        $needle = strtolower($search);
+
+        return array_values(array_filter(
+            $devices,
+            static fn(Device $d): bool => str_contains(strtolower($d->memberEmail), $needle)
+                || str_contains(strtolower($d->label), $needle)
+                || str_contains(strtolower($d->platform), $needle),
+        ));
     }
 
     public function payloadKeyFor(int $id): string
@@ -198,9 +228,31 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->lastSeenAt,
             $d->revokedAt,
             $now,
+            $d->lockScreen,
         ));
     }
 
+    public function recordLockScreen(int $id, string $lockScreen): bool
+    {
+        if (!in_array($lockScreen, Device::LOCK_SCREEN_STATES, true)) {
+            return false;
+        }
+
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $d->pushProvider,
+            $d->pushToken,
+            $d->createdAt,
+            $d->lastSeenAt,
+            $d->revokedAt,
+            $d->keyFaultAt,
+            $lockScreen,
+        ));
+    }
 
     public function touch(int $id, int $now): bool
     {
@@ -215,6 +267,8 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->createdAt,
             $now,
             $d->revokedAt,
+            $d->keyFaultAt,
+            $d->lockScreen,
         ));
     }
 
@@ -231,6 +285,8 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->createdAt,
             $d->lastSeenAt,
             $d->revokedAt,
+            $d->keyFaultAt,
+            $d->lockScreen,
         ));
     }
 
@@ -252,6 +308,8 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->createdAt,
             $d->lastSeenAt,
             $now,
+            $d->keyFaultAt,
+            $d->lockScreen,
         ));
     }
 

@@ -21,7 +21,18 @@ if (!defined('ABSPATH')) {
  * The title and body of an alert travel further than almost anything
  * else in this stack: through Google's FCM servers, onto a lock screen
  * that anyone standing nearby can read, and into the notification
- * history of the handset. Reach already refuses to persist a caller's
+ * history of the handset.
+ *
+ * <b>The lock screen is not redacted by anything Reach controls.</b>
+ * Hand marks its notifications private and supplies a public version
+ * reading "Helpline alert / Unlock to read", but Android substitutes
+ * that only where the phone's owner has chosen to hide sensitive
+ * content. On a handset set to show everything — which many are, by
+ * default — the alert's own words are what a stranger reads, and no
+ * app can override that. Handsets that have said so are flagged on the
+ * Hand devices screen; a handset that has never said is not a handset
+ * known to be safe. Which is to say the rule below is the protection,
+ * not a second layer behind one. Reach already refuses to persist a caller's
  * name and number — {@see \Reach\CallRequests\CallRequest} keeps only
  * non-identifying tracking data and emails the rest — and an alert must
  * not undo that by putting the same details on a lock screen instead.

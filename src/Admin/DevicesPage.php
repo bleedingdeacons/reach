@@ -136,6 +136,16 @@ final class DevicesPage
     private const ALERTS_REFRESH_ACTION = 'reach_recent_alerts';
 
     /**
+     * The admin-ajax action behind the handsets table.
+     *
+     * Sorting, paging and searching all come back through here rather
+     * than reloading the screen, for the reason the Recent alerts
+     * refresh already gives: a reload throws away the handset selection
+     * an admin has just ticked, and wherever they had scrolled to.
+     */
+    private const HANDSETS_REFRESH_ACTION = 'reach_handsets';
+
+    /**
      * The nonce for the test-alert form.
      *
      * Named for the screen's actions rather than for the test alert
@@ -155,9 +165,11 @@ final class DevicesPage
      */
     private const ACTIONS_FORM_ID = 'reach-handset-actions';
 
-    /** Which handsets a test alert is for. */
-    private const SCOPE_ALL = 'all';
-    private const SCOPE_SELECTED = 'selected';
+    /**
+     * The value the bulk-actions dropdown posts for a test alert. Must
+     * match the key {@see DevicesListTable::get_bulk_actions()} offers.
+     */
+    private const BULK_TEST_ACTION = 'reach_test';
 
     public function __construct(
         private readonly DeviceRepository $devices,
@@ -174,6 +186,7 @@ final class DevicesPage
         add_action('admin_post_' . self::REMOVE_ACTION, [$this, 'handleRemove']);
         add_action('admin_post_' . self::TEST_ALERT_ACTION, [$this, 'handleTestAlert']);
         add_action('wp_ajax_' . self::ALERTS_REFRESH_ACTION, [$this, 'handleRecentAlerts']);
+        add_action('wp_ajax_' . self::HANDSETS_REFRESH_ACTION, [$this, 'handleHandsets']);
     }
 
     public function addMenu(): void
@@ -231,98 +244,218 @@ final class DevicesPage
 
             <p class="description">
                 Handsets running the Hand app, each paired to one certified telephone responder.
-                Alerts raised through Reach&rsquo;s alerting API are delivered to every live handset
-                here. Eligibility is re-checked against Unity on every request, so a responder whose
-                certification lapses stops receiving alerts automatically &mdash; revoking is for
-                handsets that are lost, replaced, or no longer wanted. Removing goes further:
-                it tells the handset it is off the rota and then deletes its record here
-                altogether, rather than keeping it as history.
+                Alerts go to every live handset here. A responder whose certification lapses stops
+                receiving them automatically &mdash; revoke a handset that is lost or replaced,
+                and remove one whose record should not be kept at all.
             </p>
 
             <?php if ($canSend) : ?>
-            <h2 class="title">Send a test alert</h2>
             <p class="description">
-                Rings handsets now, through the real delivery path. Tick handsets in the table
-                below and send to the selection to reach one phone on its own &mdash; which is how
-                you find out <em>which</em> handset is deaf, rather than only that one of them is.
-                Use it after changing the Firebase credentials, after enrolling a handset, and
-                before relying on the rota. The test alert carries no personal data and says who
-                sent it.
-            </p>
-            <p class="description">
-                To send your own wording instead, use
+                <strong>Send test alert</strong> rings the ticked handsets now, through the real
+                delivery path &mdash; ringing one phone on its own is how you find out
+                <em>which</em> handset is deaf. To send your own wording instead, use
                 <a href="<?php echo esc_url($this->sendMessageUrl()); ?>">Send Message</a>.
             </p>
 
+            <!--
+                The form the table's controls belong to.
+
+                Empty but for its nonce, and that is the point: the tick
+                boxes, the bulk-actions dropdown, its Apply button and the
+                broadcast button all sit inside the table markup and reach
+                this form by their `form` attribute. They have to, because
+                the rows carry POST forms of their own for Revoke and
+                Remove, and a form inside a form is not something a browser
+                will parse.
+            -->
             <form id="<?php echo esc_attr(self::ACTIONS_FORM_ID); ?>"
                   method="post"
                   action="<?php echo esc_url($this->postUrl(self::TEST_ALERT_ACTION)); ?>">
                 <?php wp_nonce_field(self::ACTIONS_NONCE); ?>
-                <p>
-                    <button type="submit"
-                            name="reach_scope"
-                            value="<?php echo esc_attr(self::SCOPE_ALL); ?>"
-                            class="button button-secondary">
-                        Send a test to every live handset
-                    </button>
-                    <button type="submit"
-                            name="reach_scope"
-                            value="<?php echo esc_attr(self::SCOPE_SELECTED); ?>"
-                            class="button button-secondary">
-                        Send a test to the selected handsets
-                    </button>
-                </p>
             </form>
             <?php endif; ?>
 
             <h2 class="title">Enrolled handsets</h2>
-            <p class="description"><?php echo (int) $handsets->get_pagination_arg('total_items'); ?> in total.</p>
 
-            <?php $handsets->display(); ?>
+            <div id="reach-handsets"
+                 data-action="<?php echo esc_attr(self::HANDSETS_REFRESH_ACTION); ?>"
+                 data-nonce="<?php echo esc_attr(wp_create_nonce(self::HANDSETS_REFRESH_ACTION)); ?>">
+                <form class="search-form" method="get">
+                    <input type="hidden" name="page" value="<?php echo esc_attr(self::PAGE_SLUG); ?>">
+                    <?php echo $handsets->searchBox(); ?>
+                </form>
+
+                <!--
+                    Only this inner element is replaced on a swap.
+
+                    The search form is deliberately outside it: rebuilding
+                    the form from its own outerHTML would serialise the
+                    `value` *attribute* rather than the live property, so
+                    the term somebody had just typed would vanish from the
+                    box while the table stayed filtered by it.
+                -->
+                <div class="reach-handsets-table">
+                    <?php $handsets->display(); ?>
+                </div>
+            </div>
+
+            <script>
+                // Sorting, paging and searching without reloading the
+                // screen.
+                //
+                // A reload would throw away the handsets an admin has just
+                // ticked — which is the whole point of the selection — and
+                // wherever they had scrolled to. So the table is fetched
+                // as a fragment and swapped in, exactly as Recent alerts
+                // below already does, but driven by clicks rather than a
+                // timer.
+                //
+                // Everything is delegated from the container rather than
+                // bound to the links and boxes themselves: those are
+                // replaced wholesale on every swap, and a listener
+                // attached to one of them would go with it.
+                (function () {
+                    var box = document.getElementById('reach-handsets');
+                    if (!box || typeof ajaxurl === 'undefined' || typeof window.fetch !== 'function') {
+                        return;
+                    }
+
+                    var busy = false;
+
+                    box.addEventListener('click', function (event) {
+                        // Sort headers and pager arrows are both links
+                        // carrying the state we want in their query.
+                        var link = event.target.closest('a');
+                        if (!link || !box.contains(link) || !link.href) {
+                            return;
+                        }
+
+                        var query = new URL(link.href, window.location.origin).searchParams;
+                        if (!query.get('orderby') && !query.get('paged')) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        load(query);
+                    });
+
+                    box.addEventListener('submit', function (event) {
+                        var form = event.target.closest('form.search-form');
+                        if (!form) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        load(new URLSearchParams(new FormData(form)));
+                    });
+
+                    // Back and forward should move through the sorts and
+                    // searches, not out of the screen entirely.
+                    window.addEventListener('popstate', function () {
+                        load(new URLSearchParams(window.location.search), false);
+                    });
+
+                    function load(query, push) {
+                        if (busy) {
+                            return;
+                        }
+                        busy = true;
+
+                        var wanted = new URLSearchParams();
+                        ['orderby', 'order', 'paged', 's'].forEach(function (key) {
+                            if (query.get(key)) {
+                                wanted.set(key, query.get(key));
+                            }
+                        });
+
+                        var asked = new URLSearchParams(wanted.toString());
+                        asked.set('action', box.dataset.action);
+                        asked.set('_ajax_nonce', box.dataset.nonce);
+
+                        box.style.opacity = '0.5';
+
+                        window.fetch(ajaxurl + '?' + asked.toString(), { credentials: 'same-origin' })
+                            .then(function (response) {
+                                if (!response.ok) {
+                                    throw new Error(String(response.status));
+                                }
+                                return response.text();
+                            })
+                            .then(function (html) {
+                                // Only the table's own element, so the
+                                // search form above it is left standing
+                                // with whatever is typed in it.
+                                var target = box.querySelector('.reach-handsets-table');
+                                if (target) {
+                                    target.innerHTML = html;
+                                }
+
+                                if (push !== false) {
+                                    wanted.set('page', '<?php echo esc_js(self::PAGE_SLUG); ?>');
+                                    window.history.pushState({}, '', '?' + wanted.toString());
+                                }
+                            })
+                            .catch(function () {
+                                // Fall back to the ordinary page load. A
+                                // sort that silently does nothing is worse
+                                // than one that costs a reload.
+                                wanted.set('page', '<?php echo esc_js(self::PAGE_SLUG); ?>');
+                                window.location.search = wanted.toString();
+                            })
+                            .finally(function () {
+                                box.style.opacity = '';
+                                busy = false;
+                            });
+                    }
+                })();
+            </script>
 
             <?php if ($canSend) : ?>
             <script>
                 // Tick-all for the handset selection. Written here rather
                 // than left to core's list-table JS, which this screen
                 // cannot rely on: the boxes belong to the test-alert form
-                // by their `form` attribute and sit in one of two tables
-                // on the page, so the binding is scoped to this table by
-                // class rather than to every list table on the screen.
+                // by their `form` attribute, and the table they sit in is
+                // replaced on every sort — so this delegates from the
+                // container rather than binding to boxes that will not
+                // survive the next swap.
                 (function () {
-                    var table = document.querySelector('table.reach-handsets');
-                    if (!table) {
+                    var box = document.getElementById('reach-handsets');
+                    if (!box) {
                         return;
                     }
 
-                    var boxes = table.querySelectorAll('.reach-device-select');
-                    // Core renders one tick-all in the head and another in
-                    // the foot, and they have to agree with each other.
-                    var alls = table.querySelectorAll('.check-column input[type="checkbox"]:not(.reach-device-select)');
-                    if (boxes.length === 0 || alls.length === 0) {
-                        return;
-                    }
+                    box.addEventListener('change', function (event) {
+                        var table = box.querySelector('table.reach-handsets');
+                        if (!table || !table.contains(event.target)) {
+                            return;
+                        }
 
-                    function setAll(checked) {
-                        alls.forEach(function (all) {
-                            all.checked = checked;
-                        });
-                    }
+                        var boxes = table.querySelectorAll('.reach-device-select');
+                        // Core renders one tick-all in the head and another
+                        // in the foot, and they have to agree with each other.
+                        var alls = table.querySelectorAll(
+                            '.check-column input[type="checkbox"]:not(.reach-device-select)');
 
-                    alls.forEach(function (all) {
-                        all.addEventListener('change', function () {
-                            boxes.forEach(function (box) {
-                                box.checked = all.checked;
-                            });
-                            setAll(all.checked);
-                        });
-                    });
-
-                    boxes.forEach(function (box) {
-                        box.addEventListener('change', function () {
-                            setAll(Array.prototype.every.call(boxes, function (b) {
+                        if (event.target.classList.contains('reach-device-select')) {
+                            var every = Array.prototype.every.call(boxes, function (b) {
                                 return b.checked;
-                            }));
-                        });
+                            });
+                            alls.forEach(function (all) {
+                                all.checked = every;
+                            });
+                            return;
+                        }
+
+                        if (event.target.type === 'checkbox' && alls.length > 0) {
+                            var checked = event.target.checked;
+                            boxes.forEach(function (b) {
+                                b.checked = checked;
+                            });
+                            alls.forEach(function (all) {
+                                all.checked = checked;
+                            });
+                        }
                     });
                 })();
             </script>
@@ -406,6 +539,87 @@ final class DevicesPage
             </script>
         </div>
         <?php
+    }
+
+    /**
+     * Serve the handsets table on its own, for a sort, a page or a
+     * search.
+     */
+    public function handleHandsets(): void
+    {
+        if (!current_user_can(self::CAPABILITY)) {
+            wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
+        }
+
+        echo $this->handsetsFragment();
+        wp_die();
+    }
+
+    /**
+     * The handsets table as HTML.
+     *
+     * Split from {@see handleHandsets()} for the reason
+     * {@see revokeFromRequest()} gives: everything above is a guard, and
+     * the wp_die() below takes the test runner with it.
+     */
+    private function handsetsFragment(): string
+    {
+        check_ajax_referer(self::HANDSETS_REFRESH_ACTION);
+
+        if (!class_exists('WP_List_Table')) {
+            require_once ABSPATH . 'wp-admin/includes/class-wp-list-table.php';
+        }
+
+        // Core builds every sort and page link out of REQUEST_URI, which
+        // during an admin-ajax request is admin-ajax.php. Left alone, the
+        // first sort would replace the table with one whose links answer
+        // with a bare fragment instead of the screen.
+        $_SERVER['REQUEST_URI'] = $this->handsetsUri();
+
+        $handsets = new DevicesListTable(
+            $this->devices,
+            $this->members,
+            self::ACTIONS_FORM_ID,
+            current_user_can(self::SEND_CAPABILITY),
+            current_user_can(self::MANAGE_CAPABILITY),
+        );
+        $handsets->prepare_items();
+
+        ob_start();
+        $handsets->display();
+
+        return (string) ob_get_clean();
+    }
+
+    /**
+     * The screen's own path and query, carrying whatever sort, page and
+     * search are in play — so the links inside the fragment point back
+     * at the screen rather than at admin-ajax.
+     */
+    private function handsetsUri(): string
+    {
+        $args = ['page' => self::PAGE_SLUG];
+
+        foreach (['orderby', 'order'] as $key) {
+            if (isset($_GET[$key]) && is_string($_GET[$key])) {
+                $args[$key] = sanitize_key($_GET[$key]);
+            }
+        }
+
+        if (isset($_GET['paged']) && is_numeric($_GET['paged'])) {
+            $args['paged'] = (int) $_GET['paged'];
+        }
+
+        if (isset($_GET['s']) && is_string($_GET['s'])) {
+            $args['s'] = sanitize_text_field(wp_unslash($_GET['s']));
+        }
+
+        $url   = (string) add_query_arg($args, admin_url('admin.php'));
+        $path  = parse_url($url, PHP_URL_PATH);
+        $query = parse_url($url, PHP_URL_QUERY);
+
+        return (is_string($path) && $path !== '' ? $path : '/wp-admin/admin.php')
+            . (is_string($query) && $query !== '' ? '?' . $query : '');
     }
 
     /**
@@ -604,22 +818,35 @@ final class DevicesPage
      */
     private function testAlertFromRequest(): string
     {
-        // ACTIONS_NONCE, not TEST_ALERT_ACTION: the test buttons and the
-        // message buttons share one form and therefore one nonce field.
-        // Verifying the handler's own action name here instead sent every
-        // test alert to "Are you sure you want to do this?".
+        // ACTIONS_NONCE, not TEST_ALERT_ACTION: the form's controls live
+        // inside the table and reach it by their `form` attribute, so
+        // there is one nonce field for all of them. Verifying the
+        // handler's own action name here instead sent every test alert to
+        // "Are you sure you want to do this?".
         check_admin_referer(self::ACTIONS_NONCE);
 
         $who = $this->adminName();
 
-        $scope = isset($_POST['reach_scope']) && is_string($_POST['reach_scope'])
-            ? sanitize_key($_POST['reach_scope'])
-            : '';
-
-        if ($scope !== self::SCOPE_SELECTED) {
+        // The broadcast button, named rather than valued: a submit button
+        // appears in the POST only when it is the one that was pressed.
+        if (isset($_POST['reach_scope_all'])) {
             return $this->resultUrl(
                 is_wp_error($this->sendTestAlert($who)) ? 'test_failed' : 'test_sent',
             );
+        }
+
+        // Otherwise it came from the bulk-actions dropdown, which core
+        // renders twice — `action` at the top and `action2` at the
+        // bottom — with "-1" meaning nothing was chosen.
+        //
+        // <b>Nothing chosen is a refusal, not a broadcast.</b> This used
+        // to read "anything but selected means all", which was safe while
+        // the only ways in were two labelled buttons. A dropdown left at
+        // "Bulk actions" and applied would now ring every handset on the
+        // rota, which is not what pressing Apply on an unchosen action
+        // asks for.
+        if (!$this->bulkTestRequested()) {
+            return $this->resultUrl('test_no_scope');
         }
 
         $devices = $this->selectedLiveDevices();
@@ -640,6 +867,28 @@ final class DevicesPage
         }
 
         return $this->resultUrl($failed ? 'test_failed' : 'test_sent_selected');
+    }
+
+    /**
+     * Whether the bulk-actions dropdown asked for a test alert.
+     *
+     * Both copies are read because core renders the control twice and
+     * submits both; it reads the top one first and falls through to the
+     * bottom when the top is unset or "-1".
+     */
+    private function bulkTestRequested(): bool
+    {
+        foreach (['action', 'action2'] as $key) {
+            $value = isset($_POST[$key]) && is_string($_POST[$key])
+                ? sanitize_key($_POST[$key])
+                : '';
+
+            if ($value === self::BULK_TEST_ACTION) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -728,6 +977,7 @@ final class DevicesPage
             'test_sent'     => ['success', 'Test alert sent. Every live handset should be ringing.'],
             'test_sent_selected' => ['success', 'Test alert sent. The selected handsets should be ringing.'],
             'test_none_selected' => ['warning', 'Tick at least one live handset before sending to a selection.'],
+            'test_no_scope' => ['warning', 'Choose "Send test alert" from the bulk actions, or use the button to send to every live handset.'],
             'test_failed'   => ['error', 'The test alert could not be sent. Check the Reach log for the reason.'],
         ];
 

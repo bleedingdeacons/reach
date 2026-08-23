@@ -144,7 +144,7 @@ final class DevicesPageTest extends ReachTestCase
 
         $this->assertStringContainsString('No handsets have been enrolled yet.', $html);
         $this->assertStringContainsString('No alerts have been raised yet.', $html);
-        $this->assertStringContainsString('0 in total.', $html);
+        $this->assertStringContainsString('0 items', $html);
     }
 
     /** @test */
@@ -232,6 +232,48 @@ final class DevicesPageTest extends ReachTestCase
 
         $this->assertStringContainsString('Cannot read alerts', $html);
         $this->assertStringNotContainsString('>Live<', $html);
+    }
+
+    /** @test */
+    public function a_handset_that_shows_alert_text_when_locked_is_flagged_but_still_live(): void
+    {
+        // Alongside Live, not instead of it. This handset works; the note
+        // is about who else can read what it is sent. Hand asks Android to
+        // redact the lock screen, but Android only obliges where the
+        // phone's owner has chosen to hide sensitive content — so this is
+        // a fact somebody has to decide about, not a bug to be fixed.
+        $page = $this->page(devices: $this->devicesWith(
+            $this->device(id: 7, lockScreen: Device::LOCK_SCREEN_SHOWN),
+        ));
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Alerts readable when locked', $html);
+        $this->assertStringContainsString('>Live<', $html, 'it is still a working handset');
+    }
+
+    /** @test */
+    public function a_handset_that_has_never_reported_its_lock_screen_is_not_reassured_about(): void
+    {
+        // Unknown is not "safe" — it is the absence of a claim either way,
+        // so it must not be shown as either.
+        $html = $this->renderList($this->page(devices: $this->devicesWith(
+            $this->device(id: 7, lockScreen: Device::LOCK_SCREEN_UNKNOWN),
+        )));
+
+        $this->assertStringNotContainsString('Alerts readable when locked', $html);
+        $this->assertStringNotContainsString('Alerts hidden when locked', $html);
+    }
+
+    /** @test */
+    public function a_handset_that_hides_alert_text_when_locked_is_not_flagged(): void
+    {
+        $html = $this->renderList($this->page(devices: $this->devicesWith(
+            $this->device(id: 7, lockScreen: Device::LOCK_SCREEN_HIDDEN),
+        )));
+
+        $this->assertStringNotContainsString('Alerts readable when locked', $html);
+        $this->assertStringContainsString('Live', $html);
     }
 
     /** @test */
@@ -393,7 +435,9 @@ final class DevicesPageTest extends ReachTestCase
             $this->device(id: 3, revokedAt: $this->revokedAt()),
         );
 
-        $this->assertStringContainsString('3 in total.', $this->renderList($this->page(devices: $devices)));
+        // The count comes from core's pagination now rather than a line of
+        // our own above the table, which is where WordPress puts it.
+        $this->assertStringContainsString('3 items', $this->renderList($this->page(devices: $devices)));
     }
 
     /** @test */
@@ -908,7 +952,7 @@ final class DevicesPageTest extends ReachTestCase
         // someone who may ring handsets need not be able to cut one off.
         WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
         $devices = $this->devicesWith($this->device(id: 7));
-        $_POST = ['reach_scope' => 'all'];
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
         $alerts = new InMemoryAlertRepository();
 
         $target = $this->testAlertFromRequest($this->page(devices: $devices, alerts: $alerts));
@@ -943,7 +987,7 @@ final class DevicesPageTest extends ReachTestCase
             },
         );
 
-        $_POST = ['reach_scope' => 'all'];
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
         $this->testAlertFromRequest($this->page());
 
         $this->assertSame(['reach_handset_actions'], $verified);
@@ -1178,7 +1222,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
 
-        $target = $this->testAlertFromRequest($this->page(alerts: $alerts));
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
+                $target = $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $this->assertCount(1, $alerts->alerts);
         $this->assertSame('test', $alerts->alerts[0]->kind);
@@ -1193,7 +1238,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
 
-        $this->testAlertFromRequest($this->page(alerts: $alerts));
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
+                $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $this->assertTrue($alerts->alerts[0]->isBroadcast());
         $this->assertFalse($alerts->alerts[0]->isUrgent());
@@ -1207,7 +1253,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
 
-        $this->testAlertFromRequest($this->page(alerts: $alerts));
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
+                $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $alert = $alerts->alerts[0];
         $this->assertSame(300, $alert->expiresAt - $alert->createdAt);
@@ -1219,7 +1266,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
 
-        $this->testAlertFromRequest($this->page(alerts: $alerts));
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
+                $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $this->assertStringContainsString('Site Admin', $alerts->alerts[0]->body);
     }
@@ -1230,7 +1278,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->signedInAs('');
         $alerts = new InMemoryAlertRepository();
 
-        $this->testAlertFromRequest($this->page(alerts: $alerts));
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
+                $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $this->assertStringContainsString('an administrator', $alerts->alerts[0]->body);
     }
@@ -1243,7 +1292,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
 
-        $this->testAlertFromRequest($this->page(alerts: $alerts));
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets'];
+                $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $alert = $alerts->alerts[0];
         $this->assertSame('', $alert->reference);
@@ -1280,13 +1330,181 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function the_page_offers_both_test_scopes(): void
+    public function the_page_offers_both_test_scopes_in_the_table_toolbar(): void
     {
+        // Both live in the tablenav now, in WordPress's own shape: the
+        // selection as a bulk action, the broadcast as a button beside it.
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringContainsString('class="alignleft actions bulkactions"', $html);
+        $this->assertStringContainsString('value="reach_test"', $html);
+        $this->assertStringContainsString('Send test alert', $html);
+        $this->assertStringContainsString('name="reach_scope_all"', $html);
+        $this->assertStringContainsString('Send test to all live handsets', $html);
+    }
+
+    /** @test */
+    public function the_table_controls_are_bound_to_the_form_they_are_not_inside(): void
+    {
+        // The rows carry POST forms of their own for Revoke and Remove, so
+        // the table cannot be wrapped in one. Every control that has to
+        // submit therefore names the form instead — and a control that
+        // lost that attribute would silently submit nothing.
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $bound = substr_count($html, 'form="' . 'reach-handset-actions"');
+
+        $this->assertGreaterThanOrEqual(
+            4,
+            $bound,
+            'the dropdown, its Apply button, the broadcast button and the tick boxes all need it',
+        );
+    }
+
+    /** @test */
+    public function a_handset_keeps_its_lock_screen_report_through_every_other_write(): void
+    {
+        // The repository updates one column at a time, so nothing it does
+        // can drop this. The in-memory double rebuilds the whole Device
+        // and can, which is exactly the sort of difference that lets a
+        // test pass against behaviour the site does not have — it had
+        // already lost keyFaultAt this way.
+        $devices = $this->devicesWith($this->device(id: 7));
+        $devices->recordLockScreen(7, Device::LOCK_SCREEN_SHOWN);
+
+        $devices->touch(7, 2_000);
+        $devices->updatePushToken(7, Device::PUSH_FCM, 'rotated');
+        $devices->markKeyFault(7, 3_000);
+
+        $device = $devices->findById(7);
+
+        $this->assertNotNull($device);
+        $this->assertTrue($device->showsAlertsOnLockScreen(), 'the report must survive every other write');
+        $this->assertTrue($device->hasKeyFault(), 'and so must the key fault');
+    }
+
+    // ── the handsets refresh ──────────────────────────────────────────
+
+    /** @test */
+    public function the_handsets_table_is_wrapped_for_swapping_on_its_own(): void
+    {
+        // Reloading the screen to sort would throw away the handsets an
+        // admin has just ticked, which is the whole point of the selection.
         $html = $this->renderList($this->page());
 
-        $this->assertStringContainsString('Send a test to every live handset', $html);
-        $this->assertStringContainsString('Send a test to the selected handsets', $html);
-        $this->assertStringContainsString('name="reach_scope"', $html);
+        $this->assertStringContainsString('id="reach-handsets"', $html);
+        $this->assertStringContainsString('data-action="reach_handsets"', $html);
+    }
+
+    /** @test */
+    public function the_refresh_answers_with_the_handsets_table_and_nothing_else(): void
+    {
+        $devices = $this->devicesWith($this->device(id: 7, label: 'Duty phone'));
+
+        $html = $this->handsetsFragment($this->page(devices: $devices));
+
+        $this->assertStringContainsString('Duty phone', $html);
+        $this->assertStringNotContainsString('Recent alerts', $html, 'the alerts table is not part of it');
+        $this->assertStringNotContainsString('<h1>', $html, 'nor is the rest of the screen');
+    }
+
+    /** @test */
+    public function the_refresh_is_refused_without_the_personal_data_capability(): void
+    {
+        WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
+
+        $this->expectException(WpDieException::class);
+        $this->page()->handleHandsets();
+    }
+
+    /** @test */
+    public function the_fragment_points_its_links_back_at_the_screen_not_at_admin_ajax(): void
+    {
+        // Core builds every sort and page link out of REQUEST_URI, which
+        // during an admin-ajax request is admin-ajax.php. Left alone, the
+        // first sort would replace the table with one whose links answer
+        // with a bare fragment instead of the screen. This asserts the URI
+        // the fragment installs rather than the links core makes from it —
+        // the list-table stub does not reproduce core's link building, so
+        // asserting on the rendered hrefs would be asserting on the stub.
+        $_GET = ['orderby' => 'platform', 'order' => 'asc', 'paged' => '3', 's' => 'bristol'];
+
+        $uri = $this->handsetsUri($this->page());
+
+        $this->assertStringContainsString('page=reach-devices', $uri);
+        $this->assertStringNotContainsString('admin-ajax', $uri);
+    }
+
+    /** @test */
+    public function the_fragment_carries_the_sort_page_and_search_through(): void
+    {
+        // A sort that dropped the search would silently widen the list
+        // back to every handset, and a search that dropped the page would
+        // send an admin back to the first one on every click.
+        $_GET = ['orderby' => 'platform', 'order' => 'asc', 'paged' => '3', 's' => 'bristol'];
+
+        $uri = $this->handsetsUri($this->page());
+
+        $this->assertStringContainsString('orderby=platform', $uri);
+        $this->assertStringContainsString('order=asc', $uri);
+        $this->assertStringContainsString('paged=3', $uri);
+        $this->assertStringContainsString('s=bristol', $uri);
+    }
+
+    // ── search ────────────────────────────────────────────────────────
+
+    /** @test */
+    public function the_table_offers_a_search_box(): void
+    {
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringContainsString('class="search-box"', $html);
+        $this->assertStringContainsString('name="s"', $html);
+    }
+
+    /** @test */
+    public function a_search_narrows_the_list_to_matching_handsets(): void
+    {
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test', label: 'Duty phone'),
+            $this->device(id: 8, memberEmail: 'sam@example.test', label: 'Spare tablet'),
+        );
+        $_GET = ['s' => 'sam'];
+
+        $html = $this->renderList($this->page(devices: $devices));
+
+        $this->assertStringContainsString('Spare tablet', $html);
+        $this->assertStringNotContainsString('Duty phone', $html);
+    }
+
+    /** @test */
+    public function a_search_that_matches_nothing_says_which_kind_of_empty_it_is(): void
+    {
+        // An intergroup with no handsets at all has a setup problem; one
+        // whose search matched nothing has a typo. Saying "no handsets
+        // enrolled" to the second is a small lie that wastes someone's
+        // afternoon.
+        $_GET = ['s' => 'nobody'];
+
+        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
+
+        $this->assertStringContainsString('No handsets match that search.', $html);
+        $this->assertStringNotContainsString('No handsets have been enrolled yet.', $html);
+    }
+
+    /** @test */
+    public function the_search_term_reaches_the_repository_rather_than_being_filtered_after(): void
+    {
+        // Filtering a page after fetching it would page over the whole
+        // table and then show a short page, with a count that described
+        // neither.
+        $devices = new PagingDeviceRepository();
+        $devices->total = 3;
+        $_GET = ['s' => 'bristol'];
+
+        $this->renderList($this->page(devices: $devices));
+
+        $this->assertContains('bristol', $devices->searches);
     }
 
     // ── the scoped test alert ─────────────────────────────────────────
@@ -1298,7 +1516,7 @@ final class DevicesPageTest extends ReachTestCase
         // only way to find out which handset is deaf.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected', 'device_ids' => ['7']];
+        $_POST = ['action' => 'reach_test', 'device_ids' => ['7']];
 
         $target = $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
@@ -1319,7 +1537,7 @@ final class DevicesPageTest extends ReachTestCase
         // behind a colleague's answer.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected', 'device_ids' => ['7', '8']];
+        $_POST = ['action' => 'reach_test', 'device_ids' => ['7', '8']];
 
         $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7), $this->device(id: 8)),
@@ -1340,7 +1558,7 @@ final class DevicesPageTest extends ReachTestCase
         // same lifetime, same lack of personal data.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected', 'device_ids' => ['7']];
+        $_POST = ['action' => 'reach_test', 'device_ids' => ['7']];
 
         $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
@@ -1360,7 +1578,7 @@ final class DevicesPageTest extends ReachTestCase
         // happens to be ticked would make the broadcast button lie.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'all', 'device_ids' => ['7']];
+        $_POST = ['reach_scope_all' => 'Send test to all live handsets', 'device_ids' => ['7']];
 
         $target = $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
@@ -1377,7 +1595,7 @@ final class DevicesPageTest extends ReachTestCase
     {
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected'];
+        $_POST = ['action' => 'reach_test'];
 
         $target = $this->testAlertFromRequest($this->page(alerts: $alerts));
 
@@ -1397,7 +1615,7 @@ final class DevicesPageTest extends ReachTestCase
         // must not become testable by editing one in.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected', 'device_ids' => $posted];
+        $_POST = ['action' => 'reach_test', 'device_ids' => $posted];
 
         $target = $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith(
@@ -1430,7 +1648,7 @@ final class DevicesPageTest extends ReachTestCase
     {
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected', 'device_ids' => ['7', '7']];
+        $_POST = ['action' => 'reach_test', 'device_ids' => ['7', '7']];
 
         $this->testAlertFromRequest($this->page(
             devices: $this->devicesWith($this->device(id: 7)),
@@ -1615,6 +1833,7 @@ final class DevicesPageTest extends ReachTestCase
         int $lastSeenAt = 0,
         ?int $revokedAt = null,
         ?int $keyFaultAt = null,
+        string $lockScreen = Device::LOCK_SCREEN_UNKNOWN,
     ): Device {
         return new Device(
             id: $id,
@@ -1628,6 +1847,7 @@ final class DevicesPageTest extends ReachTestCase
             lastSeenAt: $lastSeenAt,
             revokedAt: $revokedAt,
             keyFaultAt: $keyFaultAt,
+            lockScreen: $lockScreen,
         );
     }
 
@@ -1678,6 +1898,16 @@ final class DevicesPageTest extends ReachTestCase
         return (string) (new ReflectionMethod(DevicesPage::class, 'testAlertFromRequest'))->invoke($page);
     }
 
+    private function handsetsUri(DevicesPage $page): string
+    {
+        return (string) (new ReflectionMethod(DevicesPage::class, 'handsetsUri'))->invoke($page);
+    }
+
+    private function handsetsFragment(DevicesPage $page): string
+    {
+        return (string) (new ReflectionMethod(DevicesPage::class, 'handsetsFragment'))->invoke($page);
+    }
+
     private function recentAlertsFragment(DevicesPage $page): string
     {
         return (string) (new ReflectionMethod(DevicesPage::class, 'recentAlertsFragment'))->invoke($page);
@@ -1720,15 +1950,24 @@ final class PagingDeviceRepository implements DeviceRepository
     /** What countAll() reports — the Responder sort loops until it has this many. */
     public int $total = 0;
 
-    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
-    {
+    /** @var array<int, string> Search terms this repository was asked for. */
+    public array $searches = [];
+
+    public function list(
+        int $limit,
+        int $offset,
+        string $orderBy = '',
+        string $order = 'desc',
+        string $search = '',
+    ): array {
         $this->paging[] = ['limit' => $limit, 'offset' => $offset];
         $this->sorting[] = ['orderBy' => $orderBy, 'order' => $order];
+        $this->searches[] = $search;
 
         return [];
     }
 
-    public function countAll(): int
+    public function countAll(string $search = ''): int
     {
         return $this->total;
     }
@@ -1753,6 +1992,11 @@ final class PagingDeviceRepository implements DeviceRepository
     }
 
     public function markKeyFault(int $id, int $now): bool
+    {
+        return false;
+    }
+
+    public function recordLockScreen(int $id, string $lockScreen): bool
     {
         return false;
     }

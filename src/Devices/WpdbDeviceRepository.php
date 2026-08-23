@@ -81,6 +81,12 @@ final class WpdbDeviceRepository implements DeviceRepository
      * absence genuinely is a third state: null means "this handset has
      * never reported being unable to read an alert", which is not the
      * same as reporting it at the epoch.
+     *
+     * lock_screen is defaulted to empty for the same reason payload_key
+     * is: a handset enrolled before the column existed, or running a
+     * build too old to report, reads as "not known" without a null check
+     * at every call site. Empty is deliberately *not* reassuring — see
+     * {@see \Reach\Devices\Device::LOCK_SCREEN_UNKNOWN}.
      */
     public static function install(wpdb $wpdb): void
     {
@@ -102,6 +108,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             push_token VARCHAR(512) NOT NULL DEFAULT '',
             payload_key VARCHAR(255) NOT NULL DEFAULT '',
             key_fault_at BIGINT UNSIGNED NULL,
+            lock_screen VARCHAR(16) NOT NULL DEFAULT '',
             created_at BIGINT UNSIGNED NOT NULL,
             last_seen_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
             revoked_at BIGINT UNSIGNED NULL,
@@ -259,22 +266,55 @@ final class WpdbDeviceRepository implements DeviceRepository
         return $this->hydrateAll($rows);
     }
 
-    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
-    {
+    public function list(
+        int $limit,
+        int $offset,
+        string $orderBy = '',
+        string $order = 'desc',
+        string $search = '',
+    ): array {
         $limit  = max(1, min(500, $limit));
         $offset = max(0, $offset);
         $table  = self::tableName($this->wpdb);
 
-        $rows = $this->wpdb->get_results($this->wpdb->prepare(
-            "SELECT {$this->columns()}
-               FROM {$table}
-              {$this->orderClause($orderBy, $order)}
-              LIMIT %d OFFSET %d",
-            $limit,
-            $offset,
-        ), ARRAY_A);
+        // Two shapes rather than one with an always-true WHERE: the
+        // arguments differ, and prepare() takes them positionally.
+        $sql = $search === ''
+            ? $this->wpdb->prepare(
+                "SELECT {$this->columns()}
+                   FROM {$table}
+                  {$this->orderClause($orderBy, $order)}
+                  LIMIT %d OFFSET %d",
+                $limit,
+                $offset,
+            )
+            : $this->wpdb->prepare(
+                "SELECT {$this->columns()}
+                   FROM {$table}
+                  WHERE member_email LIKE %s OR label LIKE %s OR platform LIKE %s
+                  {$this->orderClause($orderBy, $order)}
+                  LIMIT %d OFFSET %d",
+                ...array_merge($this->searchTerms($search), [$limit, $offset]),
+            );
 
-        return $this->hydrateAll($rows);
+        return $this->hydrateAll($this->wpdb->get_results($sql, ARRAY_A));
+    }
+
+    /**
+     * The same LIKE term three times, escaped for it.
+     *
+     * <b>esc_like() before the wildcards, never after.</b> It escapes
+     * the `%` and `_` a person may have typed, so wrapping first would
+     * escape our own wildcards and turn every search into a search for
+     * a literal percent sign.
+     *
+     * @return array<int, string>
+     */
+    private function searchTerms(string $search): array
+    {
+        $term = '%' . $this->wpdb->esc_like($search) . '%';
+
+        return [$term, $term, $term];
     }
 
     /**
@@ -319,10 +359,43 @@ final class WpdbDeviceRepository implements DeviceRepository
         return "ORDER BY {$column} {$direction}, id DESC";
     }
 
-    public function countAll(): int
+    public function countAll(string $search = ''): int
     {
         $table = self::tableName($this->wpdb);
-        return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+
+        if ($search === '') {
+            return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        }
+
+        // Must match list()'s WHERE exactly, or the pager counts rows the
+        // table does not show and offers a page that comes back empty.
+        return (int) $this->wpdb->get_var($this->wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table}
+              WHERE member_email LIKE %s OR label LIKE %s OR platform LIKE %s",
+            ...$this->searchTerms($search),
+        ));
+    }
+
+    public function recordLockScreen(int $id, string $lockScreen): bool
+    {
+        if (!in_array($lockScreen, Device::LOCK_SCREEN_STATES, true)) {
+            return false;
+        }
+
+        $table = self::tableName($this->wpdb);
+
+        $updated = $this->wpdb->update(
+            $table,
+            ['lock_screen' => $lockScreen],
+            ['id' => $id],
+            ['%s'],
+            ['%d'],
+        );
+
+        // An unchanged value updates zero rows, which is a success: the
+        // handset said the same thing it said last time, which is the
+        // ordinary case at every launch.
+        return $updated !== false;
     }
 
     public function markKeyFault(int $id, int $now): bool
@@ -442,7 +515,7 @@ final class WpdbDeviceRepository implements DeviceRepository
     {
         return 'id, token_hash, member_email, member_id, label, platform, '
             . 'push_provider, push_token, created_at, last_seen_at, revoked_at, '
-            . 'key_fault_at';
+            . 'key_fault_at, lock_screen';
     }
 
     /**
@@ -474,6 +547,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             (int) $row['last_seen_at'],
             $row['revoked_at'] !== null ? (int) $row['revoked_at'] : null,
             ($row['key_fault_at'] ?? null) !== null ? (int) $row['key_fault_at'] : null,
+            (string) ($row['lock_screen'] ?? ''),
         );
     }
 }

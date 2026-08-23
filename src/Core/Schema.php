@@ -53,6 +53,10 @@ final class Schema
     /**
      * Schema version. Bump on any change to a CREATE TABLE above.
      *
+     * 6 — added devices.lock_screen, so a handset that has been set to
+     *     display alert text on its lock screen can say so. Not a fault
+     *     the handset can fix on its own — it is its owner's setting —
+     *     which is exactly why the intergroup needs to be able to see it.
      * 5 — added devices.key_fault_at, so a handset that cannot read its
      *     own alerts can say so and the admin list can show which one.
      * 4 — added devices.payload_key, the per-handset secret alert
@@ -64,7 +68,7 @@ final class Schema
      *     and alert contacts.
      * 1 — everything before schema versioning existed.
      */
-    public const VERSION = 5;
+    public const VERSION = 6;
 
     public const OPTION = 'reach_schema_version';
 
