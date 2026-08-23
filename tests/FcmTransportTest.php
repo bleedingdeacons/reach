@@ -150,29 +150,41 @@ final class FcmTransportTest extends ReachTestCase
     // ── payload encryption ────────────────────────────────────────────
 
     /**
-     * The handset's key, and the plaintext it should be able to recover.
+     * The sealed blob, having first checked it is travelling alone.
      *
-     * @return array{0: string, 1: array<string, string>}
+     * @param array<string, mixed> $message
      */
-    private function sealedFor(array $message): array
+    private function sealedFor(array $message): string
     {
         $data = $message['data'];
 
-        $this->assertArrayHasKey('ciphertext', $data);
-        $this->assertArrayNotHasKey('title', $data, 'the readable fields must be gone, not merely duplicated');
-        $this->assertArrayNotHasKey('body', $data);
-        $this->assertArrayNotHasKey('reference', $data);
+        // One key, and only one. This is the assertion the whole change
+        // is for: a field left outside the blob is a field readable by
+        // whoever handles the push on the way, and the way to stop one
+        // being added back is to refuse the whole shape rather than to
+        // list the names as they occur to us.
+        $this->assertSame(['ciphertext'], array_keys($data), 'nothing may travel beside the sealed payload');
 
-        return [$data['ciphertext'], $data];
+        return $data['ciphertext'];
     }
 
-    /** Decrypt as the handset would, to prove the handset can. */
+    /**
+     * Decrypt as the handset would, to prove the handset can.
+     *
+     * Deliberately hand-rolled from the wire format rather than routed
+     * through {@see \Reach\Alerts\PayloadCipher} — this is the half of
+     * the contract Hand implements, in a different language in a
+     * different repository, and a helper shared with the code under test
+     * would pass just as happily if both ends changed together.
+     *
+     * @return array<string, string>
+     */
     private function open(string $sealed, string $base64Key): array
     {
         $raw = base64_decode($sealed, true);
         $this->assertIsString($raw);
 
-        $plain = openssl_decrypt(
+        $compressed = openssl_decrypt(
             substr($raw, 28),
             'aes-256-gcm',
             (string) base64_decode($base64Key, true),
@@ -181,44 +193,80 @@ final class FcmTransportTest extends ReachTestCase
             substr($raw, 12, 16),
         );
 
-        $this->assertIsString($plain, 'the handset must be able to decrypt with the key it was issued');
+        $this->assertIsString($compressed, 'the handset must be able to decrypt with the key it was issued');
+
+        $plain = gzdecode($compressed);
+        $this->assertIsString($plain, 'the handset must be able to decompress what it decrypted');
 
         return (array) json_decode($plain, true);
     }
 
-    public function testAnAndroidHandsetWithAKeyGetsAnEncryptedPayload(): void
+    public function testAnAndroidHandsetGetsTheWholePayloadEncrypted(): void
     {
         $device = $this->device('android');
         $key = base64_encode(random_bytes(32));
         $this->devices->payloadKeys[$device->id] = $key;
 
-        $alert = $this->alert(title: 'Callback wanted CR-000123', body: 'Male 12th-stepper wanted in BS5');
+        $alert = $this->alert(
+            title: 'Callback wanted CR-000123',
+            body: 'Male 12th-stepper wanted in BS5',
+            payload: ['area' => 'BS5'],
+        );
 
-        [$sealed] = $this->sealedFor($this->deliver($alert, $device));
+        $sealed = $this->sealedFor($this->deliver($alert, $device));
 
         // The whole point: nothing readable crosses Google.
         $this->assertStringNotContainsString('Callback wanted', $sealed);
         $this->assertStringNotContainsString('BS5', $sealed);
+        $this->assertStringNotContainsString('call_request', $sealed);
 
+        // And everything survives the trip, opened the way Hand opens it.
         $opened = $this->open($sealed, $key);
 
+        $this->assertSame('12', $opened['alert_id']);
+        $this->assertSame('call_request', $opened['kind']);
+        $this->assertSame('reach', $opened['source']);
+        $this->assertSame('normal', $opened['priority']);
         $this->assertSame('Callback wanted CR-000123', $opened['title']);
         $this->assertSame('Male 12th-stepper wanted in BS5', $opened['body']);
+        $this->assertSame('CR-000123', $opened['reference']);
+        $this->assertSame(FcmTransport::ANDROID_CHANNEL, $opened['channel']);
+        $this->assertSame('reach_alert', $opened['sound']);
+        // The raising plugin's extras go inside too.
+        $this->assertSame('BS5', $opened['area']);
     }
 
-    public function testTheFieldsTheHandsetNeedsBeforeDecryptingStayInTheClear(): void
+    public function testTheFieldsTheHandsetOnceNeededInTheClearAreSealedToo(): void
     {
-        // A handset has to know what it is holding before it can open it:
-        // which alert to acknowledge, whether this is the removal notice
-        // that must never alarm, how urgent it is, and when it expires.
+        // These used to travel readable on the grounds that a handset had
+        // to know what it was holding before it could open it. It does
+        // not: it holds one key and opens one blob.
         $device = $this->device('android');
         $this->devices->payloadKeys[$device->id] = base64_encode(random_bytes(32));
 
-        [, $data] = $this->sealedFor($this->deliver($this->alert(), $device));
+        $data = $this->deliver($this->alert(), $device)['data'];
 
         foreach (['alert_id', 'kind', 'source', 'priority', 'channel', 'sound'] as $field) {
-            $this->assertArrayHasKey($field, $data, $field . ' is needed before the payload can be opened');
+            $this->assertArrayNotHasKey($field, $data, $field . ' must be inside the sealed payload');
         }
+    }
+
+    public function testAPluginsExtrasCannotEscapeTheSealedPayload(): void
+    {
+        // A plugin puts whatever it likes in the payload and the transport
+        // merges it into the map it seals. Nothing in that merge may end
+        // up outside the blob, or a plugin would be able to put readable
+        // text on the push by choosing a name nothing strips.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $alert = $this->alert(payload: ['ciphertext' => 'spoofed', 'area' => 'BS5']);
+
+        $sealed = $this->sealedFor($this->deliver($alert, $device));
+
+        $this->assertNotSame('spoofed', $sealed);
+        $this->assertSame('spoofed', $this->open($sealed, $key)['ciphertext']);
     }
 
     public function testAnIosHandsetIsNotEncrypted(): void
@@ -262,21 +310,108 @@ final class FcmTransportTest extends ReachTestCase
 
     public function testTheEncryptedMessageStaysInsideFcmsSizeCap(): void
     {
-        // FCM caps a data message at 4KB and encryption adds about a
-        // third to what it covers. This is the worst case AlertRequest
-        // allows, so if it ever stops fitting the caps have moved.
+        // The worst case AlertRequest allows, in full: title 200, body
+        // 1000, reference 64 and 2000 bytes of payload. Uncompressed that
+        // seals to 4616 bytes and would be rejected by FCM, which is why
+        // PayloadCipher gzips first. If this ever stops fitting, either
+        // the caps have moved or the compression has gone.
+        //
+        // Random hex rather than repeated characters, deliberately. A
+        // worst case built from `str_repeat` compresses to almost
+        // nothing and would keep passing long after the real margin had
+        // gone; this is content the gzip cannot help with.
         $device = $this->device('android');
         $this->devices->payloadKeys[$device->id] = base64_encode(random_bytes(32));
 
         $alert = $this->alert(
-            title: str_repeat('t', 200),
-            body: str_repeat('b', 1000),
+            title: bin2hex(random_bytes(100)),
+            body: bin2hex(random_bytes(500)),
+            payload: ['area' => bin2hex(random_bytes(1000))],
         );
 
-        $message = $this->deliver($alert, $device);
-        $encoded = (string) json_encode($message['data']);
+        $sealed = $this->sealedFor($this->deliver($alert, $device));
 
-        $this->assertLessThan(4096, strlen($encoded), 'the data block must fit an FCM message');
+        // Key included: FCM's limit is on the data block as a whole, so
+        // the ten characters of `ciphertext` come out of the same budget
+        // the payload does. Measuring the blob alone would pass a message
+        // that FCM rejects.
+        $this->assertLessThan(
+            4096,
+            strlen('ciphertext') + strlen($sealed),
+            'the sealed payload and its key together must fit an FCM message',
+        );
+    }
+
+    public function testAPayloadTooLargeToPushIsRefusedRatherThanSent(): void
+    {
+        // Not reachable through AlertRequest, whose caps put the worst
+        // case at a quarter of the limit. The guard exists because those
+        // caps live in a different file and nothing but this connects
+        // them — and because failing inside FCM would mean an alert that
+        // was accepted and then quietly never arrived.
+        $device = $this->device('android');
+        $this->devices->payloadKeys[$device->id] = base64_encode(random_bytes(32));
+
+        // Incompressible, so it survives the gzip at roughly full size.
+        $alert = $this->alert(payload: ['blob' => bin2hex(random_bytes(6000))]);
+
+        $transport = new FcmTransport($this->client(), $this->configuredSettings(), $this->devices);
+
+        $this->assertFalse($transport->deliver($alert, $device));
+        $this->assertSame([], $this->sent);
+    }
+
+    /**
+     * The refusal counts the data key, not just the sealed value.
+     *
+     * FCM's limit is on the data block as a whole, so the ten characters
+     * of `ciphertext` come out of the same 4096 the payload does. A guard
+     * that measured only the value would accept a message ten bytes over
+     * and leave FCM to reject it — which is the failure it exists to
+     * prevent, and it would take a payload within ten bytes of the limit
+     * to notice.
+     *
+     * Rather than pin a byte count that gzip's output length would make
+     * brittle, this finds the largest payload the transport will actually
+     * send and checks what that costs in FCM's own accounting. If the key
+     * stopped being counted, the largest accepted message would come to
+     * 4106 and this would fail.
+     */
+    public function testTheRefusalCountsTheDataKeyAsWellAsTheValue(): void
+    {
+        $device = $this->device('android');
+        $this->devices->payloadKeys[$device->id] = base64_encode(random_bytes(32));
+
+        $transport = new FcmTransport($this->client(), $this->configuredSettings(), $this->devices);
+
+        // Incompressible, so payload length and sealed length move
+        // together and the search below has something monotonic to bite
+        // on. Deliberately past AlertRequest's own 2000-byte cap: this
+        // guard exists for the case those caps do not cover.
+        $largest = null;
+        $low = 2_000;
+        $high = 8_000;
+
+        while ($low <= $high) {
+            $mid = intdiv($low + $high, 2);
+            $this->sent = [];
+
+            $alert = $this->alert(payload: ['blob' => substr(bin2hex(random_bytes($mid)), 0, $mid)]);
+
+            if ($transport->deliver($alert, $device)) {
+                $largest = $this->sent[0]['data']['ciphertext'];
+                $low = $mid + 1;
+            } else {
+                $high = $mid - 1;
+            }
+        }
+
+        $this->assertIsString($largest, 'some payload in this range must still be deliverable');
+        $this->assertLessThanOrEqual(
+            4096,
+            strlen('ciphertext') + strlen($largest),
+            'the largest message this will send must fit FCM, key included',
+        );
     }
 
     public function testSupportsAConfiguredMobileHandset(): void

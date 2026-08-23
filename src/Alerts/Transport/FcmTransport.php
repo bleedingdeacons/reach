@@ -91,6 +91,31 @@ final class FcmTransport implements AlertTransport
     private const ANDROID_SOUND = 'reach_alert';
     private const IOS_SOUND = 'reach_alert.wav';
 
+    /**
+     * The single data key an encrypted push carries.
+     *
+     * A constant because it is counted as well as written — see
+     * {@see FCM_DATA_BYTES} — and a budget computed from a different
+     * spelling than the one sent would be a budget that is quietly
+     * wrong.
+     */
+    private const CIPHERTEXT_KEY = 'ciphertext';
+
+    /**
+     * What FCM allows in a data message.
+     *
+     * <b>Keys count towards it, not just values.</b> The limit is on the
+     * data block as a whole, so the ten characters of
+     * {@see CIPHERTEXT_KEY} come out of the same 4096 the payload does.
+     * Measuring the blob alone would let a payload 4090 bytes long pass
+     * a check it fails at FCM by six.
+     *
+     * What is not counted is the JSON syntax around them — the braces,
+     * quotes and colon — because the limit is on the data, not on its
+     * encoding.
+     */
+    private const FCM_DATA_BYTES = 4096;
+
     protected static function logChannel(): string
     {
         return 'reach';
@@ -178,10 +203,22 @@ final class FcmTransport implements AlertTransport
     }
 
     /**
-     * The data block for one handset, encrypted where that handset can
-     * read it.
+     * The data block for one handset.
      *
-     * <b>Android only, for now.</b> An iOS lock screen is rendered by
+     * <b>On Android this is one field.</b> `ciphertext`, and nothing
+     * beside it. Everything the handset needs — the alert id it will
+     * acknowledge against, the kind so a removal notice never reaches
+     * the alarm, the priority, the channel and sound it builds the
+     * notification from, and whatever the raising plugin attached — is
+     * inside the blob. The handset holds one key and opens one thing; it
+     * needs nothing readable first.
+     *
+     * The rule this replaces was "an alert names nobody", which
+     * {@see \Reach\Alerts\AlertRequest} enforces by capping and
+     * stripping rather than by reading meaning. Encrypting the lot
+     * removes the question instead of policing it.
+     *
+     * <b>iOS is still plaintext.</b> An iOS lock screen is rendered by
      * the system from the `aps` dictionary before the app sees anything,
      * so ciphertext there would put base64 on the lock screen rather
      * than hide anything. The way round it is a Notification Service
@@ -192,12 +229,9 @@ final class FcmTransport implements AlertTransport
      *
      * So iOS is waiting on hardware rather than on a decision. When the
      * extension ships, this branch collapses and the transport encrypts
-     * for both platforms.
-     *
-     * Until then, what keeps iOS survivable is the rule that governed
-     * every handset before any of this existed: an alert carries no
-     * personal data. On iOS that rule is currently the only protection
-     * rather than the second layer, which is the reason to finish this.
+     * for both platforms. Until then, what keeps iOS survivable is the
+     * convention above — which on iOS is currently the only protection
+     * rather than the second layer, and is the reason to finish this.
      *
      * <b>An Android handset that cannot be encrypted for is not sent
      * to.</b> Null rather than a plaintext fallback, and the refusal is
@@ -211,7 +245,8 @@ final class FcmTransport implements AlertTransport
      * and nobody would, because everything keeps working. A refusal is
      * loud, appears on the dashboard, and is fixed by the responder
      * signing in again — which is a minute's work and the same recovery
-     * as a lost token.
+     * as a lost token. Hand refuses from its own side too: a push with
+     * no `ciphertext` is ignored outright.
      *
      * @return array<string, string>|null
      */
@@ -233,7 +268,7 @@ final class FcmTransport implements AlertTransport
             return null;
         }
 
-        $sealed = PayloadCipher::seal($alert, $key);
+        $sealed = PayloadCipher::seal($this->data($alert), $key);
         if ($sealed === '') {
             // The same outcome for the same reason: this handset cannot be
             // sent to in the only form it should be sent to. A key that
@@ -249,11 +284,32 @@ final class FcmTransport implements AlertTransport
             return null;
         }
 
-        $data = $this->data($alert);
-        unset($data['title'], $data['body'], $data['reference']);
-        $data['ciphertext'] = $sealed;
+        $bytes = strlen(self::CIPHERTEXT_KEY) + strlen($sealed);
 
-        return $data;
+        if ($bytes > self::FCM_DATA_BYTES) {
+            // Refused here rather than left to fail inside FCM, and for
+            // the same reason as the two above: it becomes an error on
+            // the dashboard instead of an alert that was accepted and
+            // then quietly never arrived.
+            //
+            // Should not be reachable. AlertRequest's caps put the worst
+            // case it will accept at about a quarter of this once
+            // compressed — see PayloadCipher. It exists because those two
+            // sets of numbers live in different files and nothing but
+            // this connects them.
+            self::logError('Alert payload is too large to push; alert not sent', [
+                'device'    => $device->id,
+                'responder' => $device->memberEmail,
+                'alert'     => $alert->id,
+                'bytes'     => $bytes,
+                'limit'     => self::FCM_DATA_BYTES,
+                'remedy'    => 'The raising plugin is sending more than an alert is meant to carry.',
+            ]);
+
+            return null;
+        }
+
+        return [self::CIPHERTEXT_KEY => $sealed];
     }
 
     /**
