@@ -33,7 +33,7 @@ use WP_User;
  *
  * Same three techniques as the sibling pages: the list runs for real
  * inside an output buffer, the capability guards are plain
- * expectException because wp_die() throws, and the two POST handlers end
+ * expectException because wp_die() throws, and the POST handlers end
  * `wp_safe_redirect(); exit;` so their bodies were split into
  * revokeFromRequest()/testAlertFromRequest() and are driven through
  * those. That split is the only production change these tests needed and
@@ -67,7 +67,7 @@ final class DevicesPageTest extends ReachTestCase
     // ── registration ──────────────────────────────────────────────────
 
     /** @test */
-    public function register_hooks_the_menu_and_both_post_handlers(): void
+    public function register_hooks_the_menu_and_every_post_handler(): void
     {
         $this->page()->register();
 
@@ -86,11 +86,6 @@ final class DevicesPageTest extends ReachTestCase
             'admin_post_reach_send_test_alert',
             false,
             'the Send test alert button posts to admin-post.php and needs its handler hooked',
-        );
-        $this->assertActionAdded(
-            'admin_post_reach_send_message',
-            false,
-            'the custom-message buttons post to admin-post.php and need their handler hooked',
         );
         $this->assertActionAdded(
             'wp_ajax_reach_recent_alerts',
@@ -863,20 +858,6 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function a_message_is_refused_without_the_send_capability(): void
-    {
-        WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
-        $alerts = new InMemoryAlertRepository();
-
-        try {
-            $this->page(alerts: $alerts)->handleMessage();
-            $this->fail('expected wp_die() for a user who may read but not send');
-        } catch (WpDieException) {
-            $this->assertSame([], $alerts->alerts);
-        }
-    }
-
-    /** @test */
     public function revoking_is_not_affected_by_the_send_capability(): void
     {
         // Three separate powers over the same screen: reading it, ringing
@@ -927,157 +908,22 @@ final class DevicesPageTest extends ReachTestCase
         // someone who may ring handsets need not be able to cut one off.
         WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
         $devices = $this->devicesWith($this->device(id: 7));
-        $_POST = [
-            'reach_scope'   => 'all',
-            'reach_subject' => 'Still allowed',
-        ];
+        $_POST = ['reach_scope' => 'all'];
         $alerts = new InMemoryAlertRepository();
 
-        $target = $this->messageFromRequest($this->page(devices: $devices, alerts: $alerts));
+        $target = $this->testAlertFromRequest($this->page(devices: $devices, alerts: $alerts));
 
-        $this->assertStringContainsString('reach_result=message_sent', $target);
+        $this->assertStringContainsString('reach_result=test_sent', $target);
         $this->assertCount(1, $alerts->alerts);
     }
 
-    // ── the custom message ────────────────────────────────────────────
-
     /** @test */
-    public function the_page_offers_a_message_form_and_says_where_the_text_ends_up(): void
+    public function the_test_alert_form_and_its_handler_agree_on_one_nonce(): void
     {
-        // The warning is the feature. A free-text box on this screen puts
-        // whatever is typed onto a lock screen anyone standing nearby can
-        // read, and the only thing standing between that and a caller's
-        // name is an admin who has been told.
-        $html = $this->renderList($this->page());
-
-        $this->assertStringContainsString('name="reach_subject"', $html);
-        $this->assertStringContainsString('name="reach_body"', $html);
-        $this->assertStringContainsString('onto a lock screen', $html);
-        $this->assertStringContainsString('Send the message to every live handset', $html);
-        $this->assertStringContainsString('Send the message to the selected handsets', $html);
-    }
-
-    /** @test */
-    public function both_send_buttons_live_in_one_form_so_the_selection_reaches_either(): void
-    {
-        // A checkbox names exactly one form, so a second form for the
-        // message would have had no access to the ticked handsets. The
-        // two actions share a form and are told apart by formaction.
-        $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
-
-        $this->assertSame(1, substr_count($html, 'id="reach-handset-actions"'));
-        $this->assertStringContainsString('action=reach_send_test_alert', $html);
-        $this->assertStringContainsString('action=reach_send_message', $html);
-    }
-
-    /** @test */
-    public function a_message_to_every_handset_is_raised_as_one_broadcast_alert(): void
-    {
-        $alerts = new InMemoryAlertRepository();
-        $_POST = [
-            'reach_scope'   => 'all',
-            'reach_subject' => 'Line down until 18:00',
-            'reach_body'    => 'Do not answer; calls are being diverted.',
-        ];
-
-        $target = $this->messageFromRequest($this->page(alerts: $alerts));
-
-        $this->assertStringContainsString('reach_result=message_sent', $target);
-        $this->assertCount(1, $alerts->alerts);
-        $this->assertSame('admin_message', $alerts->alerts[0]->kind);
-        $this->assertSame('Line down until 18:00', $alerts->alerts[0]->title);
-        $this->assertStringContainsString('Do not answer', $alerts->alerts[0]->body);
-        $this->assertTrue($alerts->alerts[0]->isBroadcast());
-    }
-
-    /** @test */
-    public function a_message_to_a_selection_is_raised_once_per_handset(): void
-    {
-        // Same reasoning as the test alert: one alert each, so the Recent
-        // alerts table answers per handset rather than letting a silent
-        // one hide behind a colleague's acknowledgement.
-        $alerts = new InMemoryAlertRepository();
-        $devices = $this->devicesWith($this->device(id: 7), $this->device(id: 8));
-        $_POST = [
-            'reach_scope'   => 'selected',
-            'reach_subject' => 'Shift change at 18:00',
-            'device_ids'    => ['7', '8'],
-        ];
-
-        $target = $this->messageFromRequest($this->page(devices: $devices, alerts: $alerts));
-
-        $this->assertStringContainsString('reach_result=message_sent_selected', $target);
-        $this->assertCount(2, $alerts->alerts);
-        $this->assertSame([7, 8], [
-            $alerts->alerts[0]->targetDeviceId,
-            $alerts->alerts[1]->targetDeviceId,
-        ]);
-    }
-
-    /** @test */
-    public function a_message_with_no_subject_is_refused(): void
-    {
-        // The subject is the line the responder reads first; without one
-        // there is nothing to read.
-        $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'all', 'reach_subject' => '   '];
-
-        $target = $this->messageFromRequest($this->page(alerts: $alerts));
-
-        $this->assertStringContainsString('reach_result=message_no_subject', $target);
-        $this->assertSame([], $alerts->alerts);
-    }
-
-    /** @test */
-    public function a_message_with_no_scope_is_refused_rather_than_broadcast(): void
-    {
-        // The form has a text box in it, so Enter can submit it with no
-        // button pressed. Assuming "all" there would broadcast to the
-        // whole rota something nobody asked to send.
-        $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_subject' => 'Typed, then Enter'];
-
-        $target = $this->messageFromRequest($this->page(alerts: $alerts));
-
-        $this->assertStringContainsString('reach_result=message_no_scope', $target);
-        $this->assertSame([], $alerts->alerts);
-    }
-
-    /** @test */
-    public function a_message_to_an_empty_selection_is_refused(): void
-    {
-        $alerts = new InMemoryAlertRepository();
-        $_POST = ['reach_scope' => 'selected', 'reach_subject' => 'Nobody ticked', 'device_ids' => []];
-
-        $target = $this->messageFromRequest($this->page(alerts: $alerts));
-
-        $this->assertStringContainsString('reach_result=message_none_selected', $target);
-        $this->assertSame([], $alerts->alerts);
-    }
-
-    /** @test */
-    public function a_message_never_reaches_a_revoked_handset(): void
-    {
-        $alerts = new InMemoryAlertRepository();
-        $devices = $this->devicesWith($this->device(id: 7, revokedAt: $this->revokedAt()));
-        $_POST = [
-            'reach_scope'   => 'selected',
-            'reach_subject' => 'Not for you',
-            'device_ids'    => ['7'],
-        ];
-
-        $target = $this->messageFromRequest($this->page(devices: $devices, alerts: $alerts));
-
-        $this->assertStringContainsString('reach_result=message_none_selected', $target);
-        $this->assertSame([], $alerts->alerts);
-    }
-
-    /** @test */
-    public function the_send_form_and_both_its_handlers_agree_on_one_nonce(): void
-    {
-        // One form, one nonce field, two handlers behind it. When the
-        // test-alert handler went on verifying its own action name after
-        // the form moved to the shared one, every test alert died on
+        // The nonce is named for the screen's actions rather than for the
+        // test alert, because it once covered the custom message too.
+        // When the handler went on verifying its own action name after
+        // the form moved to the shared nonce, every test alert died on
         // WordPress's "Are you sure you want to do this?" screen.
         //
         // Nothing caught it, because the shared stubs answer
@@ -1100,14 +946,11 @@ final class DevicesPageTest extends ReachTestCase
         $_POST = ['reach_scope' => 'all'];
         $this->testAlertFromRequest($this->page());
 
-        $_POST = ['reach_scope' => 'all', 'reach_subject' => 'Line down until 18:00'];
-        $this->messageFromRequest($this->page());
-
-        $this->assertSame(['reach_handset_actions', 'reach_handset_actions'], $verified);
+        $this->assertSame(['reach_handset_actions'], $verified);
         $this->assertStringContainsString(
             'value="nonce-reach_handset_actions"',
             $html,
-            'the send form must issue the nonce its handlers verify',
+            'the test-alert form must issue the nonce its handler verifies',
         );
     }
 
@@ -1116,12 +959,12 @@ final class DevicesPageTest extends ReachTestCase
     {
         // The whole string goes through esc_html(), so an HTML entity
         // written into the table arrives as the literal characters.
-        $_GET = ['reach_result' => 'message_no_subject'];
+        $_GET = ['reach_result' => 'revoke_failed'];
 
         $html = $this->renderList($this->page());
 
         $this->assertStringNotContainsString('&amp;mdash;', $html);
-        $this->assertStringContainsString('A message needs a subject', $html);
+        $this->assertStringContainsString('could not be revoked', $html);
     }
 
     // ── the Recent alerts refresh ─────────────────────────────────────
@@ -1130,7 +973,7 @@ final class DevicesPageTest extends ReachTestCase
     public function the_recent_alerts_table_is_wrapped_for_refreshing_on_its_own(): void
     {
         // Reloading the whole screen every five seconds would throw away
-        // the handset selection and a half-typed message.
+        // the handset selection and wherever the admin had scrolled to.
         $html = $this->renderList($this->page());
 
         $this->assertStringContainsString('id="reach-recent-alerts"', $html);
@@ -1149,7 +992,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('call_request', $html);
         $this->assertStringContainsString('reach-alerts', $html);
         $this->assertStringNotContainsString('Enrolled handsets', $html, 'the handsets table is not part of it');
-        $this->assertStringNotContainsString('reach_subject', $html, 'nor is the message form');
+        $this->assertStringNotContainsString('reach_scope', $html, 'nor is the test-alert form');
     }
 
     /** @test */
@@ -1833,11 +1676,6 @@ final class DevicesPageTest extends ReachTestCase
     private function testAlertFromRequest(DevicesPage $page): string
     {
         return (string) (new ReflectionMethod(DevicesPage::class, 'testAlertFromRequest'))->invoke($page);
-    }
-
-    private function messageFromRequest(DevicesPage $page): string
-    {
-        return (string) (new ReflectionMethod(DevicesPage::class, 'messageFromRequest'))->invoke($page);
     }
 
     private function recentAlertsFragment(DevicesPage $page): string

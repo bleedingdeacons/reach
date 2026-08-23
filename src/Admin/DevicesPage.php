@@ -58,6 +58,14 @@ use WP_Error;
  * so the Recent alerts table answers per handset instead of hiding a
  * silent phone behind a colleague's acknowledgement.
  *
+ * <b>An administrator's own message is not here.</b> It used to be a
+ * second form on this screen, sharing the test alert's form element so
+ * it could read the same ticked selection — a checkbox may name exactly
+ * one form. It now has a screen of its own and picks its recipient by
+ * name; see {@see SendMessagePage}. The test alert stayed because it is
+ * not a message: it has no text, and its value is being sent to a named
+ * handset from the table listing them.
+ *
  * Rows are shown revoked as well as live, so the list is a record of
  * what has been enrolled rather than only what is enrolled now.
  *
@@ -90,13 +98,16 @@ final class DevicesPage
     private const MANAGE_CAPABILITY = Capabilities::MANAGE_DEVICES;
 
     /**
-     * Raising an alert — the test and the admin's own message.
+     * Raising the test alert.
      *
      * Its own capability rather than the one above, because pressing
      * those buttons makes every handset on the rota ring wherever it is
      * and whatever time it is, and "may see an unmasked email address"
      * does not imply that. See {@see Capabilities::SEND_ALERTS}, which
      * also explains why it is Reach's rather than one of Scrutiny's.
+     *
+     * Shared with {@see SendMessagePage}, which gates the same act on
+     * the same capability.
      *
      * Administrators hold all three, so on an ordinary site nothing about
      * the screen changes. The split only bites where someone has given
@@ -113,7 +124,6 @@ final class DevicesPage
     public const REVOKE_ACTION = 'reach_revoke_device';
     public const REMOVE_ACTION = 'reach_remove_device';
     private const TEST_ALERT_ACTION = 'reach_send_test_alert';
-    private const MESSAGE_ACTION = 'reach_send_message';
 
     /**
      * The admin-ajax action behind the Recent alerts refresh.
@@ -126,34 +136,26 @@ final class DevicesPage
     private const ALERTS_REFRESH_ACTION = 'reach_recent_alerts';
 
     /**
-     * One nonce for the whole send form, because it is one form. The two
-     * handlers behind it are told apart by the `formaction` on the button
-     * that was pressed, not by separate nonces.
+     * The nonce for the test-alert form.
+     *
+     * Named for the screen's actions rather than for the test alert
+     * because it once covered two of them. Left alone: the name is
+     * verified on both sides of a live form, and renaming it would
+     * invalidate any page an admin already had open.
      */
     private const ACTIONS_NONCE = 'reach_handset_actions';
 
-    /** How long an admin's own message stays live. */
-    private const MESSAGE_TTL = 3600;
-
     /**
-     * Id of the send form.
+     * Id of the test-alert form.
      *
      * The row checkboxes live inside the handsets table and are bound to
      * this form by their `form` attribute rather than by being nested in
      * it: the rows already carry their own Revoke and Remove forms, and
      * a form inside a form is not something a browser will parse.
-     *
-     * <b>One form, two handlers.</b> A checkbox can name exactly one form
-     * in that attribute, so a second form for the custom message would
-     * have had no access to the selection the admin just ticked. The two
-     * actions therefore share a form and are told apart by `formaction`
-     * on the button pressed — admin-post.php reads its action from the
-     * request, so naming it in the query string works as well as in a
-     * hidden field.
      */
     private const ACTIONS_FORM_ID = 'reach-handset-actions';
 
-    /** Which handsets a test alert or a message is for. */
+    /** Which handsets a test alert is for. */
     private const SCOPE_ALL = 'all';
     private const SCOPE_SELECTED = 'selected';
 
@@ -171,7 +173,6 @@ final class DevicesPage
         add_action('admin_post_' . self::REVOKE_ACTION, [$this, 'handleRevoke']);
         add_action('admin_post_' . self::REMOVE_ACTION, [$this, 'handleRemove']);
         add_action('admin_post_' . self::TEST_ALERT_ACTION, [$this, 'handleTestAlert']);
-        add_action('admin_post_' . self::MESSAGE_ACTION, [$this, 'handleMessage']);
         add_action('wp_ajax_' . self::ALERTS_REFRESH_ACTION, [$this, 'handleRecentAlerts']);
     }
 
@@ -239,89 +240,36 @@ final class DevicesPage
             </p>
 
             <?php if ($canSend) : ?>
-            <h2 class="title">Send to handsets</h2>
+            <h2 class="title">Send a test alert</h2>
             <p class="description">
-                Both of these ring handsets now, through the real delivery path. Tick handsets in
-                the table below and send to the selection to reach one phone on its own &mdash;
-                which is how you find out <em>which</em> handset is deaf, rather than only that one
-                of them is.
+                Rings handsets now, through the real delivery path. Tick handsets in the table
+                below and send to the selection to reach one phone on its own &mdash; which is how
+                you find out <em>which</em> handset is deaf, rather than only that one of them is.
+                Use it after changing the Firebase credentials, after enrolling a handset, and
+                before relying on the rota. The test alert carries no personal data and says who
+                sent it.
+            </p>
+            <p class="description">
+                To send your own wording instead, use
+                <a href="<?php echo esc_url($this->sendMessageUrl()); ?>">Send Message</a>.
             </p>
 
             <form id="<?php echo esc_attr(self::ACTIONS_FORM_ID); ?>"
                   method="post"
-                  action="<?php echo esc_url($this->postUrl(self::MESSAGE_ACTION)); ?>">
+                  action="<?php echo esc_url($this->postUrl(self::TEST_ALERT_ACTION)); ?>">
                 <?php wp_nonce_field(self::ACTIONS_NONCE); ?>
-
-                <h3>Test alert</h3>
-                <p class="description">
-                    Use it after changing the Firebase credentials, after enrolling a handset, and
-                    before relying on the rota. The test alert carries no personal data and says
-                    who sent it.
-                </p>
                 <p>
                     <button type="submit"
                             name="reach_scope"
                             value="<?php echo esc_attr(self::SCOPE_ALL); ?>"
-                            formaction="<?php echo esc_url($this->postUrl(self::TEST_ALERT_ACTION)); ?>"
                             class="button button-secondary">
                         Send a test to every live handset
                     </button>
                     <button type="submit"
                             name="reach_scope"
                             value="<?php echo esc_attr(self::SCOPE_SELECTED); ?>"
-                            formaction="<?php echo esc_url($this->postUrl(self::TEST_ALERT_ACTION)); ?>"
                             class="button button-secondary">
                         Send a test to the selected handsets
-                    </button>
-                </p>
-
-                <h3>Custom message</h3>
-                <div class="notice notice-warning inline" style="margin: 0 0 12px;">
-                    <p>
-                        <strong>Whatever you type here goes where an alert goes:</strong> through
-                        Google&rsquo;s servers, onto a lock screen anyone standing nearby can read,
-                        and into the handset&rsquo;s notification history. Keep callers&rsquo; names
-                        and numbers out of it &mdash; those belong in the email that already carries
-                        them. Say what happened and give a reference to look it up by.
-                    </p>
-                </div>
-                <table class="form-table" role="presentation">
-                    <tr>
-                        <th scope="row"><label for="reach-message-subject">Subject</label></th>
-                        <td>
-                            <input type="text"
-                                   id="reach-message-subject"
-                                   name="reach_subject"
-                                   class="regular-text"
-                                   maxlength="200"
-                                   autocomplete="off">
-                            <p class="description">The line the responder sees first. Required.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="reach-message-body">Message</label></th>
-                        <td>
-                            <textarea id="reach-message-body"
-                                      name="reach_body"
-                                      rows="3"
-                                      class="large-text"
-                                      maxlength="1000"></textarea>
-                            <p class="description">Optional. Shown under the subject when the handset expands the notification.</p>
-                        </td>
-                    </tr>
-                </table>
-                <p>
-                    <button type="submit"
-                            name="reach_scope"
-                            value="<?php echo esc_attr(self::SCOPE_ALL); ?>"
-                            class="button button-primary">
-                        Send the message to every live handset
-                    </button>
-                    <button type="submit"
-                            name="reach_scope"
-                            value="<?php echo esc_attr(self::SCOPE_SELECTED); ?>"
-                            class="button button-secondary">
-                        Send the message to the selected handsets
                     </button>
                 </p>
             </form>
@@ -384,8 +332,9 @@ final class DevicesPage
             <p class="description">
                 Refreshes itself every five seconds, so a test or a message you have just sent
                 appears here &mdash; and its acknowledgements fill in &mdash; without touching the
-                page. That is your proof of delivery; the &ldquo;sent&rdquo; notice above only means
-                Reach accepted it.
+                page. That is your proof of delivery, for messages sent from
+                <a href="<?php echo esc_url($this->sendMessageUrl()); ?>">Send Message</a> as well
+                as for tests; a &ldquo;sent&rdquo; notice only means Reach accepted it.
             </p>
 
             <div id="reach-recent-alerts"
@@ -397,9 +346,8 @@ final class DevicesPage
             <script>
                 // Refresh the Recent alerts table on its own, rather than
                 // reloading the screen. A page reload would throw away the
-                // handset selection, the subject half-typed in the message
-                // box, and wherever the admin had scrolled to — every five
-                // seconds.
+                // handset selection and wherever the admin had scrolled
+                // to — every five seconds.
                 (function () {
                     var box = document.getElementById('reach-recent-alerts');
                     if (!box || typeof ajaxurl === 'undefined' || typeof window.fetch !== 'function') {
@@ -458,99 +406,6 @@ final class DevicesPage
             </script>
         </div>
         <?php
-    }
-
-    public function handleMessage(): void
-    {
-        if (!current_user_can(self::SEND_CAPABILITY)) {
-            wp_die('You are not allowed to do that.', 'Forbidden', ['response' => 403]);
-        }
-
-        wp_safe_redirect($this->messageFromRequest());
-        exit;
-    }
-
-    /**
-     * Raise the admin's own message and return where the browser goes
-     * next. Split out of {@see handleMessage()} for the same reason as
-     * {@see revokeFromRequest()}.
-     *
-     * <b>The subject is required and the scope must be explicit.</b> Both
-     * guards exist because this form has a text box in it, and a text box
-     * means the Enter key can submit the form without any button being
-     * pressed. A missing subject is then a message nobody can read, and
-     * an assumed scope would be a broadcast to every handset on the rota
-     * that the admin never asked for. The test alert above keeps its
-     * older "anything but selected means all" reading: it has no field to
-     * press Enter in, and its buttons are the only way to reach it.
-     *
-     * Nothing here inspects what was typed. The screen says plainly where
-     * the text ends up — see {@see \Reach\Alerts\Alert} on why that
-     * matters — and an admin who has read that and typed it anyway has
-     * made a decision this code is in no position to second-guess.
-     */
-    private function messageFromRequest(): string
-    {
-        check_admin_referer(self::ACTIONS_NONCE);
-
-        $subject = $this->posted('reach_subject');
-        if ($subject === '') {
-            return $this->resultUrl('message_no_subject');
-        }
-
-        $body  = $this->posted('reach_body');
-        $scope = $this->posted('reach_scope');
-
-        if ($scope === self::SCOPE_SELECTED) {
-            $devices = $this->selectedLiveDevices();
-            if ($devices === []) {
-                return $this->resultUrl('message_none_selected');
-            }
-
-            // One alert per handset, for the reason the test alert gives:
-            // each then carries its own acknowledgement, so the Recent
-            // alerts table answers per handset instead of letting a silent
-            // one hide behind a colleague's answer.
-            $failed = false;
-            foreach ($devices as $device) {
-                if (is_wp_error($this->sendMessage($subject, $body, $device->id))) {
-                    $failed = true;
-                }
-            }
-
-            return $this->resultUrl($failed ? 'message_failed' : 'message_sent_selected');
-        }
-
-        if ($scope !== self::SCOPE_ALL) {
-            return $this->resultUrl('message_no_scope');
-        }
-
-        return $this->resultUrl(
-            is_wp_error($this->sendMessage($subject, $body)) ? 'message_failed' : 'message_sent',
-        );
-    }
-
-    /**
-     * Raise one admin message, for a named handset or for the whole rota.
-     *
-     * @return int|WP_Error The alert's id, or why it was refused.
-     */
-    private function sendMessage(string $subject, string $body, int $deviceId = 0): int|WP_Error
-    {
-        return $this->alertApi->send([
-            'kind'     => 'admin_message',
-            'source'   => 'reach',
-            'title'    => $subject,
-            'body'     => $body,
-            'priority' => Alert::PRIORITY_NORMAL,
-            // An hour: long enough that a handset briefly out of signal
-            // still gets it when it comes back, short enough that one
-            // switched on tomorrow is not told about a shift change that
-            // has been and gone. Longer than the test alert, which only
-            // has to arrive now, and the same as the removal notice.
-            'ttl'      => self::MESSAGE_TTL,
-            'target_device_id' => $deviceId,
-        ]);
     }
 
     /**
@@ -635,10 +490,13 @@ final class DevicesPage
         return (string) add_query_arg('action', $action, admin_url('admin-post.php'));
     }
 
-    /** A trimmed POST string, or '' for anything that is not one. */
-    private function posted(string $key): string
+    /** The screen an admin's own message is sent from. */
+    private function sendMessageUrl(): string
     {
-        return isset($_POST[$key]) && is_string($_POST[$key]) ? trim($_POST[$key]) : '';
+        return (string) add_query_arg(
+            ['page' => SendMessagePage::PAGE_SLUG],
+            admin_url('admin.php'),
+        );
     }
 
     public function handleRevoke(): void
@@ -871,12 +729,6 @@ final class DevicesPage
             'test_sent_selected' => ['success', 'Test alert sent. The selected handsets should be ringing.'],
             'test_none_selected' => ['warning', 'Tick at least one live handset before sending to a selection.'],
             'test_failed'   => ['error', 'The test alert could not be sent. Check the Reach log for the reason.'],
-            'message_sent'  => ['success', 'Message sent. Every live handset should be ringing.'],
-            'message_sent_selected' => ['success', 'Message sent. The selected handsets should be ringing.'],
-            'message_none_selected' => ['warning', 'Tick at least one live handset before sending to a selection.'],
-            'message_no_subject'    => ['warning', 'A message needs a subject — that is the line the responder reads first.'],
-            'message_no_scope'      => ['warning', 'Choose who the message goes to: every live handset, or the ticked ones.'],
-            'message_failed'        => ['error', 'The message could not be sent. Check the Reach log for the reason.'],
         ];
 
         $key = isset($_GET['reach_result']) && is_string($_GET['reach_result'])
