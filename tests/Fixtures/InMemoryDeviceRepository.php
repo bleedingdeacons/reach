@@ -228,6 +228,7 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->lastSeenAt,
             $d->revokedAt,
             $now,
+            $d->lockScreen,
         ));
     }
 

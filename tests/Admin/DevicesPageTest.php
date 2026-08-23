@@ -1361,6 +1361,28 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
+    /** @test */
+    public function a_handset_keeps_its_lock_screen_report_through_every_other_write(): void
+    {
+        // The repository updates one column at a time, so nothing it does
+        // can drop this. The in-memory double rebuilds the whole Device
+        // and can, which is exactly the sort of difference that lets a
+        // test pass against behaviour the site does not have — it had
+        // already lost keyFaultAt this way.
+        $devices = $this->devicesWith($this->device(id: 7));
+        $devices->recordLockScreen(7, Device::LOCK_SCREEN_SHOWN);
+
+        $devices->touch(7, 2_000);
+        $devices->updatePushToken(7, Device::PUSH_FCM, 'rotated');
+        $devices->markKeyFault(7, 3_000);
+
+        $device = $devices->findById(7);
+
+        $this->assertNotNull($device);
+        $this->assertTrue($device->showsAlertsOnLockScreen(), 'the report must survive every other write');
+        $this->assertTrue($device->hasKeyFault(), 'and so must the key fault');
+    }
+
     // ── the handsets refresh ──────────────────────────────────────────
 
     /** @test */

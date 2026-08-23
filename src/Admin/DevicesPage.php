@@ -285,7 +285,18 @@ final class DevicesPage
                     <?php echo $handsets->searchBox(); ?>
                 </form>
 
-                <?php $handsets->display(); ?>
+                <!--
+                    Only this inner element is replaced on a swap.
+
+                    The search form is deliberately outside it: rebuilding
+                    the form from its own outerHTML would serialise the
+                    `value` *attribute* rather than the live property, so
+                    the term somebody had just typed would vanish from the
+                    box while the table stayed filtered by it.
+                -->
+                <div class="reach-handsets-table">
+                    <?php $handsets->display(); ?>
+                </div>
             </div>
 
             <script>
@@ -371,11 +382,13 @@ final class DevicesPage
                                 return response.text();
                             })
                             .then(function (html) {
-                                // The search form lives above the table and
-                                // is not part of the fragment, so only the
-                                // table markup after it is replaced.
-                                var table = box.querySelector('form.search-form');
-                                box.innerHTML = (table ? table.outerHTML : '') + html;
+                                // Only the table's own element, so the
+                                // search form above it is left standing
+                                // with whatever is typed in it.
+                                var target = box.querySelector('.reach-handsets-table');
+                                if (target) {
+                                    target.innerHTML = html;
+                                }
 
                                 if (push !== false) {
                                     wanted.set('page', '<?php echo esc_js(self::PAGE_SLUG); ?>');
