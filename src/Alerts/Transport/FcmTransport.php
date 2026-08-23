@@ -92,13 +92,27 @@ final class FcmTransport implements AlertTransport
     private const IOS_SOUND = 'reach_alert.wav';
 
     /**
+     * The single data key an encrypted push carries.
+     *
+     * A constant because it is counted as well as written — see
+     * {@see FCM_DATA_BYTES} — and a budget computed from a different
+     * spelling than the one sent would be a budget that is quietly
+     * wrong.
+     */
+    private const CIPHERTEXT_KEY = 'ciphertext';
+
+    /**
      * What FCM allows in a data message.
      *
-     * Measured against the sealed, base64'd blob rather than the encoded
-     * JSON of the whole data block, because on the encrypted path they
-     * are the same thing to within the seventeen characters of
-     * `{"ciphertext":""}` — and being a few bytes pessimistic about a
-     * limit is the right direction to be wrong in.
+     * <b>Keys count towards it, not just values.</b> The limit is on the
+     * data block as a whole, so the ten characters of
+     * {@see CIPHERTEXT_KEY} come out of the same 4096 the payload does.
+     * Measuring the blob alone would let a payload 4090 bytes long pass
+     * a check it fails at FCM by six.
+     *
+     * What is not counted is the JSON syntax around them — the braces,
+     * quotes and colon — because the limit is on the data, not on its
+     * encoding.
      */
     private const FCM_DATA_BYTES = 4096;
 
@@ -270,7 +284,9 @@ final class FcmTransport implements AlertTransport
             return null;
         }
 
-        if (strlen($sealed) > self::FCM_DATA_BYTES) {
+        $bytes = strlen(self::CIPHERTEXT_KEY) + strlen($sealed);
+
+        if ($bytes > self::FCM_DATA_BYTES) {
             // Refused here rather than left to fail inside FCM, and for
             // the same reason as the two above: it becomes an error on
             // the dashboard instead of an alert that was accepted and
@@ -285,7 +301,7 @@ final class FcmTransport implements AlertTransport
                 'device'    => $device->id,
                 'responder' => $device->memberEmail,
                 'alert'     => $alert->id,
-                'bytes'     => strlen($sealed),
+                'bytes'     => $bytes,
                 'limit'     => self::FCM_DATA_BYTES,
                 'remedy'    => 'The raising plugin is sending more than an alert is meant to carry.',
             ]);
@@ -293,7 +309,7 @@ final class FcmTransport implements AlertTransport
             return null;
         }
 
-        return ['ciphertext' => $sealed];
+        return [self::CIPHERTEXT_KEY => $sealed];
     }
 
     /**

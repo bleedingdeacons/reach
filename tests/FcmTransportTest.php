@@ -331,7 +331,15 @@ final class FcmTransportTest extends ReachTestCase
 
         $sealed = $this->sealedFor($this->deliver($alert, $device));
 
-        $this->assertLessThan(4096, strlen($sealed), 'the sealed payload must fit an FCM message');
+        // Key included: FCM's limit is on the data block as a whole, so
+        // the ten characters of `ciphertext` come out of the same budget
+        // the payload does. Measuring the blob alone would pass a message
+        // that FCM rejects.
+        $this->assertLessThan(
+            4096,
+            strlen('ciphertext') + strlen($sealed),
+            'the sealed payload and its key together must fit an FCM message',
+        );
     }
 
     public function testAPayloadTooLargeToPushIsRefusedRatherThanSent(): void
@@ -351,6 +359,59 @@ final class FcmTransportTest extends ReachTestCase
 
         $this->assertFalse($transport->deliver($alert, $device));
         $this->assertSame([], $this->sent);
+    }
+
+    /**
+     * The refusal counts the data key, not just the sealed value.
+     *
+     * FCM's limit is on the data block as a whole, so the ten characters
+     * of `ciphertext` come out of the same 4096 the payload does. A guard
+     * that measured only the value would accept a message ten bytes over
+     * and leave FCM to reject it — which is the failure it exists to
+     * prevent, and it would take a payload within ten bytes of the limit
+     * to notice.
+     *
+     * Rather than pin a byte count that gzip's output length would make
+     * brittle, this finds the largest payload the transport will actually
+     * send and checks what that costs in FCM's own accounting. If the key
+     * stopped being counted, the largest accepted message would come to
+     * 4106 and this would fail.
+     */
+    public function testTheRefusalCountsTheDataKeyAsWellAsTheValue(): void
+    {
+        $device = $this->device('android');
+        $this->devices->payloadKeys[$device->id] = base64_encode(random_bytes(32));
+
+        $transport = new FcmTransport($this->client(), $this->configuredSettings(), $this->devices);
+
+        // Incompressible, so payload length and sealed length move
+        // together and the search below has something monotonic to bite
+        // on. Deliberately past AlertRequest's own 2000-byte cap: this
+        // guard exists for the case those caps do not cover.
+        $largest = null;
+        $low = 2_000;
+        $high = 8_000;
+
+        while ($low <= $high) {
+            $mid = intdiv($low + $high, 2);
+            $this->sent = [];
+
+            $alert = $this->alert(payload: ['blob' => substr(bin2hex(random_bytes($mid)), 0, $mid)]);
+
+            if ($transport->deliver($alert, $device)) {
+                $largest = $this->sent[0]['data']['ciphertext'];
+                $low = $mid + 1;
+            } else {
+                $high = $mid - 1;
+            }
+        }
+
+        $this->assertIsString($largest, 'some payload in this range must still be deliverable');
+        $this->assertLessThanOrEqual(
+            4096,
+            strlen('ciphertext') + strlen($largest),
+            'the largest message this will send must fit FCM, key included',
+        );
     }
 
     public function testSupportsAConfiguredMobileHandset(): void
