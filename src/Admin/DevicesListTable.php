@@ -360,6 +360,20 @@ final class DevicesListTable extends WP_List_Table
                 . '<small>' . esc_html($this->when((int) $device->keyFaultAt)) . '</small>';
         }
 
+        // Below the key fault, because a handset that cannot read its
+        // alerts at all has a larger problem than one reading them too
+        // publicly. Alongside Live rather than instead of it: this
+        // handset is working, and the note is about who else can read it.
+        if ($device->showsAlertsOnLockScreen()) {
+            return '<span style="color:#008a20;">Live</span><br>'
+                . '<span style="color:#8a6d00;" title="This handset is set to show notification '
+                . 'content on its lock screen, so alert text is readable by anyone near it. Hand asks '
+                . 'Android to redact it, but that only takes effect when the phone is set to hide '
+                . 'sensitive content. Only the responder can change it: Settings, Notifications, '
+                . 'Notifications on lock screen, Hide sensitive content.">Alerts readable when '
+                . 'locked</span>';
+        }
+
         return '<span style="color:#008a20;">Live</span>';
     }
 

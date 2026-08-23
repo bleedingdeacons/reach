@@ -64,8 +64,51 @@ final class Device
          * alert it cannot open.
          */
         public readonly ?int $keyFaultAt = null,
+        /**
+         * What this handset says its lock screen does with alert text.
+         *
+         * One of {@see LOCK_SCREEN_UNKNOWN}, {@see LOCK_SCREEN_HIDDEN} or
+         * {@see LOCK_SCREEN_SHOWN}. Reported by the handset, because it
+         * is the only party that can see it: this is the phone owner's
+         * own Android setting, not anything Reach or the app controls.
+         */
+        public readonly string $lockScreen = self::LOCK_SCREEN_UNKNOWN,
     ) {
     }
+
+    /**
+     * Never reported — a handset enrolled before this existed, one
+     * running an older build, or one whose read of the setting failed.
+     *
+     * <b>Not the same as "safe".</b> Unknown is the default precisely
+     * because the honest answer is that nobody has looked; presenting it
+     * as reassurance would be the whole problem this column exists to
+     * fix, restated.
+     */
+    public const LOCK_SCREEN_UNKNOWN = '';
+
+    /** Sensitive content is hidden; a stranger sees the redacted line. */
+    public const LOCK_SCREEN_HIDDEN = 'hidden';
+
+    /**
+     * The handset displays alert text on its lock screen.
+     *
+     * Hand asks Android to redact — it marks the notification private
+     * and supplies a public version reading "Helpline alert / Unlock to
+     * read" — but that substitution only happens when the phone's owner
+     * has chosen "Hide sensitive content". Where they have chosen to
+     * show everything, Android shows everything, and no app can override
+     * it. So this is a fact about a handset that somebody has to decide
+     * about, not a bug to be fixed in code.
+     */
+    public const LOCK_SCREEN_SHOWN = 'shown';
+
+    /** The values a handset may report. Anything else is not stored. */
+    public const LOCK_SCREEN_STATES = [
+        self::LOCK_SCREEN_UNKNOWN,
+        self::LOCK_SCREEN_HIDDEN,
+        self::LOCK_SCREEN_SHOWN,
+    ];
 
     /**
      * Whether this device has been revoked — by an admin from the
@@ -80,6 +123,20 @@ final class Device
     public function hasKeyFault(): bool
     {
         return $this->keyFaultAt !== null;
+    }
+
+    /**
+     * Whether this handset has told us it puts alert text on its lock
+     * screen, where anyone standing near it can read it.
+     *
+     * False for a handset that has never said — see
+     * {@see LOCK_SCREEN_UNKNOWN}. That is not a claim it is safe; it is
+     * the absence of a claim either way, and the admin list shows the
+     * two differently for that reason.
+     */
+    public function showsAlertsOnLockScreen(): bool
+    {
+        return $this->lockScreen === self::LOCK_SCREEN_SHOWN;
     }
 
     public function isRevoked(): bool

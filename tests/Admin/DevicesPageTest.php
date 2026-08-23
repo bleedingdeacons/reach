@@ -235,6 +235,48 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
+    public function a_handset_that_shows_alert_text_when_locked_is_flagged_but_still_live(): void
+    {
+        // Alongside Live, not instead of it. This handset works; the note
+        // is about who else can read what it is sent. Hand asks Android to
+        // redact the lock screen, but Android only obliges where the
+        // phone's owner has chosen to hide sensitive content — so this is
+        // a fact somebody has to decide about, not a bug to be fixed.
+        $page = $this->page(devices: $this->devicesWith(
+            $this->device(id: 7, lockScreen: Device::LOCK_SCREEN_SHOWN),
+        ));
+
+        $html = $this->renderList($page);
+
+        $this->assertStringContainsString('Alerts readable when locked', $html);
+        $this->assertStringContainsString('>Live<', $html, 'it is still a working handset');
+    }
+
+    /** @test */
+    public function a_handset_that_has_never_reported_its_lock_screen_is_not_reassured_about(): void
+    {
+        // Unknown is not "safe" — it is the absence of a claim either way,
+        // so it must not be shown as either.
+        $html = $this->renderList($this->page(devices: $this->devicesWith(
+            $this->device(id: 7, lockScreen: Device::LOCK_SCREEN_UNKNOWN),
+        )));
+
+        $this->assertStringNotContainsString('Alerts readable when locked', $html);
+        $this->assertStringNotContainsString('Alerts hidden when locked', $html);
+    }
+
+    /** @test */
+    public function a_handset_that_hides_alert_text_when_locked_is_not_flagged(): void
+    {
+        $html = $this->renderList($this->page(devices: $this->devicesWith(
+            $this->device(id: 7, lockScreen: Device::LOCK_SCREEN_HIDDEN),
+        )));
+
+        $this->assertStringNotContainsString('Alerts readable when locked', $html);
+        $this->assertStringContainsString('Live', $html);
+    }
+
+    /** @test */
     public function a_healthy_handset_is_not_flagged(): void
     {
         $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
@@ -1615,6 +1657,7 @@ final class DevicesPageTest extends ReachTestCase
         int $lastSeenAt = 0,
         ?int $revokedAt = null,
         ?int $keyFaultAt = null,
+        string $lockScreen = Device::LOCK_SCREEN_UNKNOWN,
     ): Device {
         return new Device(
             id: $id,
@@ -1628,6 +1671,7 @@ final class DevicesPageTest extends ReachTestCase
             lastSeenAt: $lastSeenAt,
             revokedAt: $revokedAt,
             keyFaultAt: $keyFaultAt,
+            lockScreen: $lockScreen,
         );
     }
 
@@ -1753,6 +1797,11 @@ final class PagingDeviceRepository implements DeviceRepository
     }
 
     public function markKeyFault(int $id, int $now): bool
+    {
+        return false;
+    }
+
+    public function recordLockScreen(int $id, string $lockScreen): bool
     {
         return false;
     }

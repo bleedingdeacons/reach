@@ -247,6 +247,86 @@ final class DeviceAuthControllerTest extends ReachTestCase
         $this->assertSame('rotated-token', $this->devices->devices[0]->pushToken);
     }
 
+    public function testAHandsetCanReportThatItsLockScreenShowsAlertText(): void
+    {
+        // Carried on the push call because Hand re-registers its token at
+        // every launch anyway, which makes this as fresh as a setting its
+        // owner can change at any moment is going to get.
+        $controller = $this->controllerFor($this->certified('responder@example.com'));
+        $token = $this->enrol($controller, 'responder@example.com');
+
+        $request = $this->authed($token);
+        $request->set_param('push_provider', 'fcm');
+        $request->set_param('push_token', 'a-token');
+        $request->set_param('lock_screen', Device::LOCK_SCREEN_SHOWN);
+
+        $controller->updatePush($request);
+
+        $this->assertTrue($this->devices->devices[0]->showsAlertsOnLockScreen());
+    }
+
+    public function testAHandsetThatIsPutRightClearsItsOwnWarning(): void
+    {
+        // Unlike a key fault, this is a current setting rather than a
+        // thing that happened, so the last thing the handset said is the
+        // whole answer. A responder who turns sensitive content off should
+        // not have to be revoked to stop being flagged.
+        $controller = $this->controllerFor($this->certified('responder@example.com'));
+        $token = $this->enrol($controller, 'responder@example.com');
+
+        foreach ([Device::LOCK_SCREEN_SHOWN, Device::LOCK_SCREEN_HIDDEN] as $state) {
+            $request = $this->authed($token);
+            $request->set_param('push_provider', 'fcm');
+            $request->set_param('push_token', 'a-token');
+            $request->set_param('lock_screen', $state);
+            $controller->updatePush($request);
+        }
+
+        $this->assertFalse($this->devices->devices[0]->showsAlertsOnLockScreen());
+    }
+
+    public function testAHandsetThatSaysNothingLeavesTheLastAnswerAlone(): void
+    {
+        // An older build does not send the field. It must not be able to
+        // erase a warning a newer one raised, so absent means "no news"
+        // rather than "all clear".
+        $controller = $this->controllerFor($this->certified('responder@example.com'));
+        $token = $this->enrol($controller, 'responder@example.com');
+
+        $flagged = $this->authed($token);
+        $flagged->set_param('push_provider', 'fcm');
+        $flagged->set_param('push_token', 'a-token');
+        $flagged->set_param('lock_screen', Device::LOCK_SCREEN_SHOWN);
+        $controller->updatePush($flagged);
+
+        $silent = $this->authed($token);
+        $silent->set_param('push_provider', 'fcm');
+        $silent->set_param('push_token', 'a-token');
+        $controller->updatePush($silent);
+
+        $this->assertTrue(
+            $this->devices->devices[0]->showsAlertsOnLockScreen(),
+            'a build too old to report must not clear what a newer one said',
+        );
+    }
+
+    public function testAnUnrecognisedLockScreenValueIsNotStored(): void
+    {
+        // It would show on the admin list as neither a warning nor a
+        // reassurance, and nobody would know which it meant.
+        $controller = $this->controllerFor($this->certified('responder@example.com'));
+        $token = $this->enrol($controller, 'responder@example.com');
+
+        $request = $this->authed($token);
+        $request->set_param('push_provider', 'fcm');
+        $request->set_param('push_token', 'a-token');
+        $request->set_param('lock_screen', 'maybe');
+
+        $controller->updatePush($request);
+
+        $this->assertSame(Device::LOCK_SCREEN_UNKNOWN, $this->devices->devices[0]->lockScreen);
+    }
+
     public function testAFailedWriteIsReportedAsFailureNotAsAToken(): void
     {
         // The amber bug. The device table did not exist, $wpdb->insert()

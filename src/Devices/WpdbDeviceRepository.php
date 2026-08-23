@@ -81,6 +81,12 @@ final class WpdbDeviceRepository implements DeviceRepository
      * absence genuinely is a third state: null means "this handset has
      * never reported being unable to read an alert", which is not the
      * same as reporting it at the epoch.
+     *
+     * lock_screen is defaulted to empty for the same reason payload_key
+     * is: a handset enrolled before the column existed, or running a
+     * build too old to report, reads as "not known" without a null check
+     * at every call site. Empty is deliberately *not* reassuring — see
+     * {@see \Reach\Devices\Device::LOCK_SCREEN_UNKNOWN}.
      */
     public static function install(wpdb $wpdb): void
     {
@@ -102,6 +108,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             push_token VARCHAR(512) NOT NULL DEFAULT '',
             payload_key VARCHAR(255) NOT NULL DEFAULT '',
             key_fault_at BIGINT UNSIGNED NULL,
+            lock_screen VARCHAR(16) NOT NULL DEFAULT '',
             created_at BIGINT UNSIGNED NOT NULL,
             last_seen_at BIGINT UNSIGNED NOT NULL DEFAULT 0,
             revoked_at BIGINT UNSIGNED NULL,
@@ -325,6 +332,28 @@ final class WpdbDeviceRepository implements DeviceRepository
         return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
     }
 
+    public function recordLockScreen(int $id, string $lockScreen): bool
+    {
+        if (!in_array($lockScreen, Device::LOCK_SCREEN_STATES, true)) {
+            return false;
+        }
+
+        $table = self::tableName($this->wpdb);
+
+        $updated = $this->wpdb->update(
+            $table,
+            ['lock_screen' => $lockScreen],
+            ['id' => $id],
+            ['%s'],
+            ['%d'],
+        );
+
+        // An unchanged value updates zero rows, which is a success: the
+        // handset said the same thing it said last time, which is the
+        // ordinary case at every launch.
+        return $updated !== false;
+    }
+
     public function markKeyFault(int $id, int $now): bool
     {
         $table = self::tableName($this->wpdb);
@@ -442,7 +471,7 @@ final class WpdbDeviceRepository implements DeviceRepository
     {
         return 'id, token_hash, member_email, member_id, label, platform, '
             . 'push_provider, push_token, created_at, last_seen_at, revoked_at, '
-            . 'key_fault_at';
+            . 'key_fault_at, lock_screen';
     }
 
     /**
@@ -474,6 +503,7 @@ final class WpdbDeviceRepository implements DeviceRepository
             (int) $row['last_seen_at'],
             $row['revoked_at'] !== null ? (int) $row['revoked_at'] : null,
             ($row['key_fault_at'] ?? null) !== null ? (int) $row['key_fault_at'] : null,
+            (string) ($row['lock_screen'] ?? ''),
         );
     }
 }

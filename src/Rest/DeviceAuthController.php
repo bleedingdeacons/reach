@@ -63,7 +63,8 @@ use function rest_url;
  *   GET  /reach/v1/auth/device/start?provider=&redirect_uri=
  *   POST /reach/v1/auth/device/exchange   { code, label, platform, ... }
  *   POST /reach/v1/auth/device/password   { email, password, label, platform, ... }
- *   POST /reach/v1/auth/device/push       { push_provider, push_token }   [Bearer]
+ *   POST /reach/v1/auth/device/push       { push_provider, push_token,
+ *                                          lock_screen? }                [Bearer]
  *   GET  /reach/v1/auth/device/session                                    [Bearer]
  *   POST /reach/v1/auth/device/signout                                    [Bearer]
  *
@@ -205,6 +206,16 @@ final class DeviceAuthController
                         'type'              => 'string',
                         'required'          => true,
                         'sanitize_callback' => 'sanitize_text_field',
+                    ],
+                    /**
+                     * What the handset's lock screen does with alert
+                     * text. Optional, because a build older than this
+                     * does not send it and must not be refused for that.
+                     */
+                    'lock_screen' => [
+                        'type'              => 'string',
+                        'required'          => false,
+                        'sanitize_callback' => 'sanitize_key',
                     ],
                 ],
             ]
@@ -416,6 +427,22 @@ final class DeviceAuthController
         }
 
         $this->devices->updatePushToken($device->id, $provider, $token);
+
+        // Carried on this call rather than given an endpoint of its own,
+        // because Hand already re-registers its push token at every
+        // launch as the backstop against a silently rotated one. That
+        // makes this a value refreshed whenever the app starts, which is
+        // as fresh as a setting its owner can change at any moment is
+        // ever going to be, for no extra request.
+        //
+        // Unrecognised values are dropped by the repository rather than
+        // stored. Absent means the handset said nothing, which stays
+        // whatever it last said rather than resetting to unknown — an
+        // older build must not be able to erase a warning.
+        $lockScreen = $request->get_param('lock_screen');
+        if (is_string($lockScreen) && $lockScreen !== '') {
+            $this->devices->recordLockScreen($device->id, $lockScreen);
+        }
 
         return new WP_REST_Response([
             'updated'       => true,

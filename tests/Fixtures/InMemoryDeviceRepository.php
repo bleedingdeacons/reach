@@ -201,6 +201,27 @@ final class InMemoryDeviceRepository implements DeviceRepository
         ));
     }
 
+    public function recordLockScreen(int $id, string $lockScreen): bool
+    {
+        if (!in_array($lockScreen, Device::LOCK_SCREEN_STATES, true)) {
+            return false;
+        }
+
+        return $this->replace($id, static fn(Device $d): Device => new Device(
+            $d->id,
+            $d->memberEmail,
+            $d->memberId,
+            $d->label,
+            $d->platform,
+            $d->pushProvider,
+            $d->pushToken,
+            $d->createdAt,
+            $d->lastSeenAt,
+            $d->revokedAt,
+            $d->keyFaultAt,
+            $lockScreen,
+        ));
+    }
 
     public function touch(int $id, int $now): bool
     {
@@ -215,6 +236,8 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->createdAt,
             $now,
             $d->revokedAt,
+            $d->keyFaultAt,
+            $d->lockScreen,
         ));
     }
 
@@ -231,6 +254,8 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->createdAt,
             $d->lastSeenAt,
             $d->revokedAt,
+            $d->keyFaultAt,
+            $d->lockScreen,
         ));
     }
 
@@ -252,6 +277,8 @@ final class InMemoryDeviceRepository implements DeviceRepository
             $d->createdAt,
             $d->lastSeenAt,
             $now,
+            $d->keyFaultAt,
+            $d->lockScreen,
         ));
     }
 
