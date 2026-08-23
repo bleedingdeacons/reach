@@ -266,22 +266,55 @@ final class WpdbDeviceRepository implements DeviceRepository
         return $this->hydrateAll($rows);
     }
 
-    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array
-    {
+    public function list(
+        int $limit,
+        int $offset,
+        string $orderBy = '',
+        string $order = 'desc',
+        string $search = '',
+    ): array {
         $limit  = max(1, min(500, $limit));
         $offset = max(0, $offset);
         $table  = self::tableName($this->wpdb);
 
-        $rows = $this->wpdb->get_results($this->wpdb->prepare(
-            "SELECT {$this->columns()}
-               FROM {$table}
-              {$this->orderClause($orderBy, $order)}
-              LIMIT %d OFFSET %d",
-            $limit,
-            $offset,
-        ), ARRAY_A);
+        // Two shapes rather than one with an always-true WHERE: the
+        // arguments differ, and prepare() takes them positionally.
+        $sql = $search === ''
+            ? $this->wpdb->prepare(
+                "SELECT {$this->columns()}
+                   FROM {$table}
+                  {$this->orderClause($orderBy, $order)}
+                  LIMIT %d OFFSET %d",
+                $limit,
+                $offset,
+            )
+            : $this->wpdb->prepare(
+                "SELECT {$this->columns()}
+                   FROM {$table}
+                  WHERE member_email LIKE %s OR label LIKE %s OR platform LIKE %s
+                  {$this->orderClause($orderBy, $order)}
+                  LIMIT %d OFFSET %d",
+                ...array_merge($this->searchTerms($search), [$limit, $offset]),
+            );
 
-        return $this->hydrateAll($rows);
+        return $this->hydrateAll($this->wpdb->get_results($sql, ARRAY_A));
+    }
+
+    /**
+     * The same LIKE term three times, escaped for it.
+     *
+     * <b>esc_like() before the wildcards, never after.</b> It escapes
+     * the `%` and `_` a person may have typed, so wrapping first would
+     * escape our own wildcards and turn every search into a search for
+     * a literal percent sign.
+     *
+     * @return array<int, string>
+     */
+    private function searchTerms(string $search): array
+    {
+        $term = '%' . $this->wpdb->esc_like($search) . '%';
+
+        return [$term, $term, $term];
     }
 
     /**
@@ -326,10 +359,21 @@ final class WpdbDeviceRepository implements DeviceRepository
         return "ORDER BY {$column} {$direction}, id DESC";
     }
 
-    public function countAll(): int
+    public function countAll(string $search = ''): int
     {
         $table = self::tableName($this->wpdb);
-        return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+
+        if ($search === '') {
+            return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        }
+
+        // Must match list()'s WHERE exactly, or the pager counts rows the
+        // table does not show and offers a page that comes back empty.
+        return (int) $this->wpdb->get_var($this->wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table}
+              WHERE member_email LIKE %s OR label LIKE %s OR platform LIKE %s",
+            ...$this->searchTerms($search),
+        ));
     }
 
     public function recordLockScreen(int $id, string $lockScreen): bool

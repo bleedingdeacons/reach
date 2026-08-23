@@ -143,9 +143,15 @@ interface DeviceRepository
      *
      * @return array<int, Device>
      */
-    public function list(int $limit, int $offset, string $orderBy = '', string $order = 'desc'): array;
+    public function list(
+        int $limit,
+        int $offset,
+        string $orderBy = '',
+        string $order = 'desc',
+        string $search = '',
+    ): array;
 
-    public function countAll(): int;
+    public function countAll(string $search = ''): int;
 
     /**
      * Record that a device just authenticated. Cheap and frequent — the
