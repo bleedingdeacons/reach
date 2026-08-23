@@ -13,6 +13,7 @@ use Reach\Admin\CallRequestsPage;
 use Reach\Admin\DevicesPage;
 use Reach\Admin\HelpPage;
 use Reach\Admin\MemberSearchPage;
+use Reach\Admin\SendMessagePage;
 use Reach\Admin\SettingsPage;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertContactRepository;
@@ -250,6 +251,7 @@ class Plugin
             self::$container->get(CallRequestsPage::class)->register();
             self::$container->get(MemberSearchPage::class)->register();
             self::$container->get(DevicesPage::class)->register();
+            self::$container->get(SendMessagePage::class)->register();
             self::$container->get(SettingsPage::class)->register();
 
             // Help last in the submenu, whatever order the pages above

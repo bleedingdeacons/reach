@@ -12,6 +12,7 @@ use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
 use Reach\Admin\DevicesPage;
+use Reach\Admin\SendMessagePage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
 use Reach\Alerts\AlertApi;
@@ -324,6 +325,12 @@ final class ReachServiceProvider
         $container->register(DevicesPage::class, fn(ContainerInterface $c) => new DevicesPage(
             $c->get(DeviceRepository::class),
             $c->get(AlertRepository::class),
+            $c->get(AlertApi::class),
+            $c->get(MemberRepository::class),
+        ));
+
+        $container->register(SendMessagePage::class, fn(ContainerInterface $c) => new SendMessagePage(
+            $c->get(DeviceRepository::class),
             $c->get(AlertApi::class),
             $c->get(MemberRepository::class),
         ));
