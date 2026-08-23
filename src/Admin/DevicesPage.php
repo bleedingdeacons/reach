@@ -171,6 +171,16 @@ final class DevicesPage
      */
     private const BULK_TEST_ACTION = 'reach_test';
 
+    /**
+     * The field the bulk-actions dropdown posts under.
+     *
+     * <b>Deliberately not `action`.</b> admin-post.php routes on
+     * $_REQUEST['action'] and POST beats the query string, so a control
+     * of that name would hijack the routing of the very form it sits in.
+     * Must match {@see DevicesListTable::bulk_actions()}.
+     */
+    private const BULK_FIELD = 'reach_bulk';
+
     public function __construct(
         private readonly DeviceRepository $devices,
         private readonly AlertRepository $alerts,
@@ -835,9 +845,12 @@ final class DevicesPage
             );
         }
 
-        // Otherwise it came from the bulk-actions dropdown, which core
-        // renders twice — `action` at the top and `action2` at the
-        // bottom — with "-1" meaning nothing was chosen.
+        // Otherwise it came from the bulk-actions dropdown, which is
+        // rendered twice — top and bottom — with "-1" meaning nothing
+        // was chosen. The fields are `reach_bulk` and `reach_bulk2`
+        // rather than core's `action`/`action2`; see
+        // {@see DevicesListTable::bulk_actions()} for why that name is
+        // not available to a form posting to admin-post.php.
         //
         // <b>Nothing chosen is a refusal, not a broadcast.</b> This used
         // to read "anything but selected means all", which was safe while
@@ -878,7 +891,7 @@ final class DevicesPage
      */
     private function bulkTestRequested(): bool
     {
-        foreach (['action', 'action2'] as $key) {
+        foreach ([self::BULK_FIELD, self::BULK_FIELD . '2'] as $key) {
             $value = isset($_POST[$key]) && is_string($_POST[$key])
                 ? sanitize_key($_POST[$key])
                 : '';

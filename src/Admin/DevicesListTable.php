@@ -350,9 +350,18 @@ final class DevicesListTable extends WP_List_Table
             return;
         }
 
-        // Core suffixes the bottom copy so the two do not collide when
-        // both are submitted; it reads `action` first and `action2` next.
-        $name = $which === 'bottom' ? 'action2' : 'action';
+        // <b>Not named `action`, which is what core calls it.</b>
+        // admin-post.php routes on $_REQUEST['action'], and POST beats
+        // the query string — so a select called `action` would send every
+        // press of this form to admin_post_reach_test, or to
+        // admin_post_-1 when the dropdown was left alone, instead of to
+        // the handler named in the form's own URL. Core gets away with
+        // the name because its list screens post to themselves.
+        //
+        // The bottom copy is suffixed for core's reason: both are
+        // submitted, so they need different names, and the handler reads
+        // the top one first.
+        $name = $which === 'bottom' ? 'reach_bulk2' : 'reach_bulk';
         $id   = 'bulk-action-selector-' . $which;
 
         echo '<div class="alignleft actions bulkactions">';
