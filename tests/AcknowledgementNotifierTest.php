@@ -178,6 +178,86 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         $this->assertSame($alert->messageUuid, $data[0]['message_uuid']);
     }
 
+    // --- an answered message is over ---------------------------------------
+
+    public function testAnAnsweredMessageIsNoLongerServedToAnybody(): void
+    {
+        $first = $this->enrol('one@example.com');
+        $second = $this->enrol('two@example.com');
+        $alert = $this->raise(['kind' => 'test', 'title' => 'Callback wanted']);
+
+        $this->acknowledge($first, $alert->id);
+
+        $ids = array_column($this->pending($second), 'id');
+        $this->assertNotContains($alert->id, $ids);
+    }
+
+    public function testAnsweringOnOneHandsetClearsTheOtherCopyOfTheSameMessage(): void
+    {
+        // The admin-message case: one message, two device-targeted rows,
+        // one responder holding both. Answering on the phone takes it off
+        // the tablet, which is the point — the alternative is the same
+        // person dismissing the same message twice.
+        $phone = $this->enrol('jo@example.com');
+        $tablet = $this->enrol('jo@example.com');
+        $uuid = MessageUuid::generate();
+
+        $first = $this->raise([
+            'kind' => 'test', 'title' => 'Shift swap',
+            'message_uuid' => $uuid, 'target_device_id' => 1,
+        ]);
+        $second = $this->raise([
+            'kind' => 'test', 'title' => 'Shift swap',
+            'message_uuid' => $uuid, 'target_device_id' => 2,
+        ]);
+
+        $this->acknowledge($phone, $first->id);
+
+        $ids = array_column($this->pending($tablet), 'id');
+        $this->assertNotContains($second->id, $ids);
+    }
+
+    public function testANoticeIsNotSilencedByAnotherHandsetClosingIt(): void
+    {
+        // The first exemption, and it matters: a notice is addressed to
+        // everybody and read by each of them separately. Suppressing it
+        // the way an alert is suppressed would mean the fastest handset
+        // to press Close decided nobody else got to read who answered.
+        $first = $this->enrol('one@example.com');
+        $second = $this->enrol('two@example.com');
+        $third = $this->enrol('three@example.com');
+        $alert = $this->raise(['kind' => 'test', 'title' => 'Callback wanted']);
+
+        $this->acknowledge($first, $alert->id);
+        $notice = $this->noticeAlert();
+
+        // The second handset reads the notice and closes it.
+        $this->acknowledge($second, $notice->id);
+
+        // The third has not seen it yet, and still must.
+        $ids = array_column($this->pending($third), 'id');
+        $this->assertContains($notice->id, $ids);
+    }
+
+    public function testAnAlertOlderThanTheUuidColumnKeepsItsOldBehaviour(): void
+    {
+        // The second exemption. Every row written before message_uuid
+        // existed carries the empty string, so matching on it would let
+        // any one of them silence all the others — turning a schema
+        // upgrade into a rota that stops ringing.
+        $first = $this->enrol('one@example.com');
+        $second = $this->enrol('two@example.com');
+
+        $legacy = $this->raiseLegacy('Written before the column existed');
+        $other  = $this->raiseLegacy('A different message entirely');
+
+        $this->acknowledge($first, $legacy->id);
+
+        $ids = array_column($this->pending($second), 'id');
+        $this->assertContains($legacy->id, $ids);
+        $this->assertContains($other->id, $ids);
+    }
+
     // --- who the notice reaches ------------------------------------------
 
     public function testABroadcastAcknowledgementIsAnnouncedToTheRota(): void
@@ -482,6 +562,40 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         }
 
         return 0;
+    }
+
+    /**
+     * An alert as it would have been written before message_uuid
+     * existed: stored directly, bypassing AlertRequest, which mints one.
+     */
+    private function raiseLegacy(string $title): Alert
+    {
+        $request = AlertRequest::fromArray(['kind' => 'test', 'title' => $title]);
+        $this->assertInstanceOf(AlertRequest::class, $request);
+
+        $alert = $this->alerts->create($request, time());
+
+        $legacy = new Alert(
+            $alert->id,
+            $alert->kind,
+            $alert->source,
+            $alert->priority,
+            $alert->title,
+            $alert->body,
+            $alert->reference,
+            $alert->payload,
+            $alert->targetEmail,
+            $alert->createdAt,
+            $alert->expiresAt,
+        );
+
+        foreach ($this->alerts->alerts as $index => $stored) {
+            if ($stored->id === $alert->id) {
+                $this->alerts->alerts[$index] = $legacy;
+            }
+        }
+
+        return $legacy;
     }
 
     /** @param array<string, mixed> $args */

@@ -117,6 +117,14 @@ final class InMemoryAlertRepository implements AlertRepository
                 continue;
             }
 
+            // An answered message is over, for everybody. Mirrors the
+            // NOT EXISTS in WpdbAlertRepository::pendingFor(), exemptions
+            // and all — see there for why the notice and the empty uuid
+            // are excused.
+            if ($this->messageAnswered($alert)) {
+                continue;
+            }
+
             $pending[] = $alert;
         }
 
@@ -181,6 +189,35 @@ final class InMemoryAlertRepository implements AlertRepository
         $this->alerts = $kept;
 
         return $removed;
+    }
+
+    /**
+     * Whether any handset has already answered this alert's message.
+     *
+     * A notice is exempt: it goes to everybody and is read by each of
+     * them separately, so one handset closing it must not take it off
+     * the others. So is the empty uuid, which every row written before
+     * the column existed shares and which is therefore not a message.
+     */
+    private function messageAnswered(Alert $alert): bool
+    {
+        if ($alert->isAcknowledgementNotice() || $alert->messageUuid === '') {
+            return false;
+        }
+
+        foreach ($this->alerts as $sibling) {
+            if ($sibling->messageUuid !== $alert->messageUuid) {
+                continue;
+            }
+
+            foreach ($this->acks as $ack) {
+                if ($ack['alert_id'] === $sibling->id) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function hasAck(int $alertId, int $deviceId): bool

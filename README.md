@@ -239,9 +239,14 @@ send carries the same one.
 Usually that is a distinction without a difference — a broadcast is one
 row addressed to everybody. It matters when a send raises several rows:
 an administrator messaging a responder who holds a phone and a tablet
-raises one alert per handset on purpose, so each carries its own
-acknowledgement and a silent handset cannot hide behind the other one
-answering. The uuid is what says those are one message.
+raises one alert per handset, so that delivery to each can be seen
+separately. The uuid is what says those are nonetheless one message.
+
+That per-handset split originally went further: each row carried its own
+acknowledgement, so a silent handset could not hide behind the other one
+answering. "When somebody answers" below narrows that — answering on
+either handset now clears both — and the reasoning is there. What
+survives is that the acknowledgement records *which* handset answered.
 
 Callers do not supply it — Reach mints one — unless they are
 deliberately raising several alerts that are one message, in which case
@@ -335,9 +340,31 @@ The notice carries the message it reports on as payload properties:
 
 In Hand it is deliberately quiet: it appears in the list and the
 notification tray at ordinary priority, never alarms, and offers
-**Close** instead of Acknowledge — there is nothing here to take on. It
-also marks the alert it reports on as answered, so that card says
-"Acknowledged by …" and its button becomes Close too.
+**Close** instead of Acknowledge — there is nothing here to take on.
+
+**An answered message is over, for everybody.** The notice also *removes*
+the alert it reports on from every other handset, and Reach stops serving
+that message on the poll — otherwise the next poll would hand it straight
+back. A responder taking a job clears it off the rest of the rota's
+screens rather than leaving thirty people to dismiss it one by one. The
+handset that answered keeps its own card, because that is where the
+reference and the Show contact button are, and losing them the instant
+you accept a job is precisely wrong.
+
+Two things are exempt from that suppression, and both are load-bearing.
+**The notice itself** is addressed to everybody and read by each of them
+separately, so the fastest handset to press Close must not decide nobody
+else gets to read who answered. **The empty uuid** is shared by every row
+written before that column existed, so matching on it would let any one
+of them silence all the others; those keep the per-device behaviour they
+were written under.
+
+One cost, stated plainly: an administrator's message to a responder with
+two handsets is deliberately two rows, so that Recent alerts can answer
+"did *this* handset ring". Once either one is answered the other is
+suppressed, so that screen now shows which handset answered rather than
+that both rang. That is the intended trade — the same person dismissing
+the same message twice was the thing worth removing.
 
 Three things keep it from misbehaving. It is raised only on the
 acknowledgement that actually landed, so a handset retrying after a

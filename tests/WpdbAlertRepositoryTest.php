@@ -313,6 +313,33 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         $this->assertStringContainsString('a.exclude_device_id <> 7', $db->queries[0]);
     }
 
+    public function testPendingForDropsAMessageSomebodyHasAlreadyAnswered(): void
+    {
+        // An answered message is over, for everybody — the poll half of a
+        // responder taking a job clearing it off the rest of the rota's
+        // screens. Pinned here as well as in the fake because the two have
+        // drifted before: see the note on InMemoryAlertRepository.
+        $db = $this->db();
+
+        (new WpdbAlertRepository($db))->pendingFor('jo@example.com', 7, 1_700_000_000, 20);
+
+        $q = $db->queries[0];
+
+        // Any acknowledgement against any row of the same message counts,
+        // which is why it joins back to the alerts table rather than
+        // testing this row's own id.
+        $this->assertStringContainsString('NOT EXISTS', $q);
+        $this->assertStringContainsString('sibling.message_uuid = a.message_uuid', $q);
+
+        // Exempt: a notice goes to everybody and is read separately, so
+        // one handset closing it must not take it off the others.
+        $this->assertStringContainsString("a.kind = 'message_acknowledged'", $q);
+
+        // Exempt: every row older than the column shares the empty uuid
+        // and is not one message.
+        $this->assertStringContainsString("a.message_uuid = ''", $q);
+    }
+
     public function testFindByMessageUuidSelectsTheWholeMessageOldestFirst(): void
     {
         $db = $this->db();

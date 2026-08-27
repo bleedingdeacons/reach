@@ -214,12 +214,17 @@ final class AlertControllerTest extends ReachTestCase
         $this->assertCount(1, $this->alerts->acknowledgementsFor($alert->id));
     }
 
-    public function testOneHandsetAcknowledgingDoesNotSilenceAnother(): void
+    public function testOneHandsetAcknowledgingClearsTheAlertFromTheOthers(): void
     {
-        // Alerts go to the whole rota; each handset rings and answers
-        // for itself. The second handset's copy is still outstanding
-        // after the first has answered — what it gains is a notice
-        // saying so, which is not the same as being silenced.
+        // An answered message is over, for everybody. This used to assert
+        // the opposite — that the second handset's copy stayed
+        // outstanding, because each handset rang and answered for itself
+        // — and the rule was deliberately reversed: a responder taking a
+        // job should clear it off the rest of the rota's screens rather
+        // than leave thirty people to dismiss it one by one.
+        //
+        // What the others are left with is the notice saying who took it,
+        // which is the whole of what they still need to know.
         $first = $this->enrol('one@example.com');
         $second = $this->enrol('two@example.com');
         $alert = $this->raise(['kind' => 'test', 'title' => 'Everybody']);
@@ -231,7 +236,7 @@ final class AlertControllerTest extends ReachTestCase
         $this->assertInstanceOf(WP_REST_Response::class, $result);
 
         $kinds = array_column($result->get_data()['alerts'], 'kind');
-        $this->assertContains('test', $kinds);
+        $this->assertNotContains('test', $kinds);
         $this->assertContains(Alert::KIND_ACKNOWLEDGED, $kinds);
     }
 
