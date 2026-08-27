@@ -184,6 +184,27 @@ final class WpdbAlertRepository implements AlertRepository
         // in the order things actually happened.
         $contacts = WpdbAlertContactRepository::tableName($this->wpdb);
 
+        // <b>An answered message is over, for everybody.</b> The third
+        // condition below drops any alert whose message already carries an
+        // acknowledgement from any handset — which is what makes a
+        // responder taking a job clear it off the rest of the rota's
+        // screens instead of leaving thirty people to dismiss it one by
+        // one. Hand removes it locally the moment the notice arrives; this
+        // is what stops the next poll handing it straight back.
+        //
+        // Two exemptions, and both are load-bearing:
+        //
+        //  * <b>The notice itself.</b> It is addressed to everybody and
+        //    read by each of them separately, so one handset closing it
+        //    must not take it off the others. Suppressing on kind rather
+        //    than by some property of the acknowledgement, because that is
+        //    the actual distinction: an alert is a job one person takes, a
+        //    notice is news everybody gets.
+        //  * <b>The empty uuid.</b> Rows written before that column
+        //    existed all share it and are not one message; matching on it
+        //    would let any one of them silence all the others. Those fall
+        //    back to the per-device behaviour they were written under.
+        //
         // The second LEFT JOIN reads only whether a contact row exists —
         // never the encrypted column itself. Personal data must not travel
         // on the path every handset runs every few seconds; the app is told
@@ -211,6 +232,16 @@ final class WpdbAlertRepository implements AlertRepository
                 AND a.expires_at > %d
                 AND a.exclude_device_id <> %d
                 AND (
+                      a.kind = %s
+                   OR a.message_uuid = ''
+                   OR NOT EXISTS (
+                        SELECT 1
+                          FROM {$acks} answered
+                          JOIN {$table} sibling ON sibling.id = answered.alert_id
+                         WHERE sibling.message_uuid = a.message_uuid
+                      )
+                )
+                AND (
                       (a.target_device_id > 0 AND a.target_device_id = %d)
                    OR (a.target_device_id = 0
                        AND (a.target_email = '' OR a.target_email = %s))
@@ -220,6 +251,7 @@ final class WpdbAlertRepository implements AlertRepository
             $deviceId,
             $now,
             $deviceId,
+            Alert::KIND_ACKNOWLEDGED,
             $deviceId,
             $memberEmail,
             $limit,
