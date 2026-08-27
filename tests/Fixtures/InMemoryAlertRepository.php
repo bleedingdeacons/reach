@@ -11,10 +11,10 @@ use Reach\Alerts\AlertRequest;
 /**
  * In-memory {@see AlertRepository} for tests.
  *
- * Reproduces the two contract points the delivery paths lean on: the
- * poll returns only live, unacknowledged alerts addressed to the caller
- * — by device where one is named, by responder otherwise — and
- * acknowledgement is idempotent.
+ * Reproduces the contract points the delivery paths lean on: the poll
+ * returns only live, unacknowledged alerts addressed to the caller — by
+ * device where one is named, by responder otherwise — never one
+ * withheld from the asking handset, and acknowledgement is idempotent.
  *
  * <b>"By device where one is named" is a precedence, not a second
  * condition.</b> This fake had it right while the SQL had it wrong, which
@@ -49,6 +49,8 @@ final class InMemoryAlertRepository implements AlertRepository
             $now,
             $request->expiresAt($now),
             targetDeviceId: $request->targetDeviceId,
+            messageUuid: $request->messageUuid,
+            excludeDeviceId: $request->excludeDeviceId,
         );
 
         $this->alerts[] = $alert;
@@ -67,12 +69,35 @@ final class InMemoryAlertRepository implements AlertRepository
         return null;
     }
 
+    public function findByMessageUuid(string $messageUuid, int $limit = 100): array
+    {
+        if ($messageUuid === '') {
+            return [];
+        }
+
+        $out = [];
+        foreach ($this->alerts as $alert) {
+            if ($alert->messageUuid === $messageUuid) {
+                $out[] = $alert;
+            }
+        }
+
+        return array_slice($out, 0, $limit);
+    }
+
     public function pendingFor(string $memberEmail, int $deviceId, int $now, int $limit): array
     {
         $pending = [];
 
         foreach ($this->alerts as $alert) {
             if ($alert->isExpired($now)) {
+                continue;
+            }
+
+            // Withheld from this handset, whatever it is addressed to.
+            // Mirrors the AND in WpdbAlertRepository::pendingFor(), which
+            // sits outside the target branch for the same reason.
+            if ($alert->excludes($deviceId)) {
                 continue;
             }
 

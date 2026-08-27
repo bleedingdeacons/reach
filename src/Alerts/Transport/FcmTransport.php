@@ -331,6 +331,11 @@ final class FcmTransport implements AlertTransport
         // is, and what it acknowledges against.
         return [
             'alert_id'  => (string) $alert->id,
+            // The send this delivery came from. Hand matches an
+            // acknowledgement notice to the message it is about on this
+            // — see Reach\Alerts\MessageUuid — so it has to be inside
+            // the sealed blob rather than alongside it.
+            'message_uuid' => $alert->messageUuid,
             'kind'      => $alert->kind,
             'source'    => $alert->source,
             'priority'  => $alert->priority,

@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertRepository;
@@ -80,6 +81,7 @@ final class AlertController
         private readonly CurrentDevice $currentDevice,
         private readonly AuditLogger $auditLogger,
         private readonly DeviceRepository $devices,
+        private readonly AcknowledgementNotifier $acknowledgements,
     ) {
     }
 
@@ -241,6 +243,16 @@ final class AlertController
      */
     private function maySee(Alert $alert, Device $device): bool
     {
+        // An alert deliberately withheld from this handset is not this
+        // handset's alert, whatever else it says. Checked first because
+        // the exclusion overrides every address below it — a broadcast
+        // notice is addressed to everybody, and "everybody" is exactly
+        // the shape the one handset it is kept from would otherwise
+        // match. See Alert::$excludeDeviceId.
+        if ($alert->excludes($device->id)) {
+            return false;
+        }
+
         // A device-targeted alert carries no address, so its device id
         // has to be checked before the email — otherwise the empty
         // address reads as a broadcast and every handset may see it.
@@ -280,12 +292,44 @@ final class AlertController
             return new WP_Error('reach_unknown_alert', 'No such alert.', ['status' => 404]);
         }
 
-        $this->alerts->acknowledge($alertId, $device->id, $device->memberEmail, $now);
+        $recorded = $this->alerts->acknowledge($alertId, $device->id, $device->memberEmail, $now);
+
+        // Announced only on the acknowledgement that actually landed. A
+        // handset retrying after a dropped response, or a second one
+        // racing it, must not raise the notice a second time — the rota
+        // would be told twice that the same message had been picked up,
+        // by the same person, once for every dropped packet.
+        if ($recorded) {
+            $this->acknowledgements->announce($alert, $device, $this->responderName($device), $now);
+        }
 
         // Always 200, including for a repeat. The acknowledgement is
         // idempotent at the storage layer, and a handset retrying after
         // a dropped response has achieved what it asked for.
         return new WP_REST_Response(['acknowledged' => true, 'alert_id' => $alertId], 200);
+    }
+
+    /**
+     * What to call the responder in a notice sent to other handsets.
+     *
+     * Their Unity anonymous name, which is the form this suite shows
+     * people, and a generic stand-in where no member record resolves or
+     * the record has no name on it. <b>Never the email address.</b> The
+     * usual fallback in the admin screens is to show the address, on the
+     * grounds that an address is itself the diagnostic; a notice goes to
+     * a lock screen instead of to an administrator, so here the fallback
+     * has to be the anonymous one. See {@see AcknowledgementNotifier}.
+     */
+    private function responderName(Device $device): string
+    {
+        $member = $this->currentDevice->memberFor($device);
+        if ($member === null) {
+            return AcknowledgementNotifier::UNKNOWN_RESPONDER;
+        }
+
+        $name = trim($member->getAnonymousName());
+
+        return $name !== '' ? $name : AcknowledgementNotifier::UNKNOWN_RESPONDER;
     }
 
     /**

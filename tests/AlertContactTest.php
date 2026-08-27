@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
 use Reach\Auth\DeviceTokenMinter;
@@ -209,12 +210,18 @@ final class AlertContactTest extends ReachTestCase
 
     private function controller(): AlertController
     {
+        $gate = $this->gate();
+
         return new AlertController(
             $this->alerts,
             $this->contacts,
-            new CurrentDevice($this->devices, $this->minter, $this->gate()),
+            new CurrentDevice($this->devices, $this->minter, $gate),
             $this->audit,
             $this->devices,
+            new AcknowledgementNotifier(
+                $this->alerts,
+                new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []),
+            ),
         );
     }
 

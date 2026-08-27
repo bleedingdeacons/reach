@@ -86,12 +86,15 @@ final class WpdbAlertRepository implements AlertRepository
             body TEXT NOT NULL,
             reference VARCHAR(64) NOT NULL DEFAULT '',
             payload TEXT NULL,
+            message_uuid CHAR(36) NOT NULL DEFAULT '',
             target_email VARCHAR(254) NOT NULL DEFAULT '',
             target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            exclude_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             created_at BIGINT UNSIGNED NOT NULL,
             expires_at BIGINT UNSIGNED NOT NULL,
             PRIMARY KEY  (id),
             KEY target_expiry (target_email, expires_at),
+            KEY message_uuid (message_uuid),
             KEY created_at (created_at)
         ) {$charset};";
 
@@ -127,12 +130,14 @@ final class WpdbAlertRepository implements AlertRepository
                 'body'         => $request->body,
                 'reference'    => $request->reference,
                 'payload'      => $payloadJson,
+                'message_uuid' => $request->messageUuid,
                 'target_email' => $request->targetEmail,
                 'target_device_id' => $request->targetDeviceId,
+                'exclude_device_id' => $request->excludeDeviceId,
                 'created_at'   => $now,
                 'expires_at'   => $request->expiresAt($now),
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d'],
+            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d'],
         );
 
         return new Alert(
@@ -148,6 +153,8 @@ final class WpdbAlertRepository implements AlertRepository
             $now,
             $request->expiresAt($now),
             targetDeviceId: $request->targetDeviceId,
+            messageUuid: $request->messageUuid,
+            excludeDeviceId: $request->excludeDeviceId,
         );
     }
 
@@ -194,13 +201,15 @@ final class WpdbAlertRepository implements AlertRepository
         // after any push failure.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
             "SELECT a.id, a.kind, a.source, a.priority, a.title, a.body, a.reference,
-                    a.payload, a.target_email, a.target_device_id, a.created_at, a.expires_at,
+                    a.payload, a.message_uuid, a.target_email, a.target_device_id,
+                    a.exclude_device_id, a.created_at, a.expires_at,
                     (c.alert_id IS NOT NULL) AS has_contact
                FROM {$table} a
                LEFT JOIN {$acks} k ON k.alert_id = a.id AND k.device_id = %d
                LEFT JOIN {$contacts} c ON c.alert_id = a.id
               WHERE k.alert_id IS NULL
                 AND a.expires_at > %d
+                AND a.exclude_device_id <> %d
                 AND (
                       (a.target_device_id > 0 AND a.target_device_id = %d)
                    OR (a.target_device_id = 0
@@ -211,7 +220,30 @@ final class WpdbAlertRepository implements AlertRepository
             $deviceId,
             $now,
             $deviceId,
+            $deviceId,
             $memberEmail,
+            $limit,
+        ), ARRAY_A);
+
+        return $this->hydrateAll($rows);
+    }
+
+    public function findByMessageUuid(string $messageUuid, int $limit = 100): array
+    {
+        if ($messageUuid === '') {
+            return [];
+        }
+
+        $limit = max(1, min(500, $limit));
+        $table = self::tableName($this->wpdb);
+
+        $rows = $this->wpdb->get_results($this->wpdb->prepare(
+            "SELECT {$this->columns()}
+               FROM {$table}
+              WHERE message_uuid = %s
+              ORDER BY id ASC
+              LIMIT %d",
+            $messageUuid,
             $limit,
         ), ARRAY_A);
 
@@ -333,8 +365,8 @@ final class WpdbAlertRepository implements AlertRepository
     /** @return literal-string */
     private function columns(): string
     {
-        return 'id, kind, source, priority, title, body, reference, payload, '
-            . 'target_email, target_device_id, created_at, expires_at';
+        return 'id, kind, source, priority, title, body, reference, payload, message_uuid, '
+            . 'target_email, target_device_id, exclude_device_id, created_at, expires_at';
     }
 
     /**
@@ -378,6 +410,8 @@ final class WpdbAlertRepository implements AlertRepository
             // (the admin list, findById); those callers do not use it.
             (bool) ($row['has_contact'] ?? false),
             (int) ($row['target_device_id'] ?? 0),
+            (string) ($row['message_uuid'] ?? ''),
+            (int) ($row['exclude_device_id'] ?? 0),
         );
     }
 

@@ -22,11 +22,31 @@ interface AlertRepository
     public function findById(int $id): ?Alert;
 
     /**
+     * Every alert raised by one send, oldest first.
+     *
+     * A message is usually one row, but not always — see
+     * {@see MessageUuid}. This is what {@see AcknowledgementNotifier}
+     * asks in order to work out who a message actually went to, which
+     * cannot be read off the acknowledged row alone: an administrator's
+     * message to a responder with two handsets is two device-targeted
+     * rows, and the one that was answered names only its own handset.
+     *
+     * Returns nothing for the empty uuid. Rows written before the column
+     * existed carry one, and they are not all the same message.
+     *
+     * @return array<int, Alert>
+     */
+    public function findByMessageUuid(string $messageUuid, int $limit = 100): array;
+
+    /**
      * Alerts a handset should be ringing about right now.
      *
      * Returns live (unexpired) alerts addressed to this responder or
      * broadcast to everyone, which *this device* has not yet
-     * acknowledged, oldest first.
+     * acknowledged and which are not deliberately withheld from it,
+     * oldest first. See {@see Alert::$excludeDeviceId} for the second:
+     * a handset must not be handed the notice announcing its own
+     * acknowledgement.
      *
      * <b>Why acknowledgements rather than a client-held cursor.</b> A
      * "give me everything after id N" cursor lives on the handset, and

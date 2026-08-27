@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
+use Reach\Alerts\AcknowledgementNotifier;
+use Reach\Alerts\Alert;
+use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
 use Reach\Auth\DeviceTokenMinter;
 use Reach\Devices\CurrentDevice;
@@ -214,7 +217,9 @@ final class AlertControllerTest extends ReachTestCase
     public function testOneHandsetAcknowledgingDoesNotSilenceAnother(): void
     {
         // Alerts go to the whole rota; each handset rings and answers
-        // for itself.
+        // for itself. The second handset's copy is still outstanding
+        // after the first has answered — what it gains is a notice
+        // saying so, which is not the same as being silenced.
         $first = $this->enrol('one@example.com');
         $second = $this->enrol('two@example.com');
         $alert = $this->raise(['kind' => 'test', 'title' => 'Everybody']);
@@ -224,7 +229,10 @@ final class AlertControllerTest extends ReachTestCase
 
         $result = $controller->pending($this->authed($second));
         $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertCount(1, $result->get_data()['alerts']);
+
+        $kinds = array_column($result->get_data()['alerts'], 'kind');
+        $this->assertContains('test', $kinds);
+        $this->assertContains(Alert::KIND_ACKNOWLEDGED, $kinds);
     }
 
     public function testCannotAcknowledgeAnotherRespondersTargetedAlert(): void
@@ -498,12 +506,22 @@ final class AlertControllerTest extends ReachTestCase
 
         $gate = new ResponderGate(new InMemoryMemberRepository($members));
 
+        // A real notifier over a real dispatcher with no transports: the
+        // notice it raises is stored in the same in-memory repository the
+        // assertions read, which is what lets a test see the second
+        // message an acknowledgement produces without a push to stub.
+        $notifier = new AcknowledgementNotifier(
+            $this->alerts,
+            new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []),
+        );
+
         return new AlertController(
             $this->alerts,
             $this->contacts,
             new CurrentDevice($this->devices, $this->minter, $gate),
             $this->audit,
             $this->devices,
+            $notifier,
         );
     }
 

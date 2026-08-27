@@ -59,6 +59,24 @@ if (!defined('ABSPATH')) {
  */
 final class Alert
 {
+    /**
+     * The kind Reach raises when a handset acknowledges a message: a
+     * notice to everybody *else* it was sent to, saying who picked it up.
+     *
+     * <b>It is not an alert and must never alarm.</b> Hand treats this
+     * kind as information — a quiet notification, no siren, and a Close
+     * button in place of Acknowledge — because the whole of its content
+     * is that somebody has already dealt with the thing that did alarm.
+     * The spelling is a wire contract shared with
+     * <c>HandAlert.KindMessageAcknowledged</c>; changing it here alone
+     * turns the notice back into a 3am siren.
+     *
+     * Raised by {@see AcknowledgementNotifier}, which also refuses to
+     * raise one *for* one — otherwise every acknowledgement of a notice
+     * would breed the next.
+     */
+    public const KIND_ACKNOWLEDGED = 'message_acknowledged';
+
     /** Ordinary alert: audible, but not treated as an emergency. */
     public const PRIORITY_NORMAL = 'normal';
 
@@ -103,6 +121,31 @@ final class Alert
          * {@see \Reach\Rest\AlertController} enforces it on the way back.
          */
         public readonly int $targetDeviceId = 0,
+        /**
+         * The message this alert is one delivery of. See
+         * {@see MessageUuid}: every alert has one, and every alert raised
+         * by the same send shares it.
+         *
+         * Empty only on rows written before the column existed. Nothing
+         * generates an empty one.
+         */
+        public readonly string $messageUuid = '',
+        /**
+         * One handset this alert is deliberately kept from, or 0.
+         *
+         * The inverse of {@see $targetDeviceId}, and it exists for one
+         * case: the notice saying a message has been acknowledged goes to
+         * everybody it was sent to *except* the handset that acknowledged
+         * it. Without this that handset would be told about its own
+         * button press — by push immediately, and again on its next poll.
+         *
+         * Honoured in three places, and it has to be all three:
+         * {@see AlertDispatcher::resolveTargets()} for the push,
+         * {@see AlertRepository::pendingFor()} for the poll, and
+         * {@see \Reach\Rest\AlertController} for what a handset may
+         * acknowledge or read a contact from.
+         */
+        public readonly int $excludeDeviceId = 0,
     ) {
     }
 
@@ -125,6 +168,24 @@ final class Alert
     public function isDeviceTargeted(): bool
     {
         return $this->targetDeviceId > 0;
+    }
+
+    /**
+     * Whether this handset is the one the alert is being kept from.
+     * See {@see $excludeDeviceId}.
+     */
+    public function excludes(int $deviceId): bool
+    {
+        return $this->excludeDeviceId > 0 && $this->excludeDeviceId === $deviceId;
+    }
+
+    /**
+     * Whether this is the "somebody has answered" notice rather than
+     * something needing an answer. See {@see KIND_ACKNOWLEDGED}.
+     */
+    public function isAcknowledgementNotice(): bool
+    {
+        return $this->kind === self::KIND_ACKNOWLEDGED;
     }
 
     public function isExpired(int $now): bool
@@ -151,6 +212,10 @@ final class Alert
     {
         return [
             'id'         => $this->id,
+            // The message this delivery belongs to. Hand matches the
+            // acknowledgement notice back to the alert it is about on
+            // this, not on the id — see MessageUuid.
+            'message_uuid' => $this->messageUuid,
             'kind'       => $this->kind,
             'source'     => $this->source,
             'priority'   => $this->priority,
