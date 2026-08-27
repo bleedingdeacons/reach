@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
+use Reach\Alerts\MessageUuid;
 use Reach\Core\Capabilities;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
@@ -319,9 +320,19 @@ final class SendMessagePage
         // Each then carries its own acknowledgement, so Recent alerts
         // answers "did this handset ring" for every phone they hold
         // instead of letting a silent one hide behind the other.
+        //
+        // <b>One message uuid across all of them.</b> Splitting by
+        // handset is a delivery decision, not something the responder
+        // did — they were sent one message and it is still one message
+        // when it lands on two devices. The uuid is what says so, and it
+        // is what lets an acknowledgement from the phone reach the
+        // tablet: see {@see \Reach\Alerts\AcknowledgementNotifier},
+        // which recovers who a message went to from exactly this.
+        $messageUuid = MessageUuid::generate();
+
         $failed = false;
         foreach ($devices as $device) {
-            if (is_wp_error($this->sendMessage($subject, $body, $device->id))) {
+            if (is_wp_error($this->sendMessage($subject, $body, $device->id, $messageUuid))) {
                 $failed = true;
             }
         }
@@ -389,10 +400,17 @@ final class SendMessagePage
     /**
      * Raise one message, for a named handset or for the whole rota.
      *
+     * `$messageUuid` is empty for a single send — {@see \Reach\Alerts\AlertRequest}
+     * mints one — and supplied only when several alerts are one message.
+     *
      * @return int|WP_Error The alert's id, or why it was refused.
      */
-    private function sendMessage(string $subject, string $body, int $deviceId = 0): int|WP_Error
-    {
+    private function sendMessage(
+        string $subject,
+        string $body,
+        int $deviceId = 0,
+        string $messageUuid = ''
+    ): int|WP_Error {
         return $this->alertApi->send([
             'kind'     => 'admin_message',
             'source'   => 'reach',
@@ -405,6 +423,7 @@ final class SendMessagePage
             // has been and gone.
             'ttl'      => self::MESSAGE_TTL,
             'target_device_id' => $deviceId,
+            'message_uuid'     => $messageUuid,
         ]);
     }
 

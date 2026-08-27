@@ -40,6 +40,12 @@ use WP_Error;
  * the admin test alert and a removal notice — and is validated here
  * only so a stray value cannot become a negative id.
  *
+ * <b>`message_uuid` and `exclude_device_id` are Reach's own too.</b>
+ * The first is generated when a caller does not supply one, so an
+ * ordinary plugin never touches it; the second exists for the
+ * acknowledgement notice and means "everybody but this handset". Both
+ * are described on {@see Alert}.
+ *
  * <b>`contact` is the one field that may hold personal data, and it is
  * handled completely differently from the rest.</b> Everything else
  * here ends up in the alerts table, in the push payload, and on a lock
@@ -90,6 +96,8 @@ final class AlertRequest
         public readonly int $targetDeviceId,
         public readonly int $ttlSeconds,
         public readonly string $contact,
+        public readonly string $messageUuid,
+        public readonly int $excludeDeviceId,
     ) {
     }
 
@@ -144,6 +152,8 @@ final class AlertRequest
             targetDeviceId: self::deviceId($args['target_device_id'] ?? null),
             ttlSeconds: self::ttl($args['ttl'] ?? null),
             contact: self::text($args['contact'] ?? '', self::CONTACT_MAX),
+            messageUuid: self::messageUuid($args['message_uuid'] ?? null),
+            excludeDeviceId: self::deviceId($args['exclude_device_id'] ?? null),
         );
     }
 
@@ -222,6 +232,35 @@ final class AlertRequest
         }
 
         return $out;
+    }
+
+    /**
+     * The message this alert belongs to: the caller's, or a fresh one.
+     *
+     * <b>Absent is the normal case and is not a caller error.</b> One
+     * send raising one alert is one message, and asking every plugin to
+     * mint a uuid it has no other use for would be pointless ceremony.
+     * So the id is generated here, and a caller only supplies one when it
+     * is deliberately raising several alerts that are one message —
+     * {@see \Reach\Admin\SendMessagePage}, sending to a responder who
+     * holds two handsets, is the case that exists.
+     *
+     * <b>A malformed one is replaced rather than refused.</b> The
+     * alternative is failing a send over an identifier that exists only
+     * to group rows for display; a fresh uuid loses the grouping, which
+     * is the smaller harm by a wide margin when the other option is a
+     * handset that never rang.
+     */
+    private static function messageUuid(mixed $value): string
+    {
+        if (is_string($value)) {
+            $value = strtolower(trim($value));
+            if (MessageUuid::isValid($value)) {
+                return $value;
+            }
+        }
+
+        return MessageUuid::generate();
     }
 
     /**

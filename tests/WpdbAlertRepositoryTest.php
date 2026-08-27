@@ -6,6 +6,7 @@ namespace Reach\Tests;
 
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertRequest;
+use Reach\Alerts\MessageUuid;
 use Reach\Alerts\WpdbAlertRepository;
 use Reach\Tests\ReachTestCase;
 
@@ -256,6 +257,82 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
             "AND (a.target_email = '' OR a.target_email = 'jo@example.com')\n                AND (a.target_device_id",
             $q,
         );
+    }
+
+    public function testInstallCarriesTheMessageAndExclusionColumns(): void
+    {
+        $GLOBALS['__reach_dbdelta'] = [];
+        $db = $this->db();
+
+        WpdbAlertRepository::install($db);
+
+        $sql = $GLOBALS['__reach_dbdelta'][0];
+
+        // Both default to the "nothing special" value, which is what lets
+        // dbDelta add them to a table full of existing alerts without any
+        // of those rows changing meaning: an empty uuid groups with
+        // nothing, and an exclusion of 0 withholds from nobody.
+        $this->assertStringContainsString("message_uuid CHAR(36) NOT NULL DEFAULT ''", $sql);
+        $this->assertStringContainsString('exclude_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0', $sql);
+
+        // Indexed because the notifier looks a whole message up by it on
+        // every acknowledgement.
+        $this->assertStringContainsString('KEY message_uuid (message_uuid)', $sql);
+    }
+
+    public function testTheMessageUuidAndExclusionAreStoredAndReadBack(): void
+    {
+        $db = $this->db();
+        $uuid = MessageUuid::generate();
+
+        $alert = (new WpdbAlertRepository($db))->create(
+            $this->request(['message_uuid' => $uuid, 'exclude_device_id' => 4]),
+            1_700_000_000,
+        );
+
+        $this->assertSame($uuid, $db->inserted[0]['data']['message_uuid']);
+        $this->assertSame(4, $db->inserted[0]['data']['exclude_device_id']);
+        $this->assertSame($uuid, $alert->messageUuid);
+        $this->assertTrue($alert->excludes(4));
+        $this->assertFalse($alert->excludes(5));
+    }
+
+    public function testPendingForWithholdsAnAlertExcludedFromTheAskingHandset(): void
+    {
+        // The poll half of the exclusion. The push half is the dispatcher,
+        // and it has to be both: an exclusion honoured on one route is an
+        // alert that arrives by the other.
+        //
+        // Outside the target branch on purpose. A notice is broadcast, and
+        // "broadcast" is exactly the shape the one handset it is withheld
+        // from would otherwise match.
+        $db = $this->db();
+
+        (new WpdbAlertRepository($db))->pendingFor('jo@example.com', 7, 1_700_000_000, 20);
+
+        $this->assertStringContainsString('a.exclude_device_id <> 7', $db->queries[0]);
+    }
+
+    public function testFindByMessageUuidSelectsTheWholeMessageOldestFirst(): void
+    {
+        $db = $this->db();
+        $uuid = MessageUuid::generate();
+
+        (new WpdbAlertRepository($db))->findByMessageUuid($uuid);
+
+        $q = $db->queries[0];
+        $this->assertStringContainsString("WHERE message_uuid = '" . $uuid . "'", $q);
+        $this->assertStringContainsString('ORDER BY id ASC', $q);
+    }
+
+    public function testFindByMessageUuidAsksNothingForTheEmptyUuid(): void
+    {
+        // Rows written before the column existed all carry the empty
+        // string, and they are not one message.
+        $db = $this->db();
+
+        $this->assertSame([], (new WpdbAlertRepository($db))->findByMessageUuid(''));
+        $this->assertSame([], $db->queries);
     }
 
     public function testPendingForReadsOnlyWhetherAContactExists(): void

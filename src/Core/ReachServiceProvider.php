@@ -15,6 +15,7 @@ use Reach\Admin\DevicesPage;
 use Reach\Admin\SendMessagePage;
 use Reach\Admin\MemberSearchPage;
 use Reach\Admin\SettingsPage;
+use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertDispatcher;
@@ -146,6 +147,10 @@ final class ReachServiceProvider
             [$c->get(FcmTransport::class)],
         ));
         $container->register(AlertApi::class, fn(ContainerInterface $c) => new AlertApi(
+            $c->get(AlertDispatcher::class),
+        ));
+        $container->register(AcknowledgementNotifier::class, fn(ContainerInterface $c) => new AcknowledgementNotifier(
+            $c->get(AlertRepository::class),
             $c->get(AlertDispatcher::class),
         ));
 
@@ -293,6 +298,7 @@ final class ReachServiceProvider
             $c->get(CurrentDevice::class),
             $c->get(AuditLogger::class),
             $c->get(DeviceRepository::class),
+            $c->get(AcknowledgementNotifier::class),
         ));
 
         // Frontend + admin.

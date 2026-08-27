@@ -53,6 +53,11 @@ final class Schema
     /**
      * Schema version. Bump on any change to a CREATE TABLE above.
      *
+     * 7 — added alerts.message_uuid, so the several rows one send can
+     *     raise are recognisably one message, and
+     *     alerts.exclude_device_id, so the notice announcing an
+     *     acknowledgement can reach everybody the message went to except
+     *     the handset that made it.
      * 6 — added devices.lock_screen, so a handset that has been set to
      *     display alert text on its lock screen can say so. Not a fault
      *     the handset can fix on its own — it is its owner's setting —
@@ -68,7 +73,7 @@ final class Schema
      *     and alert contacts.
      * 1 — everything before schema versioning existed.
      */
-    public const VERSION = 6;
+    public const VERSION = 7;
 
     public const OPTION = 'reach_schema_version';
 

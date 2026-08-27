@@ -150,7 +150,14 @@ final class AlertDispatcher
      * The live handsets an alert should reach.
      *
      * Three addresses, narrowest first: one device, one responder, or
-     * everybody.
+     * everybody — and then, whichever of the three it was, one handset
+     * the alert may be deliberately withheld from. See
+     * {@see Alert::$excludeDeviceId}: the notice saying a message has
+     * been acknowledged goes to everybody it was sent to except the
+     * handset that acknowledged it, and this is the push half of that.
+     * The poll half is {@see AlertRepository::pendingFor()}, and both are
+     * needed — an exclusion honoured on only one route is an alert that
+     * arrives by the other.
      *
      * @return array<int, Device>
      */
@@ -173,7 +180,7 @@ final class AlertDispatcher
                 return [];
             }
 
-            return [$device];
+            return $alert->excludes($device->id) ? [] : [$device];
         }
 
         if (!$alert->isBroadcast()) {
@@ -188,7 +195,7 @@ final class AlertDispatcher
                 return [];
             }
 
-            return $this->devices->findByMemberEmail($alert->targetEmail);
+            return $this->withoutExcluded($alert, $this->devices->findByMemberEmail($alert->targetEmail));
         }
 
         $eligible = [];
@@ -207,6 +214,24 @@ final class AlertDispatcher
             }
         }
 
-        return $eligible;
+        return $this->withoutExcluded($alert, $eligible);
+    }
+
+    /**
+     * The same handsets, less the one this alert is withheld from.
+     *
+     * @param array<int, Device> $devices
+     * @return array<int, Device>
+     */
+    private function withoutExcluded(Alert $alert, array $devices): array
+    {
+        if ($alert->excludeDeviceId === 0) {
+            return $devices;
+        }
+
+        return array_values(array_filter(
+            $devices,
+            static fn(Device $device): bool => !$alert->excludes($device->id),
+        ));
     }
 }

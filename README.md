@@ -209,6 +209,10 @@ $alertId = reach_send_alert([
     'contact'   => 'Sam, 07700 900123', // see below — handled separately
     'target_email' => '',               // omit to alert the whole rota
     'ttl'       => 3600,                // seconds; default 1 hour
+    'payload'   => [                    // named properties, passed through
+        'shift' => 'night',
+        'area'  => 'BS5',
+    ],
 ]);
 
 if (is_wp_error($alertId)) { /* refused — see the error */ }
@@ -216,6 +220,36 @@ if (is_wp_error($alertId)) { /* refused — see the error */ }
 
 `subject`/`message` and `title`/`body` are the same two fields; the wire
 names win if both are sent, so existing integrations are unaffected.
+
+`payload` is a flat, named string map — a plugin's own properties,
+carried through to the handset untouched and readable there as
+`HandAlert.Payload`. Flat and string-valued because that is what the
+push can carry: FCM's data block is a string→string map, and anything
+nested would need re-encoding per transport with a different shape on
+each. It is capped at 2KB in total, and the alert's own fields win on a
+name collision, so a plugin cannot redefine `title` or `alert_id` by
+putting one in its payload. **The same rule applies as to everything
+else: no personal data.**
+
+### One send, one message
+
+Every alert carries a `message_uuid`, and every alert raised by the same
+send carries the same one.
+
+Usually that is a distinction without a difference — a broadcast is one
+row addressed to everybody. It matters when a send raises several rows:
+an administrator messaging a responder who holds a phone and a tablet
+raises one alert per handset on purpose, so each carries its own
+acknowledgement and a silent handset cannot hide behind the other one
+answering. The uuid is what says those are one message.
+
+Callers do not supply it — Reach mints one — unless they are
+deliberately raising several alerts that are one message, in which case
+`message_uuid` accepts one they generated. Any RFC 9562 uuid will do,
+whatever version; it is an opaque grouping key and nothing reads meaning
+out of it. A value that is not a uuid at all is replaced rather than
+refused, because a send must never fail over an identifier that exists
+to group rows for display.
 
 ### Contact details
 
@@ -274,6 +308,42 @@ a `notification` block is handled by the system tray when the app is
 backgrounded and `onMessageReceived` never runs — so Hand would never
 get the chance to raise a full-screen intent, and a duty handset would
 get one polite ding instead of ringing.
+
+### When somebody answers
+
+Acknowledging tells the rest of the rota. Reach raises a second message
+of its own — kind `message_acknowledged` — addressed to everybody the
+first one went to **except** the handset that answered, saying who
+picked it up.
+
+This exists because a broadcast rings every certified handset at once,
+and the first responder to answer silences only their own. Everyone
+else's went on shouting about a job already being done, and they found
+out it was done by acknowledging it themselves — being woken for
+nothing, and then telling Reach they had dealt with something they had
+not.
+
+The notice carries the message it reports on as payload properties:
+
+| Property | Meaning |
+| --- | --- |
+| `ack_message_uuid` | The message that was answered |
+| `ack_alert_id` | The alert row that was acknowledged |
+| `ack_responder` | Who answered — a Unity anonymous name, never an address |
+| `ack_device_id` | Which handset answered |
+| `ack_at` | When, as a Unix timestamp |
+
+In Hand it is deliberately quiet: it appears in the list and the
+notification tray at ordinary priority, never alarms, and offers
+**Close** instead of Acknowledge — there is nothing here to take on. It
+also marks the alert it reports on as answered, so that card says
+"Acknowledged by …" and its button becomes Close too.
+
+Three things keep it from misbehaving. It is raised only on the
+acknowledgement that actually landed, so a handset retrying after a
+dropped response does not tell the rota twice. It is never raised for a
+notice, or one answered call would become an unbounded correspondence.
+And it is never urgent, whatever the alert it reports on was.
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
