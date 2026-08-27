@@ -68,6 +68,10 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         $alert = $this->raise(['kind' => 'test', 'title' => 'Anything']);
 
         $this->assertTrue(MessageUuid::isValid($alert->messageUuid));
+
+        // What Reach mints is still version 4, whatever it accepts from
+        // a caller. Relaxing the check did not relax the generator.
+        $this->assertSame('4', $alert->messageUuid[14]);
     }
 
     public function testTwoSendsGetDifferentUuids(): void
@@ -98,16 +102,70 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         $this->assertSame($uuid, $second->messageUuid);
     }
 
-    public function testAMalformedUuidIsReplacedRatherThanRefused(): void
+    /**
+     * @dataProvider callerUuids
+     */
+    public function testACallerSOwnUuidIsKeptWhateverVersionItIs(string $uuid): void
+    {
+        // The value is an opaque grouping key and nothing reads meaning
+        // out of it, so a caller minting version 1 or version 7 ids is
+        // not making a mistake. Refusing those would replace them — and
+        // a replacement is per row, so it would silently split the very
+        // message the caller was joining.
+        $alert = $this->raise([
+            'kind' => 'test', 'title' => 'Joined', 'message_uuid' => $uuid,
+        ]);
+
+        $this->assertSame($uuid, $alert->messageUuid);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function callerUuids(): array
+    {
+        return [
+            'version 1' => ['f81d4fae-7dec-11d0-a765-00a0c91e6bf6'],
+            'version 4' => ['3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b'],
+            'version 7' => ['0192f3c4-5d6e-7f80-8a9b-0c1d2e3f4a5b'],
+        ];
+    }
+
+    /**
+     * @dataProvider unusableUuids
+     */
+    public function testAMalformedUuidIsReplacedRatherThanRefused(string $uuid): void
+    {
+        // Still refused: a value that is not a uuid at all. That is a
+        // mistake, and a fresh id is the right answer to it.
+        $alert = $this->raise([
+            'kind' => 'test', 'title' => 'Still sent', 'message_uuid' => $uuid,
+        ]);
+
+        $this->assertNotSame($uuid, $alert->messageUuid);
+        $this->assertTrue(MessageUuid::isValid($alert->messageUuid));
+    }
+
+    /** @return array<string, array{string}> */
+    public static function unusableUuids(): array
+    {
+        return [
+            'not a uuid'        => ['not-a-uuid'],
+            'bare hex'          => ['3f2a1b4c5d6e4f708a9b0c1d2e3f4a5b'],
+            'truncated'         => ['3f2a1b4c-5d6e-4f70-8a9b'],
+            'nil uuid'          => ['00000000-0000-0000-0000-000000000000'],
+            'wrong variant'     => ['3f2a1b4c-5d6e-4f70-0a9b-0c1d2e3f4a5b'],
+        ];
+    }
+
+    public function testAMalformedUuidIsStillAReplacementNotARefusal(): void
     {
         // A send must not fail over an identifier that exists to group
         // rows for display. Losing the grouping is the smaller harm when
         // the other option is a handset that never rang.
-        $alert = $this->raise([
+        $request = AlertRequest::fromArray([
             'kind' => 'test', 'title' => 'Still sent', 'message_uuid' => 'not-a-uuid',
         ]);
 
-        $this->assertTrue(MessageUuid::isValid($alert->messageUuid));
+        $this->assertInstanceOf(AlertRequest::class, $request);
     }
 
     public function testTheUuidReachesTheHandsetOnThePoll(): void

@@ -55,18 +55,30 @@ final class MessageUuid
     }
 
     /**
-     * Whether a caller-supplied value is a uuid we would have generated.
+     * Whether a caller-supplied value is a usable message id.
      *
-     * Deliberately strict about the version and variant nibbles rather
-     * than accepting anything hyphenated in the right places. A caller
-     * passing its own uuid is joining alerts into one message, and the
-     * cost of accepting a malformed one is two rows that look joined and
-     * are not — which is worse than being told plainly to fix it.
+     * Strict about the shape and the variant nibble, and deliberately
+     * <b>not</b> about the version. This began as a version-4 check, on
+     * the reasoning that a caller's uuid should be one we would have
+     * generated — which had the failure mode exactly backwards. The
+     * value here is an opaque grouping key and nothing reads meaning out
+     * of it, so a caller minting version 1 or version 7 ids (as plenty
+     * do) is not making a mistake. But {@see AlertRequest} replaces
+     * anything this refuses rather than raising, so refusing those would
+     * have quietly given every row of their message a *different* id —
+     * splitting the group they were joining, silently, which is the one
+     * outcome the check exists to prevent.
+     *
+     * So the version nibble accepts 1-8, which is every version RFC 9562
+     * defines. What is still refused is a value that is not a uuid at
+     * all: a truncated string, a bare hex blob, something with the
+     * hyphens in the wrong places. Those are mistakes, and a fresh id is
+     * the right answer to them.
      */
     public static function isValid(string $value): bool
     {
         return preg_match(
-            '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
             $value,
         ) === 1;
     }

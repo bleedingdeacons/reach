@@ -245,7 +245,11 @@ answering. The uuid is what says those are one message.
 
 Callers do not supply it — Reach mints one — unless they are
 deliberately raising several alerts that are one message, in which case
-`message_uuid` accepts one they generated.
+`message_uuid` accepts one they generated. Any RFC 9562 uuid will do,
+whatever version; it is an opaque grouping key and nothing reads meaning
+out of it. A value that is not a uuid at all is replaced rather than
+refused, because a send must never fail over an identifier that exists
+to group rows for display.
 
 ### Contact details
 
