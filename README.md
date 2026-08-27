@@ -239,9 +239,14 @@ send carries the same one.
 Usually that is a distinction without a difference — a broadcast is one
 row addressed to everybody. It matters when a send raises several rows:
 an administrator messaging a responder who holds a phone and a tablet
-raises one alert per handset on purpose, so each carries its own
-acknowledgement and a silent handset cannot hide behind the other one
-answering. The uuid is what says those are one message.
+raises one alert per handset, so that delivery to each can be seen
+separately. The uuid is what says those are nonetheless one message.
+
+That per-handset split originally went further: each row carried its own
+acknowledgement, so a silent handset could not hide behind the other one
+answering. "When somebody answers" below narrows that — answering on
+either handset now clears both — and the reasoning is there. What
+survives is that the acknowledgement records *which* handset answered.
 
 Callers do not supply it — Reach mints one — unless they are
 deliberately raising several alerts that are one message, in which case
