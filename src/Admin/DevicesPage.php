@@ -795,7 +795,13 @@ final class DevicesPage
             'title'    => 'This handset has been removed',
             'body'     => 'An administrator has taken this handset off the alert rota. '
                 . 'It will stop receiving alerts. Sign in again to enrol it afresh.',
-            'priority' => Alert::PRIORITY_NORMAL,
+            // Blue and informational: this is the app being told about its
+            // own enrolment, not a responder being asked to do anything.
+            // Hand intercepts it before admission and signs out, so the
+            // level only governs what a handset that somehow shows it does
+            // — and a removal is not worth a siren at any hour.
+            'level'    => Alert::LEVEL_BLUE,
+            'response' => Alert::RESPONSE_NONE,
             // Long enough to survive a phone that is briefly asleep,
             // short enough that a handset switched on next week is not
             // told about a removal it has long since noticed.
@@ -916,7 +922,15 @@ final class DevicesPage
             'source'   => 'reach',
             'title'    => 'Hand test alert',
             'body'     => 'This is a test sent from the Reach admin by ' . $who . '. No action is needed.',
-            'priority' => Alert::PRIORITY_NORMAL,
+            // <b>Red on purpose, and informational on purpose.</b> Red
+            // because the whole value of a test is exercising the loudest
+            // path there is — a test that arrived quietly would prove only
+            // that quiet alerts work, which is not the question anybody
+            // sends one to answer. Informational because its own body says
+            // no action is needed: there is nothing here to take on, so the
+            // handset offers Close.
+            'level'    => Alert::LEVEL_RED,
+            'response' => Alert::RESPONSE_NONE,
             // Short: a test that is still ringing handsets ten minutes
             // later is a nuisance, and its only job is to arrive now.
             'ttl'      => 300,

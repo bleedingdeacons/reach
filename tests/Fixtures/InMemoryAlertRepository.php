@@ -51,6 +51,8 @@ final class InMemoryAlertRepository implements AlertRepository
             targetDeviceId: $request->targetDeviceId,
             messageUuid: $request->messageUuid,
             excludeDeviceId: $request->excludeDeviceId,
+            level: $request->level,
+            response: $request->response,
         );
 
         $this->alerts[] = $alert;
@@ -194,14 +196,14 @@ final class InMemoryAlertRepository implements AlertRepository
     /**
      * Whether any handset has already answered this alert's message.
      *
-     * A notice is exempt: it goes to everybody and is read by each of
-     * them separately, so one handset closing it must not take it off
-     * the others. So is the empty uuid, which every row written before
-     * the column existed shares and which is therefore not a message.
+     * Anything informational is exempt: nobody was taking it on, so one
+     * handset closing its own copy must not take it off the others. So
+     * is the empty uuid, which every row written before the column
+     * existed shares and which is therefore not a message.
      */
     private function messageAnswered(Alert $alert): bool
     {
-        if ($alert->isAcknowledgementNotice() || $alert->messageUuid === '') {
+        if (!$alert->isFirstToRespond() || $alert->messageUuid === '') {
             return false;
         }
 

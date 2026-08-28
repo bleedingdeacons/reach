@@ -53,6 +53,15 @@ final class Schema
     /**
      * Schema version. Bump on any change to a CREATE TABLE above.
      *
+     * 8 — added alerts.level and alerts.response. The first is how loud
+     *     an alert is and what colour Hand paints its card (red, yellow,
+     *     blue); the second is whether the first responder to acknowledge
+     *     takes it on and the rest are cleared, or everybody reads and
+     *     closes their own copy. Neither needs a backfill: response
+     *     defaults to 'first', which is the only thing an existing row
+     *     could have meant, and level defaults to empty, which the
+     *     repository reads as "ask the priority this row was written
+     *     with" rather than as a level of its own.
      * 7 — added alerts.message_uuid, so the several rows one send can
      *     raise are recognisably one message, and
      *     alerts.exclude_device_id, so the notice announcing an
@@ -73,7 +82,7 @@ final class Schema
      *     and alert contacts.
      * 1 — everything before schema versioning existed.
      */
-    public const VERSION = 7;
+    public const VERSION = 8;
 
     public const OPTION = 'reach_schema_version';
 

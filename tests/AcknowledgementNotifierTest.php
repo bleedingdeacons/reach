@@ -388,6 +388,99 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         $this->assertCount(1, $this->noticeAlerts());
     }
 
+    public function testAnInformationalMessageIsNeverAnnounced(): void
+    {
+        // Nobody was taking it on, so there is no first answer to report.
+        // Saying one responder "acknowledged" it would read as "somebody
+        // has dealt with this", which is exactly what did not happen —
+        // they closed their own copy and nobody else's.
+        $first = $this->enrol('one@example.com');
+        $this->enrol('two@example.com');
+        $alert = $this->raise([
+            'kind' => 'shift_reminder',
+            'title' => 'The office is shut on Monday',
+            'response' => Alert::RESPONSE_NONE,
+        ]);
+
+        $this->acknowledge($first, $alert->id);
+
+        $this->assertSame([], $this->noticeAlerts());
+    }
+
+    public function testAnInformationalMessageStaysOnEverybodyElsesHandset(): void
+    {
+        // The other half of the same rule, and the one that matters to a
+        // responder: one person closing a reminder must not take it off
+        // twenty-nine other screens.
+        $first = $this->enrol('one@example.com');
+        $second = $this->enrol('two@example.com');
+        $alert = $this->raise([
+            'kind' => 'shift_reminder',
+            'title' => 'The office is shut on Monday',
+            'response' => Alert::RESPONSE_NONE,
+        ]);
+
+        $this->acknowledge($first, $alert->id);
+
+        $ids = array_column($this->pending($second), 'id');
+        $this->assertContains($alert->id, $ids);
+
+        // And it is gone from the handset that actually closed it.
+        $this->assertNotContains($alert->id, array_column($this->pending($first), 'id'));
+    }
+
+    public function testAFirstToRespondMessageClearsOffEverybodyElsesHandset(): void
+    {
+        // The contrast, stated on the same fixtures: this is the whole
+        // point of first-to-respond, and it is what stops thirty people
+        // dismissing a callback one of them has already taken.
+        $first = $this->enrol('one@example.com');
+        $second = $this->enrol('two@example.com');
+        $alert = $this->raise([
+            'kind' => 'call_request',
+            'title' => 'Callback wanted',
+            'response' => Alert::RESPONSE_FIRST,
+        ]);
+
+        $this->acknowledge($first, $alert->id);
+
+        $this->assertNotContains($alert->id, array_column($this->pending($second), 'id'));
+    }
+
+    public function testTheNoticeIsBlueAndNobodysToTakeOn(): void
+    {
+        // It is not an alert and must never alarm: blue so no handset
+        // sirens for it, informational so each reads and closes its own
+        // copy — and so closing it cannot take the news off the others.
+        $first = $this->enrol('one@example.com');
+        $this->enrol('two@example.com');
+        $alert = $this->raise(['kind' => 'test', 'title' => 'Callback wanted']);
+
+        $this->acknowledge($first, $alert->id);
+
+        $notice = $this->noticeAlert();
+        $this->assertSame(Alert::LEVEL_BLUE, $notice->level);
+        $this->assertTrue($notice->isInformational());
+        $this->assertFalse($notice->isUrgent());
+    }
+
+    public function testTheNoticeIsBlueEvenWhenTheAlertWasRed(): void
+    {
+        // Red escalates the delivery path so it breaks through a Focus
+        // mode, and nothing about "somebody else has this" is worth that.
+        $first = $this->enrol('one@example.com');
+        $this->enrol('two@example.com');
+        $alert = $this->raise([
+            'kind' => 'call_request',
+            'title' => 'Callback wanted',
+            'level' => Alert::LEVEL_RED,
+        ]);
+
+        $this->acknowledge($first, $alert->id);
+
+        $this->assertSame(Alert::LEVEL_BLUE, $this->noticeAlert()->level);
+    }
+
     public function testOnlyTheFirstAnswerIsAnnounced(): void
     {
         // The second responder to press a button is not picking the job

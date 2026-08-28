@@ -32,6 +32,19 @@ use WP_Error;
  * alert nobody can identify or read is not a degraded alert, it is
  * noise.
  *
+ * <b>`level` and `response` classify the alert, and both default rather
+ * than being required.</b> `level` is `red`, `yellow` or `blue` — how
+ * loudly the handset announces it and what colour the card is; `response`
+ * is `first` or `none` — whether somebody has to take it on, or everybody
+ * reads and closes their own copy. {@see Alert} documents what each value
+ * means. Neither is validated so much as coerced: an unrecognised value
+ * becomes the default, because an alert delivered at the wrong volume
+ * beats an alert refused over a spelling.
+ *
+ * `priority` is the older spelling of `level` and is still accepted —
+ * see {@see level()} for how the two are reconciled when a caller sends
+ * both.
+ *
  * <b>`target_device_id` is Reach's own, and other plugins should leave
  * it alone.</b> A device id is an internal row number that means
  * nothing outside this plugin, and a caller that guessed one would be
@@ -72,6 +85,14 @@ final class AlertRequest
     private const PAYLOAD_MAX_BYTES = 2000;
 
     /**
+     * Widths for the two classifying fields. Both are read against a
+     * fixed vocabulary and coerced to a default, so these only exist to
+     * stop a caller's runaway string reaching the normaliser at all.
+     */
+    private const LEVEL_MAX = 16;
+    private const RESPONSE_MAX = 16;
+
+    /**
      * Cap on the contact line. Matches the column in
      * {@see WpdbAlertContactRepository}.
      */
@@ -98,6 +119,8 @@ final class AlertRequest
         public readonly string $contact,
         public readonly string $messageUuid,
         public readonly int $excludeDeviceId,
+        public readonly string $level,
+        public readonly string $response,
     ) {
     }
 
@@ -140,10 +163,17 @@ final class AlertRequest
             );
         }
 
+        $level = self::level($args);
+
         return new self(
             kind: $kind,
             source: self::text($args['source'] ?? 'unknown', self::SOURCE_MAX),
-            priority: Alert::normalisePriority(self::text($args['priority'] ?? '', 16)),
+            // Derived from the level rather than read from the caller, so
+            // the two can never disagree on a stored row. See
+            // {@see Alert::PRIORITY_NORMAL}: the caller's own `priority`,
+            // if it sent one, has already been folded into the level by
+            // {@see level()} above.
+            priority: Alert::priorityFor($level),
             title: $title,
             body: self::text($args['body'] ?? ($args['message'] ?? ''), self::BODY_MAX),
             reference: self::text($args['reference'] ?? '', self::REFERENCE_MAX),
@@ -154,7 +184,42 @@ final class AlertRequest
             contact: self::text($args['contact'] ?? '', self::CONTACT_MAX),
             messageUuid: self::messageUuid($args['message_uuid'] ?? null),
             excludeDeviceId: self::deviceId($args['exclude_device_id'] ?? null),
+            level: $level,
+            response: Alert::normaliseResponse(
+                self::text($args['response'] ?? '', self::RESPONSE_MAX),
+            ),
         );
+    }
+
+    /**
+     * The level a caller asked for, however they spelled it.
+     *
+     * <b>An explicit `level` wins, and the order is the whole of the
+     * compatibility story.</b> A caller that names a level means it. A
+     * caller that names only a `priority` is using the older API and its
+     * two-value vocabulary is mapped up — see
+     * {@see Alert::levelForPriority()}. A caller that names neither gets
+     * yellow.
+     *
+     * A caller sending both is not an error worth refusing: it is what a
+     * plugin mid-migration looks like, and the newer field is the one it
+     * added on purpose.
+     *
+     * @param array<string, mixed> $args
+     */
+    private static function level(array $args): string
+    {
+        $level = self::text($args['level'] ?? '', self::LEVEL_MAX);
+        if ($level !== '') {
+            return Alert::normaliseLevel($level);
+        }
+
+        $priority = self::text($args['priority'] ?? '', self::LEVEL_MAX);
+        if ($priority !== '') {
+            return Alert::levelForPriority($priority);
+        }
+
+        return Alert::LEVEL_YELLOW;
     }
 
     public function expiresAt(int $now): int
