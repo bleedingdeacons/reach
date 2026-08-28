@@ -92,6 +92,31 @@ final class SendMessagePage
     /** Id of the datalist backing the recipient box. */
     private const RESPONDER_LIST_ID = 'reach-responder-options';
 
+    /**
+     * The level control, as label and one-line explanation.
+     *
+     * Written out here rather than derived from {@see Alert::LEVELS} so
+     * the order is the ladder — loudest first — and so each level is
+     * described in terms of what the handset does, which is the thing an
+     * admin is actually choosing between.
+     *
+     * @var array<string, array{0: string, 1: string}>
+     */
+    private const LEVEL_LABELS = [
+        Alert::LEVEL_RED => [
+            'Red',
+            'takes the screen over and rings until somebody answers',
+        ],
+        Alert::LEVEL_YELLOW => [
+            'Yellow',
+            'makes a noise and shows a banner, but can be missed',
+        ],
+        Alert::LEVEL_BLUE => [
+            'Blue',
+            'sits in the tray as a reminder; wakes nobody',
+        ],
+    ];
+
     public function __construct(
         private readonly DeviceRepository $devices,
         private readonly AlertApi $alertApi,
@@ -183,6 +208,42 @@ final class SendMessagePage
                                       class="large-text"
                                       maxlength="1000"></textarea>
                             <p class="description">Optional. Shown under the subject when the handset expands the notification.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Level</th>
+                        <td>
+                            <fieldset>
+                                <legend class="screen-reader-text">Level</legend>
+                                <?php foreach (self::LEVEL_LABELS as $level => [$label, $hint]) : ?>
+                                    <label style="display:block; margin-bottom:6px;">
+                                        <input type="radio"
+                                               name="reach_level"
+                                               value="<?php echo esc_attr($level); ?>"
+                                               <?php checked($level, Alert::LEVEL_YELLOW); ?>>
+                                        <strong><?php echo esc_html($label); ?></strong>
+                                        &mdash; <?php echo esc_html($hint); ?>
+                                    </label>
+                                <?php endforeach; ?>
+                            </fieldset>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Response</th>
+                        <td>
+                            <label>
+                                <input type="checkbox"
+                                       name="reach_first_to_respond"
+                                       value="1"
+                                       checked>
+                                The first responder to acknowledge deals with it
+                            </label>
+                            <p class="description">
+                                Ticked, the first person to acknowledge takes it on: everyone else is
+                                told who answered and it clears off their handsets. Unticked, it is
+                                information &mdash; everybody reads it and closes their own copy, and
+                                their button says Close rather than Acknowledge.
+                            </p>
                         </td>
                     </tr>
                     <tr>
@@ -282,8 +343,31 @@ final class SendMessagePage
         $body  = $this->posted('reach_body');
         $scope = $this->posted('reach_scope');
 
+        // Read once and passed down rather than re-read per handset: a
+        // message that reached a responder's phone as red and their tablet
+        // as blue would be one message told two different ways.
+        //
+        // Neither is validated here. AlertRequest normalises both against
+        // their vocabularies, and doing it twice would mean two places to
+        // keep in step — the same reasoning as posted() on sanitising.
+        $level = $this->posted('reach_level');
+
+        // An unticked checkbox posts nothing at all, so absent means
+        // informational. That is the safe direction for this control
+        // specifically: the tick is the affirmative claim that somebody is
+        // meant to take this on.
+        $response = isset($_POST['reach_first_to_respond'])
+            ? Alert::RESPONSE_FIRST
+            : Alert::RESPONSE_NONE;
+
         if ($scope === self::SCOPE_RESPONDER) {
-            return $this->toResponder($subject, $body, $this->posted('reach_responder'));
+            return $this->toResponder(
+                $subject,
+                $body,
+                $this->posted('reach_responder'),
+                $level,
+                $response,
+            );
         }
 
         if ($scope !== self::SCOPE_ALL) {
@@ -291,7 +375,9 @@ final class SendMessagePage
         }
 
         return $this->resultUrl(
-            is_wp_error($this->sendMessage($subject, $body)) ? 'message_failed' : 'message_sent',
+            is_wp_error($this->sendMessage($subject, $body, $level, $response))
+                ? 'message_failed'
+                : 'message_sent',
         );
     }
 
@@ -305,8 +391,13 @@ final class SendMessagePage
      * address that matches nothing is told so plainly rather than
      * silently becoming a broadcast or a message to nobody.
      */
-    private function toResponder(string $subject, string $body, string $responder): string
-    {
+    private function toResponder(
+        string $subject,
+        string $body,
+        string $responder,
+        string $level,
+        string $response
+    ): string {
         if ($responder === '') {
             return $this->resultUrl('message_no_responder');
         }
@@ -332,7 +423,11 @@ final class SendMessagePage
 
         $failed = false;
         foreach ($devices as $device) {
-            if (is_wp_error($this->sendMessage($subject, $body, $device->id, $messageUuid))) {
+            if (
+                is_wp_error(
+                    $this->sendMessage($subject, $body, $level, $response, $device->id, $messageUuid),
+                )
+            ) {
                 $failed = true;
             }
         }
@@ -408,6 +503,8 @@ final class SendMessagePage
     private function sendMessage(
         string $subject,
         string $body,
+        string $level,
+        string $response,
         int $deviceId = 0,
         string $messageUuid = ''
     ): int|WP_Error {
@@ -416,7 +513,8 @@ final class SendMessagePage
             'source'   => 'reach',
             'title'    => $subject,
             'body'     => $body,
-            'priority' => Alert::PRIORITY_NORMAL,
+            'level'    => $level,
+            'response' => $response,
             // An hour: long enough that a handset briefly out of signal
             // still gets it when it comes back, short enough that one
             // switched on tomorrow is not told about a shift change that

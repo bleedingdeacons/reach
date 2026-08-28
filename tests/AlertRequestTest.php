@@ -268,4 +268,114 @@ final class AlertRequestTest extends ReachTestCase
         $this->assertInstanceOf(AlertRequest::class, $request);
         $this->assertSame(1_700_000_600, $request->expiresAt(1_700_000_000));
     }
+
+    // ── level and response ────────────────────────────────────────────
+
+    public function testAnAlertThatNamesNeitherIsYellowAndSomebodysToTake(): void
+    {
+        // The defaults are what every alert did before the fields existed:
+        // audible, and cleared off the rota by whoever picks it up.
+        $request = $this->request([]);
+
+        $this->assertSame(Alert::LEVEL_YELLOW, $request->level);
+        $this->assertSame(Alert::RESPONSE_FIRST, $request->response);
+    }
+
+    /** @dataProvider levels */
+    public function testTheLevelIsTakenAsGiven(string $given, string $expected): void
+    {
+        $this->assertSame($expected, $this->request(['level' => $given])->level);
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function levels(): array
+    {
+        return [
+            'red'            => ['red', Alert::LEVEL_RED],
+            'yellow'         => ['yellow', Alert::LEVEL_YELLOW],
+            'blue'           => ['blue', Alert::LEVEL_BLUE],
+            'shouted'        => ['RED', Alert::LEVEL_RED],
+            'padded'         => ['  blue  ', Alert::LEVEL_BLUE],
+            // Coerced, not refused: an alert delivered at the wrong volume
+            // beats an alert refused over a spelling.
+            'invented'       => ['puce', Alert::LEVEL_YELLOW],
+            'empty'          => ['', Alert::LEVEL_YELLOW],
+        ];
+    }
+
+    /** @dataProvider responses */
+    public function testTheResponseRequirementIsTakenAsGiven(string $given, string $expected): void
+    {
+        $this->assertSame($expected, $this->request(['response' => $given])->response);
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function responses(): array
+    {
+        return [
+            'first'    => ['first', Alert::RESPONSE_FIRST],
+            'none'     => ['none', Alert::RESPONSE_NONE],
+            'shouted'  => ['NONE', Alert::RESPONSE_NONE],
+            // Falls back to first-to-respond, which is the safe direction:
+            // a mistyped value costs at worst a notice nobody needed,
+            // where the other way round leaves an answered alert on thirty
+            // screens.
+            'invented' => ['maybe', Alert::RESPONSE_FIRST],
+            'empty'    => ['', Alert::RESPONSE_FIRST],
+        ];
+    }
+
+    public function testAnOlderCallersPriorityIsReadAsALevel(): void
+    {
+        // The two-value vocabulary maps up. Normal means yellow rather
+        // than blue: a caller using the old API asked for an alert that
+        // makes a noise, and blue does not.
+        $this->assertSame(Alert::LEVEL_RED, $this->request(['priority' => 'urgent'])->level);
+        $this->assertSame(Alert::LEVEL_YELLOW, $this->request(['priority' => 'normal'])->level);
+    }
+
+    public function testAnExplicitLevelBeatsAPriority(): void
+    {
+        // What a plugin mid-migration looks like. The newer field is the
+        // one it added on purpose.
+        $request = $this->request(['level' => 'blue', 'priority' => 'urgent']);
+
+        $this->assertSame(Alert::LEVEL_BLUE, $request->level);
+    }
+
+    public function testThePriorityIsDerivedFromTheLevelAndNeverFromTheCaller(): void
+    {
+        // Stored so an older handset still reads something it understands,
+        // and derived so the two can never disagree on one row.
+        $this->assertSame(Alert::PRIORITY_URGENT, $this->request(['level' => 'red'])->priority);
+        $this->assertSame(Alert::PRIORITY_NORMAL, $this->request(['level' => 'yellow'])->priority);
+        $this->assertSame(Alert::PRIORITY_NORMAL, $this->request(['level' => 'blue'])->priority);
+
+        // Including where the caller asked for the contradiction outright.
+        $contradictory = $this->request(['level' => 'blue', 'priority' => 'urgent']);
+        $this->assertSame(Alert::PRIORITY_NORMAL, $contradictory->priority);
+    }
+
+    public function testTheLevelAndTheResponseAreIndependent(): void
+    {
+        // A red alert everybody must see, and a blue job somebody still
+        // has to pick up. Neither is a contradiction.
+        $drill = $this->request(['level' => 'red', 'response' => 'none']);
+        $this->assertSame(Alert::LEVEL_RED, $drill->level);
+        $this->assertSame(Alert::RESPONSE_NONE, $drill->response);
+
+        $chore = $this->request(['level' => 'blue', 'response' => 'first']);
+        $this->assertSame(Alert::LEVEL_BLUE, $chore->level);
+        $this->assertSame(Alert::RESPONSE_FIRST, $chore->response);
+    }
+
+    /** @param array<string, mixed> $args */
+    private function request(array $args): AlertRequest
+    {
+        $request = AlertRequest::fromArray($args + ['kind' => 'a', 'title' => 'b']);
+
+        $this->assertInstanceOf(AlertRequest::class, $request);
+
+        return $request;
+    }
 }

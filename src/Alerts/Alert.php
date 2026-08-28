@@ -63,13 +63,23 @@ final class Alert
      * The kind Reach raises when a handset acknowledges a message: a
      * notice to everybody *else* it was sent to, saying who picked it up.
      *
-     * <b>It is not an alert and must never alarm.</b> Hand treats this
-     * kind as information — a quiet notification, no siren, and a Close
-     * button in place of Acknowledge — because the whole of its content
-     * is that somebody has already dealt with the thing that did alarm.
+     * <b>It is not an alert and must never alarm.</b> A quiet
+     * notification, no siren, and a Close button in place of
+     * Acknowledge — because the whole of its content is that somebody
+     * has already dealt with the thing that did alarm.
+     *
+     * <b>None of that follows from the kind any more.</b> It is
+     * {@see LEVEL_BLUE} and {@see RESPONSE_NONE}, set where the notice is
+     * raised, and Hand reads those two fields exactly as it reads them on
+     * any other alert. That is the point of the fields: what used to be
+     * this one hard-coded exception is now something anything can ask
+     * for. What the kind still does is stop a notice breeding another —
+     * see {@see AcknowledgementNotifier}, which is the only thing that
+     * branches on it.
+     *
      * The spelling is a wire contract shared with
-     * <c>HandAlert.KindMessageAcknowledged</c>; changing it here alone
-     * turns the notice back into a 3am siren.
+     * <c>HandAlert.KindMessageAcknowledged</c>; it is what Hand matches
+     * a notice back to the message it reports on.
      *
      * Raised by {@see AcknowledgementNotifier}, which also refuses to
      * raise one *for* one — otherwise every acknowledgement of a notice
@@ -77,17 +87,83 @@ final class Alert
      */
     public const KIND_ACKNOWLEDGED = 'message_acknowledged';
 
-    /** Ordinary alert: audible, but not treated as an emergency. */
+    /**
+     * <b>The compatibility spelling of {@see $level}, and nothing more.</b>
+     *
+     * `priority` was the original loudness dial and it had two positions.
+     * {@see $level} replaced it with three, because two could not express
+     * the difference between "answer this now" and "read this when you
+     * next pick the phone up". These constants survive for two reasons
+     * and no others: a plugin written against the old API still passes
+     * `priority` and must keep working, and a handset on an older build
+     * still reads `priority` off the wire and must keep ringing.
+     *
+     * Both directions of the mapping are {@see priorityFor()} and
+     * {@see levelForPriority()}. Nothing in Reach branches on a priority
+     * any more — {@see isUrgent()} asks the level.
+     */
     public const PRIORITY_NORMAL = 'normal';
 
-    /**
-     * Urgent alert. Escalates the delivery path — on iOS this is what
-     * asks for the critical interruption level, on Android the maximum
-     * notification priority — so it breaks through a Focus mode.
-     */
+    /** See {@see PRIORITY_NORMAL}. Maps to and from {@see LEVEL_RED}. */
     public const PRIORITY_URGENT = 'urgent';
 
     public const PRIORITIES = [self::PRIORITY_NORMAL, self::PRIORITY_URGENT];
+
+    /**
+     * The loudest an alert gets: the handset takes the screen over, rings
+     * like an incoming call, and goes on ringing until somebody answers.
+     *
+     * For the thing a responder has to deal with now. On Android this is
+     * the full-screen intent, the alarm category and the looping siren;
+     * on iOS the critical interruption level where Apple has granted the
+     * entitlement, and time-sensitive where it has not.
+     */
+    public const LEVEL_RED = 'red';
+
+    /**
+     * Audible, but it does not take the phone over: a heads-up
+     * notification with a sound, which a responder can miss and catch up
+     * with later. The default, and the right level for most things.
+     */
+    public const LEVEL_YELLOW = 'yellow';
+
+    /**
+     * Information and reminders. Lands in the tray at ordinary
+     * importance and never wakes anybody. What the acknowledgement
+     * notice is, and what a shift reminder should be.
+     */
+    public const LEVEL_BLUE = 'blue';
+
+    public const LEVELS = [self::LEVEL_RED, self::LEVEL_YELLOW, self::LEVEL_BLUE];
+
+    /**
+     * <b>First to acknowledge takes the job on.</b> The rota is told who
+     * answered and the alert clears off every other handset, so a
+     * callback one person has picked up stops shouting at the other
+     * twenty-nine.
+     *
+     * The historic behaviour of every alert, and still the default: an
+     * alert whose raiser said nothing about this is one somebody has to
+     * take. Enforced in three places that have to agree —
+     * {@see AlertRepository::pendingFor()} suppresses it on the poll,
+     * {@see AcknowledgementNotifier} raises the notice that clears it in
+     * the moment, and Hand offers the button that says "Acknowledge".
+     */
+    public const RESPONSE_FIRST = 'first';
+
+    /**
+     * <b>Everybody reads it and closes their own copy.</b> Nobody is
+     * taking anything on, so one responder closing it says nothing about
+     * anybody else's and must not clear it from their screens.
+     *
+     * For messages rather than jobs: a shift reminder, a notice that the
+     * office is shut, the acknowledgement notice itself. Hand's button
+     * says "Close" for these, because there is nothing here to
+     * acknowledge.
+     */
+    public const RESPONSE_NONE = 'none';
+
+    public const RESPONSES = [self::RESPONSE_FIRST, self::RESPONSE_NONE];
 
     /**
      * @param array<string, string> $payload Non-identifying structured
@@ -146,6 +222,24 @@ final class Alert
          * acknowledge or read a contact from.
          */
         public readonly int $excludeDeviceId = 0,
+        /**
+         * How loud this alert is, and what colour Hand paints its card.
+         * One of {@see LEVELS}; see each constant for what it means.
+         *
+         * Defaulted rather than required so every existing construction
+         * site keeps compiling, and because yellow is the honest answer
+         * for an alert that never said: audible, but not an emergency.
+         */
+        public readonly string $level = self::LEVEL_YELLOW,
+        /**
+         * Whether somebody has to take this on, or everybody just reads
+         * it. One of {@see RESPONSES}.
+         *
+         * Defaults to {@see RESPONSE_FIRST} because that is what every
+         * alert did before the field existed, and a row written then
+         * must go on meaning what it meant.
+         */
+        public readonly string $response = self::RESPONSE_FIRST,
     ) {
     }
 
@@ -193,9 +287,31 @@ final class Alert
         return $now >= $this->expiresAt;
     }
 
+    /**
+     * Whether this is the loudest kind of alert. Asks the level, not the
+     * priority: {@see PRIORITY_URGENT} is now only a spelling.
+     */
     public function isUrgent(): bool
     {
-        return $this->priority === self::PRIORITY_URGENT;
+        return $this->level === self::LEVEL_RED;
+    }
+
+    /**
+     * Whether the first responder to acknowledge takes this on, and the
+     * rest are told and cleared. See {@see RESPONSE_FIRST}.
+     */
+    public function isFirstToRespond(): bool
+    {
+        return $this->response === self::RESPONSE_FIRST;
+    }
+
+    /**
+     * Whether this is something everybody reads and closes for
+     * themselves. See {@see RESPONSE_NONE}.
+     */
+    public function isInformational(): bool
+    {
+        return $this->response === self::RESPONSE_NONE;
     }
 
     /**
@@ -218,7 +334,16 @@ final class Alert
             'message_uuid' => $this->messageUuid,
             'kind'       => $this->kind,
             'source'     => $this->source,
-            'priority'   => $this->priority,
+            // How loud, and what colour the card is.
+            'level'      => $this->level,
+            // Whether the button says Acknowledge or Close.
+            'response'   => $this->response,
+            // <b>Derived, and sent for handsets that predate the level.</b>
+            // An older Hand build reads `priority` and ignores every field
+            // it does not know, so a level it has never heard of still
+            // reaches it as the urgency it would have been given before.
+            // See PRIORITY_NORMAL.
+            'priority'   => self::priorityFor($this->level),
             'title'      => $this->title,
             'body'       => $this->body,
             'reference'  => $this->reference,
@@ -241,5 +366,62 @@ final class Alert
     {
         $priority = strtolower(trim($priority));
         return in_array($priority, self::PRIORITIES, true) ? $priority : self::PRIORITY_NORMAL;
+    }
+
+    /**
+     * Coerce a level to one we recognise, defaulting to yellow.
+     *
+     * Same permissiveness as {@see normalisePriority()} and for the same
+     * reason: a plugin inventing a level should still get its alert
+     * delivered. The default widens to the middle rung rather than to
+     * red — an alert nobody classified is not thereby an emergency, and
+     * guessing upwards would mean a typo took over somebody's screen at
+     * 3am.
+     */
+    public static function normaliseLevel(string $level): string
+    {
+        $level = strtolower(trim($level));
+        return in_array($level, self::LEVELS, true) ? $level : self::LEVEL_YELLOW;
+    }
+
+    /**
+     * Coerce a response requirement to one we recognise, defaulting to
+     * first-to-respond.
+     *
+     * <b>The default is the safe direction here, and it is the opposite
+     * of the one instinct suggests.</b> Falling back to informational
+     * would mean a mistyped value quietly left an alert on thirty
+     * screens after somebody had already dealt with it; falling back to
+     * first-to-respond costs at worst a notice nobody needed. It is also
+     * what every alert did before this field existed.
+     */
+    public static function normaliseResponse(string $response): string
+    {
+        $response = strtolower(trim($response));
+        return in_array($response, self::RESPONSES, true) ? $response : self::RESPONSE_FIRST;
+    }
+
+    /**
+     * The priority an older handset should be told, for a given level.
+     * See {@see PRIORITY_NORMAL} on why this still exists.
+     */
+    public static function priorityFor(string $level): string
+    {
+        return $level === self::LEVEL_RED ? self::PRIORITY_URGENT : self::PRIORITY_NORMAL;
+    }
+
+    /**
+     * The level a caller meant when it passed a priority instead.
+     *
+     * Normal maps to yellow rather than blue: a caller using the old API
+     * asked for an alert that makes a noise, and blue does not. Nothing
+     * in the two-value vocabulary could ask for blue at all, which is
+     * why the level exists.
+     */
+    public static function levelForPriority(string $priority): string
+    {
+        return self::normalisePriority($priority) === self::PRIORITY_URGENT
+            ? self::LEVEL_RED
+            : self::LEVEL_YELLOW;
     }
 }

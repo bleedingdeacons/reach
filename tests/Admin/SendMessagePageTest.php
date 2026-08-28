@@ -7,6 +7,7 @@ namespace Reach\Tests\Admin;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Admin\SendMessagePage;
+use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Core\Capabilities;
@@ -210,6 +211,116 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(1, $alerts->alerts);
         $this->assertSame('admin_message', $alerts->alerts[0]->kind);
         $this->assertSame('Line down until 18:00', $alerts->alerts[0]->title);
+    }
+
+    /** @test */
+    public function the_form_offers_all_three_levels_and_defaults_to_yellow(): void
+    {
+        $html = $this->render($this->page());
+
+        $this->assertStringContainsString('value="red"', $html);
+        $this->assertStringContainsString('value="yellow"', $html);
+        $this->assertStringContainsString('value="blue"', $html);
+        // Yellow: an admin who does not choose has not thereby declared an
+        // emergency, and red takes over somebody's screen.
+        $this->assertMatchesRegularExpression('/value="yellow"[^>]*checked/', $html);
+    }
+
+    /** @test */
+    public function the_form_offers_first_to_respond_and_starts_ticked(): void
+    {
+        // Ticked, because that is what every message did before the
+        // control existed.
+        $html = $this->render($this->page());
+
+        $this->assertMatchesRegularExpression(
+            '/name="reach_first_to_respond"[^>]*checked/',
+            $html,
+        );
+    }
+
+    /** @test */
+    public function the_chosen_level_reaches_the_alert(): void
+    {
+        $_POST = [
+            'reach_scope'   => 'all',
+            'reach_subject' => 'Everybody out',
+            'reach_level'   => 'red',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertSame(Alert::LEVEL_RED, $alerts->alerts[0]->level);
+    }
+
+    /** @test */
+    public function an_unticked_box_makes_the_message_informational(): void
+    {
+        // An unticked checkbox posts nothing at all, so absent has to mean
+        // informational: the tick is the affirmative claim that somebody
+        // is meant to take this on.
+        $_POST = [
+            'reach_scope'   => 'all',
+            'reach_subject' => 'The office is shut on Monday',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertTrue($alerts->alerts[0]->isInformational());
+    }
+
+    /** @test */
+    public function a_ticked_box_makes_the_message_first_to_respond(): void
+    {
+        $_POST = [
+            'reach_scope'            => 'all',
+            'reach_subject'          => 'Callback wanted',
+            'reach_first_to_respond' => '1',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertTrue($alerts->alerts[0]->isFirstToRespond());
+    }
+
+    /** @test */
+    public function a_message_that_names_no_level_is_yellow(): void
+    {
+        $_POST = ['reach_scope' => 'all', 'reach_subject' => 'Anything'];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertSame(Alert::LEVEL_YELLOW, $alerts->alerts[0]->level);
+    }
+
+    /** @test */
+    public function both_of_a_responders_handsets_get_the_same_level_and_response(): void
+    {
+        // One message told two ways would be a responder whose phone
+        // sirened and whose tablet did not.
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test', label: 'Phone'),
+            $this->device(id: 8, memberEmail: 'jo@example.test', label: 'Tablet'),
+        );
+        $_POST = [
+            'reach_scope'     => 'responder',
+            'reach_responder' => 'jo@example.test',
+            'reach_subject'   => 'Can you cover tonight?',
+            'reach_level'     => 'blue',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(devices: $devices, alerts: $alerts));
+
+        $this->assertCount(2, $alerts->alerts);
+        $this->assertSame(Alert::LEVEL_BLUE, $alerts->alerts[0]->level);
+        $this->assertSame(Alert::LEVEL_BLUE, $alerts->alerts[1]->level);
+        $this->assertTrue($alerts->alerts[0]->isInformational());
+        $this->assertTrue($alerts->alerts[1]->isInformational());
     }
 
     /** @test */

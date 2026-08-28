@@ -25,7 +25,7 @@ use function add_action;
  *     'title'     => 'Helpline shift uncovered',
  *     'body'      => 'Tonight 22:00–08:00 has nobody signed up.',
  *     'reference' => 'SHIFT-2026-08-15-N',
- *     'priority'  => 'urgent',
+ *     'level'     => 'red',
  * ]);
  *
  * if (is_wp_error($alertId)) {
@@ -38,6 +38,35 @@ use function add_action;
  * certified rota, which is usually what a helpline wants. `ttl`
  * (seconds) controls how long it stays live before it stops being worth
  * ringing anybody about; it defaults to an hour.
+ *
+ * <b>`level` is how loud it is, and defaults to `yellow`.</b>
+ *
+ *   `red`    — takes the handset's screen over and rings like an
+ *              incoming call until somebody answers. For what has to be
+ *              dealt with now.
+ *   `yellow` — a heads-up notification with a sound. Audible, missable,
+ *              and right for most things.
+ *   `blue`   — the tray, at ordinary importance. Reminders and
+ *              information; never wakes anybody.
+ *
+ * <b>`response` is whether somebody has to take it on, and defaults to
+ * `first`.</b>
+ *
+ *   `first`  — the first responder to acknowledge deals with it. The
+ *              rest are told who answered and it clears off their
+ *              handsets. Their button says Acknowledge.
+ *   `none`   — everybody reads it and closes their own copy. Nobody is
+ *              told anything, and one responder closing it leaves it on
+ *              every other screen. Their button says Close.
+ *
+ * The two are independent: a red alert can be informational (a fire
+ * drill everybody must see) and a blue one can be first-to-respond (a
+ * low-priority job somebody still has to pick up).
+ *
+ * `priority` (`normal` / `urgent`) is the older spelling of `level` and
+ * is still accepted — `urgent` means `red`, `normal` means `yellow`. An
+ * explicit `level` wins where both are sent. New callers should use
+ * `level`: `priority` cannot ask for `blue` at all.
  *
  * Plugins that would rather not depend on a function existing can fire
  * the action instead, which is inert when Reach is not active:

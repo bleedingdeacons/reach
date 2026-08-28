@@ -147,7 +147,8 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         $db = $this->db();
         $db->nextRow = [
             'id' => 12, 'kind' => 'call_request', 'source' => 'reach',
-            'priority' => 'urgent', 'title' => 'Callback wanted',
+            'priority' => 'urgent', 'level' => 'red', 'response' => 'first',
+            'title' => 'Callback wanted',
             'body' => 'BS5', 'reference' => 'CR-000123',
             'payload' => '{"area":"BS5"}', 'target_email' => 'jo@example.com',
             'created_at' => 1_000, 'expires_at' => 2_000,
@@ -166,6 +167,48 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         // off rather than reading as "no contact held".
         $this->assertFalse($alert->hasContact);
         $this->assertStringContainsString('WHERE id = 12 LIMIT 1', $db->queries[0]);
+    }
+
+    public function testARowWrittenBeforeTheLevelExistedKeepsItsUrgency(): void
+    {
+        // dbDelta stamps existing rows with the new column's default, so
+        // the level column is empty on every row already in the table when
+        // this ships. Reading those as yellow would silently demote an
+        // urgent alert; the priority they *were* written with is the
+        // answer. See WpdbAlertRepository::level().
+        $db = $this->db();
+        $db->nextRow = [
+            'id' => 12, 'kind' => 'call_request', 'source' => 'reach',
+            'priority' => 'urgent', 'level' => '', 'response' => 'first',
+            'title' => 'Callback wanted', 'body' => 'BS5', 'reference' => 'CR-000123',
+            'payload' => null, 'target_email' => '',
+            'created_at' => 1_000, 'expires_at' => 2_000,
+        ];
+
+        $alert = (new WpdbAlertRepository($db))->findById(12);
+
+        $this->assertNotNull($alert);
+        $this->assertSame(Alert::LEVEL_RED, $alert->level);
+        $this->assertTrue($alert->isUrgent());
+    }
+
+    public function testARowWrittenBeforeTheResponseExistedIsFirstToRespond(): void
+    {
+        // Every alert was first-to-respond before the column existed,
+        // because that was the only behaviour there was.
+        $db = $this->db();
+        $db->nextRow = [
+            'id' => 12, 'kind' => 'call_request', 'source' => 'reach',
+            'priority' => 'normal', 'level' => '', 'response' => 'first',
+            'title' => 'Callback wanted', 'body' => 'BS5', 'reference' => '',
+            'payload' => null, 'target_email' => '',
+            'created_at' => 1_000, 'expires_at' => 2_000,
+        ];
+
+        $alert = (new WpdbAlertRepository($db))->findById(12);
+
+        $this->assertNotNull($alert);
+        $this->assertTrue($alert->isFirstToRespond());
     }
 
     public function testFindByIdReturnsNullOnMiss(): void
@@ -331,9 +374,10 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         $this->assertStringContainsString('NOT EXISTS', $q);
         $this->assertStringContainsString('sibling.message_uuid = a.message_uuid', $q);
 
-        // Exempt: a notice goes to everybody and is read separately, so
-        // one handset closing it must not take it off the others.
-        $this->assertStringContainsString("a.kind = 'message_acknowledged'", $q);
+        // Exempt: anything informational goes to everybody and is read
+        // separately, so one handset closing its own copy must not take it
+        // off the others.
+        $this->assertStringContainsString("a.response = 'none'", $q);
 
         // Exempt: every row older than the column shares the empty uuid
         // and is not one message.

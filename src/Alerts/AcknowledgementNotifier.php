@@ -44,6 +44,14 @@ use WP_Error;
  * notification about having pressed Acknowledge would reasonably
  * conclude the app is broken.
  *
+ * <b>And only where somebody was taking the job on.</b> All of the above
+ * describes {@see Alert::RESPONSE_FIRST}. An informational message — a
+ * reminder, an announcement — is read and closed by each handset on its
+ * own, and there is no first answer to report: the responder who closed
+ * it did not deal with anything on anybody else's behalf, and saying so
+ * would be a notice that is simply untrue. {@see announce()} returns
+ * before doing anything for those.
+ *
  * <b>And never for a notice.</b> A notice is itself acknowledged, on
  * every handset it reaches, and each of those would raise another. The
  * guard in {@see announce()} is what stops one answered helpline call
@@ -115,7 +123,25 @@ final class AcknowledgementNotifier
      */
     public function announce(Alert $alert, Device $device, string $responderName, int $now): void
     {
+        // Nothing to announce about something nobody was taking on. An
+        // informational message is read and closed by each handset
+        // separately — one responder clearing their own copy is not news
+        // for anybody else, and telling them would be actively wrong: it
+        // would read as "somebody has dealt with this", which is exactly
+        // what did not happen. See Alert::RESPONSE_NONE.
+        if (!$alert->isFirstToRespond()) {
+            return;
+        }
+
         // No notices about notices. See the class docblock.
+        //
+        // <b>Kept even though the guard above now subsumes it.</b> A
+        // notice is raised as RESPONSE_NONE below, so it would return at
+        // the first guard anyway — but that is a fact about how the notice
+        // happens to be addressed, and this is a fact about what a notice
+        // *is*. Something raising one by hand with the wrong response
+        // requirement would otherwise start an unbounded correspondence,
+        // and the two lines that prevent it cost nothing.
         if ($alert->isAcknowledgementNotice()) {
             return;
         }
@@ -271,10 +297,15 @@ final class AcknowledgementNotifier
         $request = AlertRequest::fromArray($address + [
             'kind'     => Alert::KIND_ACKNOWLEDGED,
             'source'   => 'reach',
-            // Never urgent, whatever the original was. Urgency escalates
-            // the delivery path so it breaks through a Focus mode, and
+            // Never loud, whatever the original was. Red escalates the
+            // delivery path so it breaks through a Focus mode, and
             // nothing about "somebody else has this" is worth that.
-            'priority' => Alert::PRIORITY_NORMAL,
+            'level' => Alert::LEVEL_BLUE,
+            // Nobody is taking this on — it is the report that somebody
+            // already did. Every handset it reaches reads it and closes
+            // its own copy, which is also what keeps one handset's Close
+            // from taking the news off everybody else's screen.
+            'response' => Alert::RESPONSE_NONE,
             'title'    => $responderName . ' acknowledged',
             // The original's own title, so the notice says which message
             // it is about. Safe to repeat: these are the handsets it was

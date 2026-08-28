@@ -205,7 +205,8 @@ $alertId = reach_send_alert([
     'message'   => 'Tonight 22:00–08:00 has nobody signed up.', // alias: body
     'source'    => 'trusted',
     'reference' => 'SHIFT-2026-08-15-N',
-    'priority'  => 'urgent',            // normal | urgent
+    'level'     => 'red',               // red | yellow | blue; default yellow
+    'response'  => 'first',             // first | none; default first
     'contact'   => 'Sam, 07700 900123', // see below — handled separately
     'target_email' => '',               // omit to alert the whole rota
     'ttl'       => 3600,                // seconds; default 1 hour
@@ -220,6 +221,34 @@ if (is_wp_error($alertId)) { /* refused — see the error */ }
 
 `subject`/`message` and `title`/`body` are the same two fields; the wire
 names win if both are sent, so existing integrations are unaffected.
+
+#### Level — how loud it is
+
+| Level | On the handset |
+| --- | --- |
+| `red` | Takes the screen over and rings like an incoming call until somebody answers. For what has to be dealt with now. |
+| `yellow` | A heads-up notification with a sound. Audible, missable, and right for most things. **The default.** |
+| `blue` | The tray, at ordinary importance. Reminders and information; wakes nobody. |
+
+The level is also the colour of the card in Hand, which is what makes a
+list of alerts readable without reading any of them.
+
+`priority` (`normal` | `urgent`) is the older spelling and is still
+accepted — `urgent` means `red`, `normal` means `yellow`. An explicit
+`level` wins if both are sent. New callers should use `level`, because
+`priority` cannot ask for `blue` at all. Reach still *sends* a derived
+`priority` on the wire so handsets predating the level keep working.
+
+#### Response — whether somebody has to take it on
+
+| Response | What happens |
+| --- | --- |
+| `first` | The first responder to acknowledge deals with it. Everyone else is told who answered and it clears off their handsets. Their button says **Acknowledge**. **The default.** |
+| `none` | Everybody reads it and closes their own copy. Nobody is told anything, and one responder closing it leaves it on every other screen. Their button says **Close**. |
+
+The two are independent: a red alert can be informational (a drill
+everybody must see) and a blue one can be first-to-respond (a
+low-priority job somebody still has to pick up).
 
 `payload` is a flat, named string map — a plugin's own properties,
 carried through to the handset untouched and readable there as
@@ -339,10 +368,14 @@ The notice carries the message it reports on as payload properties:
 | `ack_at` | When, as a Unix timestamp |
 
 In Hand it is deliberately quiet: it appears in the list and the
-notification tray at ordinary priority, never alarms, and offers
+notification tray at ordinary importance, never alarms, and offers
 **Close** instead of Acknowledge — there is nothing here to take on.
+None of that is special-cased any more: the notice is raised as `blue`
+and `none`, and Hand reads those two fields exactly as it reads them on
+any other alert.
 
-**An answered message is over, for everybody.** The notice also *removes*
+**An answered message is over, for everybody — where somebody was meant
+to take it on.** For a `first` message the notice also *removes*
 the alert it reports on from every other handset, and Reach stops serving
 that message on the poll — otherwise the next poll would hand it straight
 back. A responder taking a job clears it off the rest of the rota's
@@ -350,6 +383,11 @@ screens rather than leaving thirty people to dismiss it one by one. The
 handset that answered keeps its own card, because that is where the
 reference and the Show contact button are, and losing them the instant
 you accept a job is precisely wrong.
+
+A `none` message does none of that. Nobody is taking it on, so one
+responder closing their own copy says nothing about anybody else's and
+must not clear it from their screens — and no notice is raised, because
+there is no first answer to report.
 
 Two things are exempt from that suppression, and both are load-bearing.
 **The notice itself** is addressed to everybody and read by each of them
