@@ -15,6 +15,8 @@ use Reach\Core\Capabilities;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Scrutiny\Privacy\PersonalDataPolicy;
+use Unity\Committees\Interfaces\Committee;
+use Unity\Committees\Interfaces\CommitteeRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 
@@ -89,6 +91,17 @@ final class SendMessagePage
     private const SCOPE_ALL = 'all';
     private const SCOPE_RESPONDER = 'responder';
 
+    /**
+     * Everyone on a committee, and on the committees under it.
+     *
+     * <b>Descendants are included.</b> Messaging Public Information and
+     * not reaching Health or Employment would be a trap: the tree says
+     * they are part of it, and an admin picking the parent is picking
+     * the branch. It is also what CommitteeRepository does by default,
+     * so the screen and the data agree.
+     */
+    private const SCOPE_COMMITTEE = 'committee';
+
     /** Id of the datalist backing the recipient box. */
     private const RESPONDER_LIST_ID = 'reach-responder-options';
 
@@ -121,6 +134,7 @@ final class SendMessagePage
         private readonly DeviceRepository $devices,
         private readonly AlertApi $alertApi,
         private readonly MemberRepository $members,
+        private readonly CommitteeRepository $committees,
     ) {
     }
 
@@ -154,6 +168,7 @@ final class SendMessagePage
         // page chose to render is not a permission check.
         $canSend = current_user_can(self::SEND_CAPABILITY);
         $responders = $canSend ? $this->responders() : [];
+        $committees = $canSend ? $this->committees() : [];
 
         $notice = $this->notice();
         ?>
@@ -274,6 +289,30 @@ final class SendMessagePage
                             </p>
                         </td>
                     </tr>
+                    <tr>
+                        <th scope="row"><label for="reach-message-committee">Committee</label></th>
+                        <td>
+                            <select id="reach-message-committee"
+                                    name="reach_committee"
+                                    <?php echo $committees === [] ? 'disabled' : ''; ?>>
+                                <option value="">Choose a committee</option>
+                                <?php foreach ($committees as $slug => $label) : ?>
+                                    <option value="<?php echo esc_attr($slug); ?>">
+                                        <?php echo esc_html($label); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">
+                                <?php if ($committees === []) : ?>
+                                    No committees exist yet, so there is no committee to address.
+                                <?php else : ?>
+                                    Only needed for the third button. Sending to a committee also reaches
+                                    the committees under it, and the count is how many handsets that
+                                    works out to. Somebody on two of them still gets one message.
+                                <?php endif; ?>
+                            </p>
+                        </td>
+                    </tr>
                 </table>
 
                 <p>
@@ -289,6 +328,13 @@ final class SendMessagePage
                             class="button button-secondary"
                             <?php echo $responders === [] ? 'disabled' : ''; ?>>
                         Send to the chosen responder
+                    </button>
+                    <button type="submit"
+                            name="reach_scope"
+                            value="<?php echo esc_attr(self::SCOPE_COMMITTEE); ?>"
+                            class="button button-secondary"
+                            <?php echo $committees === [] ? 'disabled' : ''; ?>>
+                        Send to the chosen committee
                     </button>
                 </p>
             </form>
@@ -370,6 +416,16 @@ final class SendMessagePage
             );
         }
 
+        if ($scope === self::SCOPE_COMMITTEE) {
+            return $this->toCommittee(
+                $subject,
+                $body,
+                $this->posted('reach_committee'),
+                $level,
+                $response,
+            );
+        }
+
         if ($scope !== self::SCOPE_ALL) {
             return $this->resultUrl('message_no_scope');
         }
@@ -433,6 +489,139 @@ final class SendMessagePage
         }
 
         return $this->resultUrl($failed ? 'message_failed' : 'message_sent_responder');
+    }
+
+    /**
+     * Send to everyone on a committee, and on the committees under it.
+     *
+     * <b>Resolved by slug, never by term id.</b> The committee tree is
+     * built by hand in wp-admin on each site, so the same committee has
+     * different term ids on dev, test and production — an id posted back
+     * here would be right on one machine and point at something else on
+     * the next. See {@see CommitteeRepository} on why slugs are the
+     * cross-environment contract.
+     *
+     * <b>One message uuid across the whole committee.</b> Same reasoning
+     * as {@see toResponder()}: splitting by handset is a delivery
+     * decision. Ten people on a committee were sent one message, and an
+     * acknowledgement from any of them has to be able to find the rest.
+     *
+     * <b>Silence is reported, not swallowed.</b> A committee whose
+     * members have no handsets enrolled is a message that went nowhere,
+     * and saying "sent" would be a lie an admin acts on.
+     */
+    private function toCommittee(
+        string $subject,
+        string $body,
+        string $slug,
+        string $level,
+        string $response
+    ): string {
+        if ($slug === '') {
+            return $this->resultUrl('message_no_committee');
+        }
+
+        if ($this->committees->findBySlug($slug) === null) {
+            return $this->resultUrl('message_unknown_committee');
+        }
+
+        $devices = $this->liveDevicesForCommittee($slug);
+        if ($devices === []) {
+            return $this->resultUrl('message_committee_silent');
+        }
+
+        $messageUuid = MessageUuid::generate();
+
+        $failed = false;
+        foreach ($devices as $device) {
+            if (
+                is_wp_error(
+                    $this->sendMessage($subject, $body, $level, $response, $device->id, $messageUuid),
+                )
+            ) {
+                $failed = true;
+            }
+        }
+
+        return $this->resultUrl($failed ? 'message_failed' : 'message_sent_committee');
+    }
+
+    /**
+     * Every live handset belonging to a committee's members.
+     *
+     * Keyed by device id so a handset is only ever sent one copy. Two
+     * paths lead to the same phone: a member can hold more than one
+     * committee in the branch being addressed, and two member records
+     * can carry the same address. Neither is a reason to ring a phone
+     * twice.
+     *
+     * @return array<int, Device>
+     */
+    private function liveDevicesForCommittee(string $slug): array
+    {
+        $memberIds = $this->committees->memberIdsIn($slug);
+
+        if ($memberIds === []) {
+            return [];
+        }
+
+        $devices = [];
+
+        foreach ($this->members->findAll(['post__in' => $memberIds]) as $member) {
+            $email = $member->getPersonalEmail();
+
+            if ($email === '') {
+                continue;
+            }
+
+            foreach ($this->liveDevicesFor($email) as $device) {
+                $devices[$device->id] = $device;
+            }
+        }
+
+        return array_values($devices);
+    }
+
+    /**
+     * The committees worth offering, as slug => label.
+     *
+     * Every committee is listed, including those nobody on them has a
+     * handset for, with the reachable count in the label. Hiding them
+     * would leave an admin wondering where a committee went; saying
+     * "0 handsets" answers it on the spot, and the send is refused
+     * plainly if they pick one anyway.
+     *
+     * The count is the branch, not the node, because that is what the
+     * button would send to.
+     *
+     * @return array<string, string>
+     */
+    private function committees(): array
+    {
+        $committees = [];
+
+        foreach ($this->committees->roots() as $root) {
+            $this->collectCommittee($root, 0, $committees);
+        }
+
+        return $committees;
+    }
+
+    /**
+     * @param array<string, string> $into
+     */
+    private function collectCommittee(Committee $committee, int $depth, array &$into): void
+    {
+        $slug = $committee->getSlug();
+        $count = count($this->liveDevicesForCommittee($slug));
+
+        $into[$slug] = str_repeat('— ', $depth)
+            . $committee->getName()
+            . ' (' . ($count === 1 ? '1 handset' : $count . ' handsets') . ')';
+
+        foreach ($this->committees->childrenOf($slug) as $child) {
+            $this->collectCommittee($child, $depth + 1, $into);
+        }
     }
 
     /**
@@ -575,7 +764,11 @@ final class SendMessagePage
             'message_sent'      => ['success', 'Message sent. Every live handset should be ringing.'],
             'message_sent_responder' => ['success', 'Message sent. That responder\'s handsets should be ringing.'],
             'message_no_subject' => ['warning', 'A message needs a subject — that is the line the responder reads first.'],
-            'message_no_scope'  => ['warning', 'Choose who the message goes to: every live handset, or one responder.'],
+            'message_sent_committee' => ['success', 'Message sent. Every handset on that committee should be ringing.'],
+            'message_no_scope'  => ['warning', 'Choose who the message goes to: every live handset, one responder, or a committee.'],
+            'message_no_committee' => ['warning', 'Choose a committee, or send to every live handset instead.'],
+            'message_unknown_committee' => ['warning', 'That committee no longer exists. Pick one from the list.'],
+            'message_committee_silent' => ['warning', 'Nobody on that committee has a handset enrolled, so the message was not sent.'],
             'message_no_responder' => ['warning', 'Choose a responder, or send to every live handset instead.'],
             'message_unknown_responder' => ['warning', 'No enrolled handset belongs to that responder. Pick one from the list.'],
             'message_failed'    => ['error', 'The message could not be sent. Check the Reach log for the reason.'],
