@@ -21,11 +21,13 @@ use ReflectionClass;
 use RuntimeException;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
+use Unity\Committees\Interfaces\CommitteeRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
@@ -204,9 +206,10 @@ final class ContainerWiringTest extends ReachTestCase
     private function container(?MemberRepository $members = null): FakeContainer
     {
         return new FakeContainer([
-            MemberRepository::class  => $members ?? new InMemoryMemberRepository([]),
-            AuditLogger::class       => new SpyAuditLogger(),
-            MemberViewFactory::class => new FakeMemberViewFactory(),
+            MemberRepository::class    => $members ?? new InMemoryMemberRepository([]),
+            CommitteeRepository::class => new InMemoryCommitteeRepository(),
+            AuditLogger::class         => new SpyAuditLogger(),
+            MemberViewFactory::class   => new FakeMemberViewFactory(),
         ]);
     }
 

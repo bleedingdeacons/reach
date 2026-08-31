@@ -66,6 +66,7 @@ use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
 use Reach\Session\SessionRevocationList;
 use Scrutiny\Audit\Interfaces\AuditLogger;
+use Unity\Committees\Interfaces\CommitteeRepository;
 use Unity\Core\Interfaces\Container;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
@@ -339,6 +340,7 @@ final class ReachServiceProvider
             $c->get(DeviceRepository::class),
             $c->get(AlertApi::class),
             $c->get(MemberRepository::class),
+            $c->get(CommitteeRepository::class),
         ));
     }
 }
