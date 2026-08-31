@@ -10,6 +10,7 @@ use Reach\Admin\SendMessagePage;
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
+use Reach\Alerts\RecipientResolver;
 use Reach\Core\Capabilities;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
@@ -749,6 +750,8 @@ final class SendMessagePageTest extends ReachTestCase
         $devices ??= new InMemoryDeviceRepository();
         $alerts ??= new InMemoryAlertRepository();
 
+        $memberRepository = new InMemoryMemberRepository($members);
+
         // A real AlertApi over a real dispatcher, for the reason
         // DevicesPageTest gives: the send path is only worth asserting on
         // if it goes through the machinery an ordinary alert does.
@@ -756,15 +759,22 @@ final class SendMessagePageTest extends ReachTestCase
             $alerts,
             new InMemoryAlertContactRepository(),
             $devices,
-            new ResponderGate(new InMemoryMemberRepository($members)),
+            new ResponderGate($memberRepository),
             [],
         ));
 
+        // A real resolver over the same doubles, for the same reason. It
+        // is the object this screen and Hand's compose route now share,
+        // so a double here would assert against something neither uses.
         return new SendMessagePage(
             $devices,
             $api,
-            new InMemoryMemberRepository($members),
-            $committees ?? new InMemoryCommitteeRepository(),
+            $memberRepository,
+            new RecipientResolver(
+                $devices,
+                $memberRepository,
+                $committees ?? new InMemoryCommitteeRepository(),
+            ),
         );
     }
 

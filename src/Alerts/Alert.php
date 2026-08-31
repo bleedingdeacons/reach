@@ -88,6 +88,27 @@ final class Alert
     public const KIND_ACKNOWLEDGED = 'message_acknowledged';
 
     /**
+     * The kind Reach raises when a responder replies to a message: a
+     * notice carrying their words back to whoever sent the original.
+     *
+     * <b>Quiet, like the acknowledgement notice, and for the same
+     * reason.</b> It is {@see LEVEL_BLUE} and {@see RESPONSE_NONE}, set
+     * where the reply is raised, so Hand shows it in the tray with a
+     * Close button and never alarms. Nothing branches on the kind to
+     * achieve that.
+     *
+     * What the kind does is stop the correspondence: a reply may not be
+     * replied to, and neither may an acknowledgement notice. Without
+     * that, one answered call becomes an unbounded exchange between two
+     * handsets — the same guard {@see AcknowledgementNotifier} opens
+     * with.
+     *
+     * The spelling is a wire contract shared with
+     * <c>HandAlert.KindMessageReply</c>.
+     */
+    public const KIND_REPLY = 'message_reply';
+
+    /**
      * <b>The compatibility spelling of {@see $level}, and nothing more.</b>
      *
      * `priority` was the original loudness dial and it had two positions.
@@ -240,6 +261,23 @@ final class Alert
          * must go on meaning what it meant.
          */
         public readonly string $response = self::RESPONSE_FIRST,
+        /**
+         * The responder who raised this, or '' when nothing did.
+         *
+         * <b>Empty is the ordinary case and is not missing data.</b>
+         * Every alert raised by a plugin or from wp-admin has no
+         * responder behind it — a plugin is not a person and an
+         * administrator has no handset — and that is what every row
+         * written before this column existed also means. It is set only
+         * when an alert was raised from a handset, which is the one case
+         * where there is somewhere for a reply to go.
+         *
+         * <b>Never sent to a handset.</b> It is an address, and
+         * {@see toArray()} carries none. A reply is routed by it
+         * server-side; the name a responder actually sees travels as a
+         * payload property.
+         */
+        public readonly string $senderEmail = '',
     ) {
     }
 
@@ -280,6 +318,30 @@ final class Alert
     public function isAcknowledgementNotice(): bool
     {
         return $this->kind === self::KIND_ACKNOWLEDGED;
+    }
+
+    /**
+     * Whether this is a reply carrying somebody's words back to a
+     * sender. See {@see KIND_REPLY}.
+     */
+    public function isReply(): bool
+    {
+        return $this->kind === self::KIND_REPLY;
+    }
+
+    /**
+     * Whether this alert is Reach talking about another alert rather
+     * than something in its own right.
+     *
+     * The two notices are the things that must never breed: a reply to
+     * a reply, or an acknowledgement of an acknowledgement, is a loop
+     * between two handsets with nothing at the end of it. Asked by
+     * {@see AcknowledgementNotifier} and by the reply and resend routes,
+     * so the three cannot drift on what counts as a notice.
+     */
+    public function isNotice(): bool
+    {
+        return $this->isAcknowledgementNotice() || $this->isReply();
     }
 
     public function isExpired(int $now): bool

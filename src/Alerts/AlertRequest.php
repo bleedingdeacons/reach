@@ -59,6 +59,12 @@ use WP_Error;
  * acknowledgement notice and means "everybody but this handset". Both
  * are described on {@see Alert}.
  *
+ * <b>`sender_email` is Reach's own too.</b> It records the responder an
+ * alert was raised by, so a reply has somewhere to go, and is set from
+ * the authenticated handset rather than from anything a caller typed. A
+ * plugin never supplies one — it is not a person — and an unusable value
+ * is dropped rather than refused. See {@see senderEmail()}.
+ *
  * <b>`contact` is the one field that may hold personal data, and it is
  * handled completely differently from the rest.</b> Everything else
  * here ends up in the alerts table, in the push payload, and on a lock
@@ -121,6 +127,7 @@ final class AlertRequest
         public readonly int $excludeDeviceId,
         public readonly string $level,
         public readonly string $response,
+        public readonly string $senderEmail,
     ) {
     }
 
@@ -188,6 +195,7 @@ final class AlertRequest
             response: Alert::normaliseResponse(
                 self::text($args['response'] ?? '', self::RESPONSE_MAX),
             ),
+            senderEmail: self::senderEmail($args['sender_email'] ?? null),
         );
     }
 
@@ -326,6 +334,30 @@ final class AlertRequest
         }
 
         return MessageUuid::generate();
+    }
+
+    /**
+     * The responder who raised this, or '' for "nothing did".
+     *
+     * <b>Malformed is silently dropped, not refused.</b> Unlike
+     * `target_email`, which decides who an alert reaches and so must be
+     * right or not attempted, this only decides whether a reply has
+     * anywhere to go. Failing a send over it would mean an alert that
+     * never rang because the *return* address was wrong, which is the
+     * wrong thing to trade.
+     *
+     * Lower-cased, like `target_email` above, because that is the form
+     * device rows hold and the form a reply will be matched against.
+     */
+    private static function senderEmail(mixed $value): string
+    {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $email = strtolower(self::text($value, 254));
+
+        return $email !== '' && is_email($email) ? $email : '';
     }
 
     /**

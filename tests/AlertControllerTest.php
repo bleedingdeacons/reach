@@ -7,19 +7,24 @@ namespace Reach\Tests;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\Alert;
+use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
+use Reach\Alerts\RecipientResolver;
 use Reach\Auth\DeviceTokenMinter;
+use Reach\Core\RateLimiter;
 use Reach\Devices\CurrentDevice;
 use Reach\Devices\Device;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\AlertController;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
+use Reach\Tests\Fixtures\InMemoryAlertReplyRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
 use Unity\Members\ResponderCertification;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -40,6 +45,7 @@ final class AlertControllerTest extends ReachTestCase
     private InMemoryDeviceRepository $devices;
     private InMemoryAlertRepository $alerts;
     private InMemoryAlertContactRepository $contacts;
+    private InMemoryAlertReplyRepository $replies;
     private DeviceTokenMinter $minter;
     private SpyAuditLogger $audit;
 
@@ -52,6 +58,7 @@ final class AlertControllerTest extends ReachTestCase
         $this->devices = new InMemoryDeviceRepository();
         $this->alerts = new InMemoryAlertRepository();
         $this->contacts = new InMemoryAlertContactRepository();
+        $this->replies = new InMemoryAlertReplyRepository();
         $this->minter = new DeviceTokenMinter();
         // Held rather than built inside controller(), because the
         // contact endpoint's audit entry is the thing under test on that
@@ -515,10 +522,10 @@ final class AlertControllerTest extends ReachTestCase
         // notice it raises is stored in the same in-memory repository the
         // assertions read, which is what lets a test see the second
         // message an acknowledgement produces without a push to stub.
-        $notifier = new AcknowledgementNotifier(
-            $this->alerts,
-            new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []),
-        );
+        $dispatcher = new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []);
+        $notifier = new AcknowledgementNotifier($this->alerts, $dispatcher);
+
+        $memberRepository = new InMemoryMemberRepository($members);
 
         return new AlertController(
             $this->alerts,
@@ -527,6 +534,14 @@ final class AlertControllerTest extends ReachTestCase
             $this->audit,
             $this->devices,
             $notifier,
+            $this->replies,
+            new RecipientResolver(
+                $this->devices,
+                $memberRepository,
+                new InMemoryCommitteeRepository(),
+            ),
+            new AlertApi($dispatcher),
+            new RateLimiter(),
         );
     }
 

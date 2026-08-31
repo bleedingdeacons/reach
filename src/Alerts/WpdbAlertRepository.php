@@ -76,6 +76,11 @@ final class WpdbAlertRepository implements AlertRepository
      * written with. Nothing ever writes an empty one — {@see create()}
      * always has a level to put there.
      *
+     * <b>`sender_email` defaults to empty and needs no backfill.</b>
+     * dbDelta stamps existing rows with it, and empty is exactly what
+     * they mean: nothing raised them from a handset, because until this
+     * column existed nothing could. See {@see Alert::$senderEmail}.
+     *
      * `response` defaults to `first` because that stamp is simply true:
      * every row written before the column existed was first-to-respond,
      * that being the only behaviour there was.
@@ -107,6 +112,7 @@ final class WpdbAlertRepository implements AlertRepository
             payload TEXT NULL,
             message_uuid CHAR(36) NOT NULL DEFAULT '',
             target_email VARCHAR(254) NOT NULL DEFAULT '',
+            sender_email VARCHAR(254) NOT NULL DEFAULT '',
             target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             exclude_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             created_at BIGINT UNSIGNED NOT NULL,
@@ -153,19 +159,20 @@ final class WpdbAlertRepository implements AlertRepository
                 'payload'      => $payloadJson,
                 'message_uuid' => $request->messageUuid,
                 'target_email' => $request->targetEmail,
+                'sender_email' => $request->senderEmail,
                 'target_device_id' => $request->targetDeviceId,
                 'exclude_device_id' => $request->excludeDeviceId,
                 'created_at'   => $now,
                 'expires_at'   => $request->expiresAt($now),
             ],
-            // <b>Counted, not eyeballed.</b> Eleven strings then four
+            // <b>Counted, not eyeballed.</b> Twelve strings then four
             // integers, matching the array above key for key. A format
             // array out of step with its data does not raise — wpdb
             // simply applies the wrong placeholder to each value from the
             // mismatch onwards, and the row is written with the columns
             // quietly shifted.
             [
-                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
                 '%d', '%d', '%d', '%d',
             ],
         );
@@ -187,6 +194,7 @@ final class WpdbAlertRepository implements AlertRepository
             excludeDeviceId: $request->excludeDeviceId,
             level: $request->level,
             response: $request->response,
+            senderEmail: $request->senderEmail,
         );
     }
 
@@ -260,7 +268,8 @@ final class WpdbAlertRepository implements AlertRepository
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
             "SELECT a.id, a.kind, a.source, a.priority, a.level, a.response, a.title,
                     a.body, a.reference, a.payload, a.message_uuid, a.target_email,
-                    a.target_device_id, a.exclude_device_id, a.created_at, a.expires_at,
+                    a.sender_email, a.target_device_id, a.exclude_device_id,
+                    a.created_at, a.expires_at,
                     (c.alert_id IS NOT NULL) AS has_contact
                FROM {$table} a
                LEFT JOIN {$acks} k ON k.alert_id = a.id AND k.device_id = %d
@@ -435,8 +444,8 @@ final class WpdbAlertRepository implements AlertRepository
     private function columns(): string
     {
         return 'id, kind, source, priority, level, response, title, body, reference, payload, '
-            . 'message_uuid, target_email, target_device_id, exclude_device_id, created_at, '
-            . 'expires_at';
+            . 'message_uuid, target_email, sender_email, target_device_id, exclude_device_id, '
+            . 'created_at, expires_at';
     }
 
     /**
@@ -491,6 +500,7 @@ final class WpdbAlertRepository implements AlertRepository
             // whole reason it is still stored. See Alert::PRIORITY_NORMAL.
             $this->level($row),
             Alert::normaliseResponse((string) ($row['response'] ?? '')),
+            (string) ($row['sender_email'] ?? ''),
         );
     }
 

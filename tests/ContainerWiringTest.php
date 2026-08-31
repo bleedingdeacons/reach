@@ -22,12 +22,14 @@ use RuntimeException;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
 use Unity\Committees\Interfaces\CommitteeRepository;
+use Unity\Groups\Interfaces\GroupRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryCommitteeRepository;
+use Unity\Testing\Doubles\InMemoryGroupRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
@@ -208,6 +210,11 @@ final class ContainerWiringTest extends ReachTestCase
         return new FakeContainer([
             MemberRepository::class    => $members ?? new InMemoryMemberRepository([]),
             CommitteeRepository::class => new InMemoryCommitteeRepository(),
+            // Reach reads home groups to label the member picker Hand
+            // shows — see DirectoryController. Unity registers this, so
+            // the double has to as well or the wiring test fails on a
+            // dependency the real container always has.
+            GroupRepository::class     => new InMemoryGroupRepository([]),
             AuditLogger::class         => new SpyAuditLogger(),
             MemberViewFactory::class   => new FakeMemberViewFactory(),
         ]);

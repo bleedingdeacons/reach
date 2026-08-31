@@ -18,6 +18,7 @@ use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Reach\Devices\ResponderGate;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
+use Reach\Tests\Fixtures\InMemoryAlertReplyRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
@@ -1848,9 +1849,11 @@ final class DevicesPageTest extends ReachTestCase
         ?DeviceRepository $devices = null,
         ?InMemoryAlertRepository $alerts = null,
         array $members = [],
+        ?InMemoryAlertReplyRepository $replies = null,
     ): DevicesPage {
         $devices ??= new InMemoryDeviceRepository();
         $alerts ??= new InMemoryAlertRepository();
+        $replies ??= new InMemoryAlertReplyRepository();
 
         // A real AlertApi over a real dispatcher: the test-alert path is
         // only worth asserting on if it goes through the machinery an
@@ -1863,7 +1866,13 @@ final class DevicesPageTest extends ReachTestCase
             [],
         ));
 
-        return new DevicesPage($devices, $alerts, $api, new InMemoryMemberRepository($members));
+        return new DevicesPage(
+            $devices,
+            $alerts,
+            $api,
+            new InMemoryMemberRepository($members),
+            $replies,
+        );
     }
 
     private function devicesWith(Device ...$devices): InMemoryDeviceRepository

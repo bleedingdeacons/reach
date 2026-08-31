@@ -53,6 +53,7 @@ final class InMemoryAlertRepository implements AlertRepository
             excludeDeviceId: $request->excludeDeviceId,
             level: $request->level,
             response: $request->response,
+            senderEmail: $request->senderEmail,
         );
 
         $this->alerts[] = $alert;
