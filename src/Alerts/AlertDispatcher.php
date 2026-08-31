@@ -79,8 +79,17 @@ final class AlertDispatcher
         // table and nowhere near the push below. Stored before delivery so
         // a responder who opens the alert the instant it lands finds them
         // already there.
+        //
+        // <b>The alert is then told it has them.</b> create() built it
+        // from the request, which was a moment before this row existed,
+        // so it says hasContact: false — and that is the value the
+        // transports below would otherwise carry to the handset. The poll
+        // joins the contacts table and gets it right; the push had no way
+        // to, so a pushed alert never offered Show contact at all. See
+        // Alert::withContact().
         if ($request->contact !== '') {
             $this->contacts->save($alert->id, $request->contact, $now);
+            $alert = $alert->withContact(true);
         }
 
         $devices = $this->resolveTargets($alert);

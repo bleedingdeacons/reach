@@ -359,6 +359,49 @@ final class Alert
     }
 
     /**
+     * The same alert, knowing whether contact details are held for it.
+     *
+     * <b>Why this exists.</b> {@see AlertRepository::create()} builds the
+     * alert from the request, and the contact is written to its own table
+     * immediately afterwards — so the value the dispatcher then hands to
+     * the transports says `hasContact: false` however many details were
+     * supplied. The poll knows better, because it joins the contacts
+     * table; the push had no way to.
+     *
+     * The consequence was a handset that received an alert by push never
+     * offering *Show contact* at all, and never being corrected, because
+     * the poll copy that had it right arrived second and was discarded as
+     * a duplicate. On Android, where push is the fast path and usually
+     * wins, that made the whole audited caller-details flow unreachable.
+     *
+     * A new instance rather than a mutation, because {@see Alert} is
+     * readonly and should stay that way.
+     */
+    public function withContact(bool $hasContact): self
+    {
+        return new self(
+            $this->id,
+            $this->kind,
+            $this->source,
+            $this->priority,
+            $this->title,
+            $this->body,
+            $this->reference,
+            $this->payload,
+            $this->targetEmail,
+            $this->createdAt,
+            $this->expiresAt,
+            $hasContact,
+            $this->targetDeviceId,
+            $this->messageUuid,
+            $this->excludeDeviceId,
+            $this->level,
+            $this->response,
+            $this->senderEmail,
+        );
+    }
+
+    /**
      * Whether the first responder to acknowledge takes this on, and the
      * rest are told and cleared. See {@see RESPONSE_FIRST}.
      */

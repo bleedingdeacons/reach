@@ -367,6 +367,13 @@ final class FcmTransport implements AlertTransport
             'title'     => $alert->title,
             'body'      => $alert->body,
             'reference' => $alert->reference,
+            // <b>The flag, never the details.</b> Whether a contact
+            // exists is not personal data and has to travel, or a handset
+            // that learns of an alert by push never offers to fetch them
+            // — and the poll copy that knows better is discarded as a
+            // duplicate. The contact itself still requires a separate,
+            // authenticated, audited request. See Alert::withContact().
+            'has_contact' => $alert->hasContact ? '1' : '0',
             'channel'   => self::channelFor($alert),
             'sound'     => self::ANDROID_SOUND,
         ] + $alert->payload;
