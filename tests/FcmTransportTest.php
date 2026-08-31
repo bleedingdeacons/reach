@@ -124,6 +124,7 @@ final class FcmTransportTest extends ReachTestCase
         string $title = 'Callback wanted',
         string $body = 'Male 12th-stepper wanted in BS5',
         string $response = Alert::RESPONSE_FIRST,
+        bool $hasContact = false,
     ): Alert {
         return new Alert(
             id: 12,
@@ -137,6 +138,7 @@ final class FcmTransportTest extends ReachTestCase
             targetEmail: '',
             createdAt: time(),
             expiresAt: time() + 900,
+            hasContact: $hasContact,
             level: $level,
             response: $response,
         );
@@ -245,6 +247,67 @@ final class FcmTransportTest extends ReachTestCase
         $this->assertSame('reach_alert', $opened['sound']);
         // The raising plugin's extras go inside too.
         $this->assertSame('BS5', $opened['area']);
+    }
+
+    public function testTheContactFlagTravelsSoAPushedAlertCanOfferToFetchIt(): void
+    {
+        // <b>The flag, never the details.</b> Whether a contact exists is
+        // not personal data; the contact itself is, and still needs a
+        // separate authenticated request that Reach audits.
+        //
+        // Without this the push said nothing, so a handset that learned
+        // of an alert by push showed no Show contact button — and the
+        // poll copy that knew better arrived second and was discarded as
+        // a duplicate. On Android, where push usually wins, that made the
+        // whole caller-details flow unreachable.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $opened = $this->open(
+            $this->sealedFor($this->deliver($this->alert(hasContact: true), $device)),
+            $key,
+        );
+
+        $this->assertSame('1', $opened['has_contact']);
+    }
+
+    public function testAnAlertWithNoContactSaysSoRatherThanSayingNothing(): void
+    {
+        // Explicitly '0' rather than absent. Hand reads the key as
+        // "1"/"true" and anything else as false, so either would work
+        // today — but a handset can only distinguish "no contact" from
+        // "an older server that never said" if the field is always there.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $opened = $this->open(
+            $this->sealedFor($this->deliver($this->alert(), $device)),
+            $key,
+        );
+
+        $this->assertSame('0', $opened['has_contact']);
+    }
+
+    public function testAPluginCannotForgeTheContactFlag(): void
+    {
+        // The alert's own fields win on a key collision, so a payload
+        // claiming has_contact cannot make a handset offer to fetch
+        // details that are not there.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $opened = $this->open(
+            $this->sealedFor($this->deliver(
+                $this->alert(payload: ['has_contact' => '1']),
+                $device,
+            )),
+            $key,
+        );
+
+        $this->assertSame('0', $opened['has_contact']);
     }
 
     public function testTheFieldsTheHandsetOnceNeededInTheClearAreSealedToo(): void

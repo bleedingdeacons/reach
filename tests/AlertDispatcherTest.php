@@ -301,6 +301,90 @@ final class AlertDispatcherTest extends ReachTestCase
         $this->assertTrue($alerts->alerts[0]->isDeviceTargeted());
     }
 
+    public function testTheAlertHandedToATransportKnowsItHasAContact(): void
+    {
+        // <b>create() cannot know.</b> It builds the alert from the
+        // request, and the contact row is written a moment afterwards —
+        // so without the correction the transports are handed an alert
+        // saying it has none, however many details were supplied.
+        //
+        // The consequence was not cosmetic: a handset that learned of an
+        // alert by push never offered Show contact, and the poll copy
+        // that had it right arrived second and was discarded as a
+        // duplicate. On Android, where push usually wins, that made the
+        // audited caller-details flow unreachable.
+        $devices = new InMemoryDeviceRepository();
+        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+        $transport = new RecordingTransport();
+
+        $dispatcher = new AlertDispatcher(
+            new InMemoryAlertRepository(),
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('a@example.com'),
+            [$transport],
+        );
+
+        $dispatcher->dispatch(
+            $this->request(['contact' => 'Sam, 07700 900123']),
+            1_700_000_000,
+        );
+
+        $this->assertCount(1, $transport->alerts);
+        $this->assertTrue($transport->alerts[0]->hasContact);
+    }
+
+    public function testAnAlertWithNoContactIsNotClaimedToHaveOne(): void
+    {
+        $devices = new InMemoryDeviceRepository();
+        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+        $transport = new RecordingTransport();
+
+        $dispatcher = new AlertDispatcher(
+            new InMemoryAlertRepository(),
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('a@example.com'),
+            [$transport],
+        );
+
+        $dispatcher->dispatch($this->request(), 1_700_000_000);
+
+        $this->assertCount(1, $transport->alerts);
+        $this->assertFalse($transport->alerts[0]->hasContact);
+    }
+
+    public function testTheContactStillNeverTravelsWithTheAlertItself(): void
+    {
+        // The flag is the only thing that changed. The details stay in
+        // their own encrypted table, out of toArray() and therefore out
+        // of both the push and the poll.
+        $devices = new InMemoryDeviceRepository();
+        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+        $transport = new RecordingTransport();
+
+        $dispatcher = new AlertDispatcher(
+            new InMemoryAlertRepository(),
+            new InMemoryAlertContactRepository(),
+            $devices,
+            $this->gateAdmitting('a@example.com'),
+            [$transport],
+        );
+
+        $dispatcher->dispatch(
+            $this->request(['contact' => 'Sam, 07700 900123']),
+            1_700_000_000,
+        );
+
+        $encoded = (string) json_encode($transport->alerts[0]->toArray());
+
+        $this->assertStringNotContainsString('900123', $encoded);
+        $this->assertStringNotContainsString('Sam', $encoded);
+    }
+
     private function request(array $overrides = []): AlertRequest
     {
         $request = AlertRequest::fromArray($overrides + [
@@ -346,6 +430,18 @@ final class RecordingTransport implements AlertTransport
     /** @var array<int, Device> */
     public array $delivered = [];
 
+    /**
+     * The alerts handed over, as the transports saw them.
+     *
+     * Kept alongside the devices because what a transport is given is not
+     * always what create() returned — the contact flag is set between the
+     * two, and a transport that never learns of it is a handset that
+     * never offers to fetch the details.
+     *
+     * @var array<int, Alert>
+     */
+    public array $alerts = [];
+
     public function __construct(private readonly bool $succeeds = true)
     {
     }
@@ -358,6 +454,7 @@ final class RecordingTransport implements AlertTransport
     public function deliver(Alert $alert, Device $device): bool
     {
         $this->delivered[] = $device;
+        $this->alerts[] = $alert;
 
         return $this->succeeds;
     }
