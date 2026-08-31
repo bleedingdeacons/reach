@@ -5,20 +5,25 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use Reach\Alerts\AcknowledgementNotifier;
+use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
+use Reach\Alerts\RecipientResolver;
 use Reach\Auth\DeviceTokenMinter;
 use Reach\Core\Cipher;
+use Reach\Core\RateLimiter;
 use Reach\Devices\CurrentDevice;
 use Reach\Devices\Device;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\AlertController;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
+use Reach\Tests\Fixtures\InMemoryAlertReplyRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
 use Unity\Members\ResponderCertification;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -43,6 +48,7 @@ final class AlertContactTest extends ReachTestCase
     private InMemoryDeviceRepository $devices;
     private InMemoryAlertRepository $alerts;
     private InMemoryAlertContactRepository $contacts;
+    private InMemoryAlertReplyRepository $replies;
     private DeviceTokenMinter $minter;
     private SpyAuditLogger $audit;
 
@@ -53,6 +59,7 @@ final class AlertContactTest extends ReachTestCase
         $this->devices = new InMemoryDeviceRepository();
         $this->alerts = new InMemoryAlertRepository();
         $this->contacts = new InMemoryAlertContactRepository();
+        $this->replies = new InMemoryAlertReplyRepository();
         $this->minter = new DeviceTokenMinter();
         $this->audit = new SpyAuditLogger();
     }
@@ -211,6 +218,8 @@ final class AlertContactTest extends ReachTestCase
     private function controller(): AlertController
     {
         $gate = $this->gate();
+        $dispatcher = new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []);
+        $members = new InMemoryMemberRepository($this->members());
 
         return new AlertController(
             $this->alerts,
@@ -218,14 +227,29 @@ final class AlertContactTest extends ReachTestCase
             new CurrentDevice($this->devices, $this->minter, $gate),
             $this->audit,
             $this->devices,
-            new AcknowledgementNotifier(
-                $this->alerts,
-                new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []),
-            ),
+            new AcknowledgementNotifier($this->alerts, $dispatcher),
+            $this->replies,
+            new RecipientResolver($this->devices, $members, new InMemoryCommitteeRepository()),
+            new AlertApi($dispatcher),
+            new RateLimiter(),
         );
     }
 
     private function gate(): ResponderGate
+    {
+        return new ResponderGate(new InMemoryMemberRepository($this->members()));
+    }
+
+    /**
+     * A certified member behind every enrolled handset.
+     *
+     * Split out of {@see gate()} because the controller now needs the
+     * same set twice — once for the gate, once for the recipient
+     * resolver, which turns a chosen member id back into an address.
+     *
+     * @return array<int, MemberStub>
+     */
+    private function members(): array
     {
         $members = [];
         foreach ($this->devices->devices as $device) {
@@ -238,7 +262,7 @@ final class AlertContactTest extends ReachTestCase
             );
         }
 
-        return new ResponderGate(new InMemoryMemberRepository($members));
+        return $members;
     }
 
     private function enrol(string $email): string

@@ -11,12 +11,11 @@ if (!defined('ABSPATH')) {
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\MessageUuid;
+use Reach\Alerts\RecipientResolver;
 use Reach\Core\Capabilities;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Scrutiny\Privacy\PersonalDataPolicy;
-use Unity\Committees\Interfaces\Committee;
-use Unity\Committees\Interfaces\CommitteeRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_Error;
 
@@ -134,7 +133,7 @@ final class SendMessagePage
         private readonly DeviceRepository $devices,
         private readonly AlertApi $alertApi,
         private readonly MemberRepository $members,
-        private readonly CommitteeRepository $committees,
+        private readonly RecipientResolver $recipients,
     ) {
     }
 
@@ -168,7 +167,7 @@ final class SendMessagePage
         // page chose to render is not a permission check.
         $canSend = current_user_can(self::SEND_CAPABILITY);
         $responders = $canSend ? $this->responders() : [];
-        $committees = $canSend ? $this->committees() : [];
+        $committees = $canSend ? $this->recipients->committeeLabels() : [];
 
         $notice = $this->notice();
         ?>
@@ -498,7 +497,7 @@ final class SendMessagePage
             return $this->resultUrl('message_no_responder');
         }
 
-        $devices = $this->liveDevicesFor($responder);
+        $devices = $this->recipients->forResponder($responder);
         if ($devices === []) {
             return $this->resultUrl('message_unknown_responder');
         }
@@ -561,11 +560,11 @@ final class SendMessagePage
             return $this->resultUrl('message_no_committee');
         }
 
-        if ($this->committees->findBySlug($slug) === null) {
+        if (!$this->recipients->committeeExists($slug)) {
             return $this->resultUrl('message_unknown_committee');
         }
 
-        $devices = $this->liveDevicesForCommittee($slug);
+        $devices = $this->recipients->forCommittee($slug);
         if ($devices === []) {
             return $this->resultUrl('message_committee_silent');
         }
@@ -584,84 +583,6 @@ final class SendMessagePage
         }
 
         return $this->resultUrl($failed ? 'message_failed' : 'message_sent_committee');
-    }
-
-    /**
-     * Every live handset belonging to a committee's members.
-     *
-     * Keyed by device id so a handset is only ever sent one copy. Two
-     * paths lead to the same phone: a member can hold more than one
-     * committee in the branch being addressed, and two member records
-     * can carry the same address. Neither is a reason to ring a phone
-     * twice.
-     *
-     * @return array<int, Device>
-     */
-    private function liveDevicesForCommittee(string $slug): array
-    {
-        $memberIds = $this->committees->memberIdsIn($slug);
-
-        if ($memberIds === []) {
-            return [];
-        }
-
-        $devices = [];
-
-        foreach ($this->members->findAll(['post__in' => $memberIds]) as $member) {
-            $email = $member->getPersonalEmail();
-
-            if ($email === '') {
-                continue;
-            }
-
-            foreach ($this->liveDevicesFor($email) as $device) {
-                $devices[$device->id] = $device;
-            }
-        }
-
-        return array_values($devices);
-    }
-
-    /**
-     * The committees worth offering, as slug => label.
-     *
-     * Every committee is listed, including those nobody on them has a
-     * handset for, with the reachable count in the label. Hiding them
-     * would leave an admin wondering where a committee went; saying
-     * "0 handsets" answers it on the spot, and the send is refused
-     * plainly if they pick one anyway.
-     *
-     * The count is the branch, not the node, because that is what the
-     * button would send to.
-     *
-     * @return array<string, string>
-     */
-    private function committees(): array
-    {
-        $committees = [];
-
-        foreach ($this->committees->roots() as $root) {
-            $this->collectCommittee($root, 0, $committees);
-        }
-
-        return $committees;
-    }
-
-    /**
-     * @param array<string, string> $into
-     */
-    private function collectCommittee(Committee $committee, int $depth, array &$into): void
-    {
-        $slug = $committee->getSlug();
-        $count = count($this->liveDevicesForCommittee($slug));
-
-        $into[$slug] = str_repeat('— ', $depth)
-            . $committee->getName()
-            . ' (' . ($count === 1 ? '1 handset' : $count . ' handsets') . ')';
-
-        foreach ($this->committees->childrenOf($slug) as $child) {
-            $this->collectCommittee($child, $depth + 1, $into);
-        }
     }
 
     /**
@@ -698,27 +619,6 @@ final class SendMessagePage
         asort($responders, SORT_NATURAL | SORT_FLAG_CASE);
 
         return $responders;
-    }
-
-    /**
-     * One responder's live handsets, matched on address without regard
-     * to case — an admin who types an address by hand should not have to
-     * match the capitalisation Unity happens to hold.
-     *
-     * @return array<int, Device>
-     */
-    private function liveDevicesFor(string $responder): array
-    {
-        $wanted = strtolower($responder);
-
-        $devices = [];
-        foreach ($this->devices->findAllLive() as $device) {
-            if (strtolower($device->memberEmail) === $wanted) {
-                $devices[] = $device;
-            }
-        }
-
-        return $devices;
     }
 
     /**

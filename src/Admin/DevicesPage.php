@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
+use Reach\Alerts\AlertReplyRepository;
 use Reach\Alerts\AlertRepository;
 use Reach\Devices\Device;
 use Reach\Core\Capabilities;
@@ -186,6 +187,7 @@ final class DevicesPage
         private readonly AlertRepository $alerts,
         private readonly AlertApi $alertApi,
         private readonly MemberRepository $members,
+        private readonly AlertReplyRepository $replies,
     ) {
     }
 
@@ -243,7 +245,7 @@ final class DevicesPage
         );
         $handsets->prepare_items();
 
-        $alerts = new AlertsListTable($this->alerts, $this->members);
+        $alerts = new AlertsListTable($this->alerts, $this->members, $this->replies);
         $alerts->prepare_items();
 
         $notice = $this->notice();
@@ -673,7 +675,7 @@ final class DevicesPage
         // is going to live on.
         $_SERVER['REQUEST_URI'] = $this->screenUri();
 
-        $alerts = new AlertsListTable($this->alerts, $this->members);
+        $alerts = new AlertsListTable($this->alerts, $this->members, $this->replies);
         $alerts->prepare_items();
 
         ob_start();

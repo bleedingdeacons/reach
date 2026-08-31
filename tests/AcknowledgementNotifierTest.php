@@ -7,20 +7,25 @@ namespace Reach\Tests;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\Alert;
+use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
 use Reach\Alerts\MessageUuid;
+use Reach\Alerts\RecipientResolver;
 use Reach\Auth\DeviceTokenMinter;
+use Reach\Core\RateLimiter;
 use Reach\Devices\CurrentDevice;
 use Reach\Devices\Device;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\AlertController;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
+use Reach\Tests\Fixtures\InMemoryAlertReplyRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
 use Unity\Members\ResponderCertification;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -595,7 +600,9 @@ final class AcknowledgementNotifierTest extends ReachTestCase
 
     private function controller(): AlertController
     {
-        $gate = new ResponderGate(new InMemoryMemberRepository($this->members));
+        $members = new InMemoryMemberRepository($this->members);
+        $gate = new ResponderGate($members);
+        $dispatcher = new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []);
 
         return new AlertController(
             $this->alerts,
@@ -603,10 +610,11 @@ final class AcknowledgementNotifierTest extends ReachTestCase
             new CurrentDevice($this->devices, $this->minter, $gate),
             new SpyAuditLogger(),
             $this->devices,
-            new AcknowledgementNotifier(
-                $this->alerts,
-                new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []),
-            ),
+            new AcknowledgementNotifier($this->alerts, $dispatcher),
+            new InMemoryAlertReplyRepository(),
+            new RecipientResolver($this->devices, $members, new InMemoryCommitteeRepository()),
+            new AlertApi($dispatcher),
+            new RateLimiter(),
         );
     }
 

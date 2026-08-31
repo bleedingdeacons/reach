@@ -38,12 +38,14 @@ final class MemberStub extends UnityMemberStub
         string $anonymousName = 'Test',
         string $area = '',
         array $accepts = [],
+        int $homeGroup = 0,
     ) {
         parent::__construct(
             id: $id,
             anonymousName: $anonymousName,
             showAnonymousName: true,
             showMemberProfile: true,
+            homeGroup: $homeGroup,
             personalEmail: $personalEmail,
             twelfthStepper: $twelfthStepper,
             telephoneResponder: $telephoneResponder,

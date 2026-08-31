@@ -17,6 +17,7 @@ use Reach\Admin\SendMessagePage;
 use Reach\Admin\SettingsPage;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertContactRepository;
+use Reach\Alerts\AlertReplyRepository;
 use Reach\Alerts\AlertRepository;
 use Reach\Auth\PasswordCredentialRepository;
 use Reach\Core\ReachServiceProvider;
@@ -28,6 +29,7 @@ use Reach\Rest\AlertController;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
 use Reach\Rest\DeviceAuthController;
+use Reach\Rest\DirectoryController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
@@ -133,6 +135,7 @@ class Plugin
         self::$container->get(CallRequestController::class)->register();
         self::$container->get(DeviceAuthController::class)->register();
         self::$container->get(AlertController::class)->register();
+        self::$container->get(DirectoryController::class)->register();
 
         // The action form of the alerting API. The function form
         // (reach_send_alert) needs no registration — it is declared in
@@ -161,6 +164,12 @@ class Plugin
             // is orphaned personal data, which is the one kind this stack
             // must not leave lying about.
             $container->get(AlertContactRepository::class)->purgeForExpiredAlertsBefore($before);
+            // Replies are joined to their alerts the same way, so they go
+            // before them for the same reason. They hold no personal data
+            // — a reply is alert text and subject to the same rule — but a
+            // reply against an id that no longer exists is unreadable
+            // clutter the admin screen would have to guard against.
+            $container->get(AlertReplyRepository::class)->purgeForAlertsExpiredBefore($before);
             $container->get(AlertRepository::class)->purgeExpiredBefore($before);
         });
 

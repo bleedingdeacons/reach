@@ -19,10 +19,13 @@ use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertDispatcher;
+use Reach\Alerts\AlertReplyRepository;
 use Reach\Alerts\AlertRepository;
 use Reach\Alerts\Fcm\FcmClient;
+use Reach\Alerts\RecipientResolver;
 use Reach\Alerts\Transport\FcmTransport;
 use Reach\Alerts\WpdbAlertContactRepository;
+use Reach\Alerts\WpdbAlertReplyRepository;
 use Reach\Alerts\WpdbAlertRepository;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
@@ -58,6 +61,7 @@ use Reach\Rest\AlertController;
 use Reach\Rest\CallAttemptController;
 use Reach\Rest\CallRequestController;
 use Reach\Rest\DeviceAuthController;
+use Reach\Rest\DirectoryController;
 use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
@@ -68,6 +72,7 @@ use Reach\Session\SessionRevocationList;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Committees\Interfaces\CommitteeRepository;
 use Unity\Core\Interfaces\Container;
+use Unity\Groups\Interfaces\GroupRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 
@@ -131,6 +136,20 @@ final class ReachServiceProvider
             global $wpdb;
             return new WpdbAlertContactRepository($wpdb);
         });
+        $container->register(AlertReplyRepository::class, function () {
+            global $wpdb;
+            return new WpdbAlertReplyRepository($wpdb);
+        });
+
+        // Shared by the admin send screen and Hand's own compose route,
+        // which address the same two things — one person, or a committee
+        // and everything under it. See RecipientResolver on why a second
+        // copy of that resolution was the thing worth removing.
+        $container->register(RecipientResolver::class, fn(ContainerInterface $c) => new RecipientResolver(
+            $c->get(DeviceRepository::class),
+            $c->get(MemberRepository::class),
+            $c->get(CommitteeRepository::class),
+        ));
         $container->register(FcmClient::class, fn() => new FcmClient());
         $container->register(FcmTransport::class, fn(ContainerInterface $c) => new FcmTransport(
             $c->get(FcmClient::class),
@@ -300,6 +319,17 @@ final class ReachServiceProvider
             $c->get(AuditLogger::class),
             $c->get(DeviceRepository::class),
             $c->get(AcknowledgementNotifier::class),
+            $c->get(AlertReplyRepository::class),
+            $c->get(RecipientResolver::class),
+            $c->get(AlertApi::class),
+            $c->get(RateLimiter::class),
+        ));
+
+        $container->register(DirectoryController::class, fn(ContainerInterface $c) => new DirectoryController(
+            $c->get(CurrentDevice::class),
+            $c->get(MemberRepository::class),
+            $c->get(GroupRepository::class),
+            $c->get(RecipientResolver::class),
         ));
 
         // Frontend + admin.
@@ -334,13 +364,14 @@ final class ReachServiceProvider
             $c->get(AlertRepository::class),
             $c->get(AlertApi::class),
             $c->get(MemberRepository::class),
+            $c->get(AlertReplyRepository::class),
         ));
 
         $container->register(SendMessagePage::class, fn(ContainerInterface $c) => new SendMessagePage(
             $c->get(DeviceRepository::class),
             $c->get(AlertApi::class),
             $c->get(MemberRepository::class),
-            $c->get(CommitteeRepository::class),
+            $c->get(RecipientResolver::class),
         ));
     }
 }
