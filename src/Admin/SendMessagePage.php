@@ -261,59 +261,99 @@ final class SendMessagePage
                             </p>
                         </td>
                     </tr>
+                    <!--
+                        Responder and committee share one row. They are the two
+                        halves of the same question — who is this for — and are
+                        mutually exclusive in practice, since the button chooses
+                        between them. Stacked, the second read like a further
+                        step rather than an alternative.
+
+                        The fieldset wraps them because they are one choice; its
+                        legend is the row heading, which is why the th is empty
+                        rather than carrying a label of its own.
+                    -->
                     <tr>
-                        <th scope="row"><label for="reach-message-responder">Responder</label></th>
+                        <th scope="row">
+                            <span id="reach-recipient-heading">Recipient</span>
+                        </th>
                         <td>
-                            <input type="text"
-                                   id="reach-message-responder"
-                                   name="reach_responder"
-                                   class="regular-text"
-                                   list="<?php echo esc_attr(self::RESPONDER_LIST_ID); ?>"
-                                   autocomplete="off"
-                                   <?php echo $responders === [] ? 'disabled' : ''; ?>
-                                   placeholder="Start typing a name, or pick from the list">
-                            <datalist id="<?php echo esc_attr(self::RESPONDER_LIST_ID); ?>">
-                                <?php foreach ($responders as $email => $label) : ?>
-                                    <option value="<?php echo esc_attr($email); ?>"
-                                            label="<?php echo esc_attr($label); ?>"></option>
-                                <?php endforeach; ?>
-                            </datalist>
-                            <p class="description">
-                                <?php if ($responders === []) : ?>
-                                    No handsets are enrolled, so there is nobody to address a message to.
-                                <?php else : ?>
-                                    Only needed for the second button. Type to narrow the list, or open it
-                                    and choose. A responder with more than one handset gets the message on
-                                    all of them, each acknowledged separately.
-                                <?php endif; ?>
-                            </p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="reach-message-committee">Committee</label></th>
-                        <td>
-                            <select id="reach-message-committee"
-                                    name="reach_committee"
-                                    <?php echo $committees === [] ? 'disabled' : ''; ?>>
-                                <option value="">Choose a committee</option>
-                                <?php foreach ($committees as $slug => $label) : ?>
-                                    <option value="<?php echo esc_attr($slug); ?>">
-                                        <?php echo esc_html($label); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">
-                                <?php if ($committees === []) : ?>
-                                    No committees exist yet, so there is no committee to address.
-                                <?php else : ?>
-                                    Only needed for the third button. Sending to a committee also reaches
-                                    the committees under it, and the count is how many handsets that
-                                    works out to. Somebody on two of them still gets one message.
-                                <?php endif; ?>
-                            </p>
+                            <fieldset class="reach-recipient" aria-labelledby="reach-recipient-heading">
+                                <div class="reach-recipient-field">
+                                    <label for="reach-message-responder"><strong>Responder</strong></label>
+                                    <input type="text"
+                                           id="reach-message-responder"
+                                           name="reach_responder"
+                                           class="regular-text"
+                                           list="<?php echo esc_attr(self::RESPONDER_LIST_ID); ?>"
+                                           autocomplete="off"
+                                           <?php echo $responders === [] ? 'disabled' : ''; ?>
+                                           placeholder="Start typing a name, or pick from the list">
+                                    <datalist id="<?php echo esc_attr(self::RESPONDER_LIST_ID); ?>">
+                                        <?php foreach ($responders as $email => $label) : ?>
+                                            <option value="<?php echo esc_attr($email); ?>"
+                                                    label="<?php echo esc_attr($label); ?>"></option>
+                                        <?php endforeach; ?>
+                                    </datalist>
+                                    <p class="description">
+                                        <?php if ($responders === []) : ?>
+                                            No handsets are enrolled, so there is nobody to address a
+                                            message to.
+                                        <?php else : ?>
+                                            Only needed for the second button. Type to narrow the list, or
+                                            open it and choose. A responder with more than one handset gets
+                                            the message on all of them, each acknowledged separately.
+                                        <?php endif; ?>
+                                    </p>
+                                </div>
+
+                                <div class="reach-recipient-field">
+                                    <label for="reach-message-committee"><strong>Committee</strong></label>
+                                    <select id="reach-message-committee"
+                                            name="reach_committee"
+                                            <?php echo $committees === [] ? 'disabled' : ''; ?>>
+                                        <option value="">Choose a committee</option>
+                                        <?php foreach ($committees as $slug => $label) : ?>
+                                            <option value="<?php echo esc_attr($slug); ?>">
+                                                <?php echo esc_html($label); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <p class="description">
+                                        <?php if ($committees === []) : ?>
+                                            No committees exist yet, so there is no committee to address.
+                                        <?php else : ?>
+                                            Only needed for the third button. Sending to a committee also
+                                            reaches the committees under it, and the count is how many
+                                            handsets that works out to. Somebody on two of them still gets
+                                            one message.
+                                        <?php endif; ?>
+                                    </p>
+                                </div>
+                            </fieldset>
                         </td>
                     </tr>
                 </table>
+
+                <style>
+                    /*
+                        Wrapping rather than a fixed pair of columns: this sits
+                        inside WordPress's form-table, which is already narrow on
+                        a laptop and narrower again with the admin menu open. At
+                        the point the two would be squeezed, they stack — which
+                        is what the mobile admin does to every other row here.
+                    */
+                    .reach-recipient {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 0 2em;
+                    }
+                    .reach-recipient-field {
+                        flex: 1 1 22em;
+                        min-width: 0;
+                    }
+                    .reach-recipient-field label { display: block; margin-bottom: .25em; }
+                    .reach-recipient-field select { max-width: 100%; }
+                </style>
 
                 <p>
                     <button type="submit"
