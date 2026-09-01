@@ -149,22 +149,51 @@ The Call attempts page is deliberately read-only. Edits and deletions would unde
 ## Hand — alerting the telephone-responder rota
 
 [Hand](https://github.com/bleedingdeacons/hand) is a .NET MAUI app for
-certified telephone responders. Reach is the server side: it enrols the
-handsets, holds the alerts, and pushes them.
+intergroup members. Reach is the server side: it enrols the handsets,
+holds the alerts, and pushes them.
 
 ### Who may use it
 
-Hand's gate is **stricter than the website's**. Reach admits a
-12th-stepper *or* a certified telephone responder. Hand admits certified
-telephone responders and nobody else — it is the helpline handset, and
-it receives alerts raised for the duty rota. A 12th-stepper with no
-responder role can sign in to Reach and will be refused by Hand.
+**A member Unity holds a usable record for: a valid email address and a
+home group.** That is the whole rule.
+
+It used to be much stricter — certified telephone responders and nobody
+else, because Hand was the helpline handset and nothing more. It now
+also carries messages between members, and gating that on a helpline
+certification kept it from the people it was useful to. A 12th-stepper
+with no responder role is admitted; so is a responder still working
+towards certification.
+
+The two halves of the rule each earn their place. The **address** is
+what a handset is matched on — it is the identity a device token is
+minted for and the thing an alert is routed by — so a member without one
+cannot be reached and must not be able to enrol; it is validated rather
+than merely counted, because `n/a` and half-typed addresses are in real
+member data. The **home group** is what separates a current member from
+a stub: Reconcile's imports and half-finished admin entries leave records
+with a name and nothing else, and those should not put a handset on the
+rota.
+
+> **What loosening it gave up.** The old gate meant a lapsed
+> certification stopped a handset at its next call, and that the
+> encrypted caller details an alert can carry only ever reached somebody
+> cleared to take a 12th-step call. Neither is true now: an alert's
+> contact details reach every enrolled handset it is addressed to,
+> whoever holds it. Scrutiny still audits every contact read, so "who
+> saw this caller's number, and when" remains answerable — what changed
+> is the size of the set that answer can come from.
 
 The gate (`Reach\Devices\ResponderGate`) is re-run on **every**
 authenticated request and again at dispatch time, rather than being
-frozen into the device token when it is issued. A responder whose
-certification lapses or who is removed from Unity stops receiving alerts
+frozen into the device token when it is issued. That half is unchanged
+and is the half worth keeping: a member whose record stops qualifying —
+their address removed, their home group cleared — stops receiving alerts
 at their next call, without anybody remembering to revoke the handset.
+
+This is Hand's gate alone. The website's is `Reach\Auth\OutreachEligibility`
+and is untouched: it still admits a 12th-stepper *or* a certified
+responder, because who may look members up is a different question from
+who may carry a handset.
 
 ### Enrolling a handset
 
@@ -350,7 +379,7 @@ of its own — kind `message_acknowledged` — addressed to everybody the
 first one went to **except** the handset that answered, saying who
 picked it up.
 
-This exists because a broadcast rings every certified handset at once,
+This exists because a broadcast rings every enrolled handset at once,
 and the first responder to answer silences only their own. Everyone
 else's went on shouting about a job already being done, and they found
 out it was done by acknowledging it themselves — being woken for

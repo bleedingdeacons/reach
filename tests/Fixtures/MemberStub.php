@@ -38,7 +38,14 @@ final class MemberStub extends UnityMemberStub
         string $anonymousName = 'Test',
         string $area = '',
         array $accepts = [],
-        int $homeGroup = 0,
+        /**
+         * Defaulted to a real group, because Hand's gate now requires
+         * one — see {@see \Reach\Devices\ResponderGate}. An ordinary
+         * member of this intergroup has a home group; a record without
+         * one is a stub from a half-finished import, and a test that
+         * wants that case says so by passing 0.
+         */
+        int $homeGroup = 88,
     ) {
         parent::__construct(
             id: $id,
