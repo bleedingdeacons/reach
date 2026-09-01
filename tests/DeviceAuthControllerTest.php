@@ -85,10 +85,11 @@ final class DeviceAuthControllerTest extends ReachTestCase
         $this->assertSame($this->minter->hash($data['token']), $this->devices->hashes[$device->id]);
     }
 
-    public function testExchangeRefusesTwelfthStepperWhoIsNotAResponder(): void
+    public function testExchangeAdmitsAMemberWhoIsNotAResponder(): void
     {
-        // Hand's gate is stricter than the website's. This member can
-        // sign in to Reach and must not get a handset.
+        // This used to be the headline refusal — Hand's gate being
+        // stricter than the website's. It is not any more: a member with
+        // an address and a home group may carry a handset.
         $controller = $this->controllerFor(new MemberStub(
             personalEmail: 'stepper@example.com',
             twelfthStepper: true,
@@ -98,14 +99,32 @@ final class DeviceAuthControllerTest extends ReachTestCase
 
         $result = $controller->exchange($this->request(['code' => $code, 'platform' => 'android']));
 
+        $this->assertNotInstanceOf(WP_Error::class, $result);
+        $this->assertCount(1, $this->devices->devices);
+    }
+
+    public function testExchangeStillRefusesAMemberWithNoHomeGroup(): void
+    {
+        // The gate is looser, not absent. A half-imported record still
+        // cannot put a handset on the rota.
+        $controller = $this->controllerFor(new MemberStub(
+            personalEmail: 'stub@example.com',
+            homeGroup: 0,
+        ));
+        $code = $this->codes->issue($this->identity('stub@example.com'));
+
+        $result = $controller->exchange($this->request(['code' => $code, 'platform' => 'android']));
+
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame('reach_not_eligible', $result->get_error_code());
         $this->assertSame(403, $result->get_error_data()['status'] ?? null);
         $this->assertSame([], $this->devices->devices);
     }
 
-    public function testExchangeRefusesUncertifiedResponder(): void
+    public function testExchangeAdmitsAnUncertifiedResponder(): void
     {
+        // Certification no longer gates the handset. See ResponderGate
+        // on what that gave up and why it was decided.
         $controller = $this->controllerFor(new MemberStub(
             personalEmail: 'trainee@example.com',
             twelfthStepper: false,
@@ -116,8 +135,8 @@ final class DeviceAuthControllerTest extends ReachTestCase
 
         $result = $controller->exchange($this->request(['code' => $code, 'platform' => 'android']));
 
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_not_eligible', $result->get_error_code());
+        $this->assertNotInstanceOf(WP_Error::class, $result);
+        $this->assertCount(1, $this->devices->devices);
     }
 
     public function testASpentCodeCannotEnrolASecondHandset(): void
@@ -205,10 +224,13 @@ final class DeviceAuthControllerTest extends ReachTestCase
         $this->assertSame(401, $result->get_error_data()['status'] ?? null);
     }
 
-    public function testHandsetOfALapsedResponderIsRevokedOnItsNextCall(): void
+    public function testHandsetOfAMemberWhoLosesTheirHomeGroupIsRevokedOnItsNextCall(): void
     {
-        // Enrol while certified, then let the certification lapse. The
-        // gate is re-run per request, so the handset stops itself.
+        // <b>The per-request re-check survived the gate being loosened,
+        // and it is the half worth keeping.</b> It used to catch a lapsed
+        // certification; it now catches a record that has stopped being a
+        // usable member. Either way the handset stops itself rather than
+        // waiting for somebody to remember to revoke it.
         $members = new InMemoryMemberRepository([$this->certified('responder@example.com')]);
         $controller = $this->controllerWithRepository($members);
         $token = $this->enrol($controller, 'responder@example.com');
@@ -218,7 +240,8 @@ final class DeviceAuthControllerTest extends ReachTestCase
                 personalEmail: 'responder@example.com',
                 twelfthStepper: false,
                 telephoneResponder: true,
-                responderCertification: ResponderCertification::Pending,
+                responderCertification: ResponderCertification::Certified,
+                homeGroup: 0,
             ),
         ]);
         $afterLapse = $this->controllerWithRepository($lapsed);

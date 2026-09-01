@@ -10,13 +10,20 @@ use Unity\Members\ResponderCertification;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
- * Hand's eligibility gate: certified telephone responders, and nobody
- * else.
+ * Hand's eligibility gate: a member with a usable address and a home
+ * group.
  *
- * This is deliberately stricter than the gate the Reach website applies,
- * which also admits 12th-steppers. The difference is the point of the
- * class, so it is asserted here rather than left as a comment: Hand is
- * the helpline handset and receives alerts raised for the duty rota.
+ * <b>This used to be much stricter — certified telephone responders and
+ * nobody else — and the tests that asserted that are gone rather than
+ * skipped.</b> A 12th-stepper who is not a responder, and a responder
+ * still working towards certification, are both admitted now. That is
+ * the decision, not a regression, and the tests below say so explicitly
+ * so nobody restores the old rule by accident.
+ *
+ * What remains is a real gate, and the two halves earn their place: the
+ * address is what a handset is matched on and an alert routed by, and
+ * the home group is what separates a current member from a half-imported
+ * stub.
  */
 final class ResponderGateTest extends ReachTestCase
 {
@@ -32,27 +39,32 @@ final class ResponderGateTest extends ReachTestCase
         $this->assertNotNull($gate->authorisedMember('responder@example.com'));
     }
 
-    public function testRefusesTwelfthStepperWhoIsNotAResponder(): void
+    public function testAdmitsAMemberWhoIsNotAResponderAtAll(): void
     {
-        // The headline difference from the website's gate. A
-        // 12th-stepper can sign in to Reach and is refused by Hand.
+        // Previously the headline refusal. The handset is no longer only
+        // the helpline's — it carries messages between members too — so
+        // holding a responder role is not what decides who may use it.
         $gate = $this->gateWith(new MemberStub(
             personalEmail: 'stepper@example.com',
             twelfthStepper: true,
             telephoneResponder: false,
         ));
 
-        $this->assertNull($gate->authorisedMember('stepper@example.com'));
+        $this->assertNotNull($gate->authorisedMember('stepper@example.com'));
     }
 
     /**
+     * <b>Certification no longer gates the handset, in any state.</b>
+     * This is the change with the most behind it, so every state is
+     * asserted rather than one standing for the rest: the old gate
+     * refused Applied, In Training, Pending and None, and none of them
+     * is refused now.
+     *
      * @dataProvider uncertifiedStates
      */
-    public function testRefusesResponderWhoIsNotYetCertified(ResponderCertification $certification): void
-    {
-        // Applied, In Training and Pending are people working towards
-        // certification. Sending them a live helpline alert would put an
-        // untrained volunteer on a 12th-step call.
+    public function testAdmitsResponderWhateverTheirCertification(
+        ResponderCertification $certification
+    ): void {
         $gate = $this->gateWith(new MemberStub(
             personalEmail: 'trainee@example.com',
             twelfthStepper: false,
@@ -60,7 +72,7 @@ final class ResponderGateTest extends ReachTestCase
             responderCertification: $certification,
         ));
 
-        $this->assertNull($gate->authorisedMember('trainee@example.com'));
+        $this->assertNotNull($gate->authorisedMember('trainee@example.com'));
     }
 
     /**
@@ -74,6 +86,40 @@ final class ResponderGateTest extends ReachTestCase
             'in training' => [ResponderCertification::InTraining],
             'pending'     => [ResponderCertification::Pending],
         ];
+    }
+
+    public function testRefusesAMemberWithNoHomeGroup(): void
+    {
+        // The half-imported stub: a name and nothing else. Letting one
+        // enrol would put a handset on the rota for a record nobody has
+        // finished creating.
+        $gate = $this->gateWith(new MemberStub(
+            personalEmail: 'stub@example.com',
+            homeGroup: 0,
+        ));
+
+        $this->assertNull($gate->authorisedMember('stub@example.com'));
+    }
+
+    public function testRefusesAMemberWithNoAddress(): void
+    {
+        // Nothing to match a handset on and nothing to route an alert
+        // to. Admitting one would put a handset on the list that
+        // silently never rings.
+        $gate = $this->gateWith(new MemberStub(personalEmail: ''));
+
+        $this->assertNull($gate->authorisedMember(''));
+        $this->assertFalse($this->gateWith()->isAuthorised(new MemberStub(personalEmail: '')));
+    }
+
+    public function testRefusesAMemberWhoseAddressIsNotAnAddress(): void
+    {
+        // "n/a" and half-typed addresses are in real member data. The
+        // address is validated rather than merely counted, because an
+        // undeliverable one is the same as none.
+        $this->assertFalse(
+            $this->gateWith()->isAuthorised(new MemberStub(personalEmail: 'n/a')),
+        );
     }
 
     public function testRefusesUnknownEmail(): void
