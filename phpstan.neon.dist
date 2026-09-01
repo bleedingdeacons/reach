@@ -28,6 +28,12 @@ parameters:
     # so a developer on 8.5 and CI on 8.1 disagree and the committed
     # baseline stops matching.
     phpVersion: 80100
+    # Corrects two signatures a dev dependency gets wrong; see the stub for
+    # the detail. stubFiles outrank both scanned declarations and PHPStan's
+    # own internal signatures, which is what makes this work. Promises
+    # carries the same fix for the same reason.
+    stubFiles:
+        - phpstan/polyfills.stub
     # An ignoreErrors pattern that stops matching is reported as an error by
     # default, so a stale pattern would fail the gate — and whether a pattern
     # matches depends on which sibling plugins and stubs are present, which

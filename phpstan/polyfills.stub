@@ -1,0 +1,55 @@
+<?php
+
+/**
+ * The correct signatures for str_contains() and str_starts_with().
+ *
+ * PHPStan reads the entries in composer's autoload_files for symbol
+ * discovery, and mockery/mockery ships PHP 8.0 polyfills there:
+ *
+ *     vendor/mockery/mockery/library/helpers.php
+ *
+ *     // @param non-empty-string $haystack
+ *     // @param non-empty-string $needle
+ *     function str_contains(string $haystack, string $needle): bool
+ *
+ * Those docblocks are wrong on both counts — both functions accept an
+ * empty haystack and an empty needle, and PHP's own signatures say so —
+ * but PHPStan has no way to know the declaration is a polyfill, and
+ * prefers it over the native signature. The result was four call sites
+ * across Reach being reported as passing the wrong type to functions
+ * they were calling correctly.
+ *
+ * The polyfill bodies never even run: they are guarded by
+ * function_exists() and this plugin's floor is PHP 8.1, where both are
+ * native. So the fix is to correct the signatures rather than to silence
+ * the call sites, which is why this is a stub and not an ignoreErrors
+ * entry — the latter would have to be repeated for every future call and
+ * would still be describing the symptom.
+ *
+ * <b>Arrived with mockery 1.6.13.</b> 1.6.12 shipped no such polyfill, so
+ * this was invisible until the bump; the failure looks like a PHPStan
+ * regression and is not one.
+ *
+ * Promises carries the same stub for str_contains alone — see
+ * promises/phpstan/str-contains.stub. This one covers str_starts_with
+ * too, because Reach calls it.
+ *
+ * Removable once mockery/mockery drops the polyfills or fixes the
+ * annotations.
+ */
+
+/**
+ * @param string $haystack
+ * @param string $needle
+ */
+function str_contains(string $haystack, string $needle): bool
+{
+}
+
+/**
+ * @param string $haystack
+ * @param string $needle
+ */
+function str_starts_with(string $haystack, string $needle): bool
+{
+}
