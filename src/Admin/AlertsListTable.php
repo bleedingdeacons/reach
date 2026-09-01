@@ -9,6 +9,8 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Alerts\Alert;
+use Reach\Alerts\AlertReply;
+use Reach\Alerts\AlertReplyRepository;
 use Reach\Alerts\AlertRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_List_Table;
@@ -54,6 +56,7 @@ final class AlertsListTable extends WP_List_Table
     public function __construct(
         private readonly AlertRepository $alerts,
         MemberRepository $members,
+        private readonly AlertReplyRepository $replies,
     ) {
         $this->responders = new ResponderPresenter($members);
 
@@ -69,10 +72,13 @@ final class AlertsListTable extends WP_List_Table
     {
         return [
             'raised'       => 'When',
+            'level'        => 'Level',
             'kind'         => 'Kind',
             'source'       => 'Source',
             'title'        => 'Title',
+            'response'     => 'Response',
             'acknowledged' => 'Acknowledged by',
+            'replies'      => 'Replies',
         ];
     }
 
@@ -86,10 +92,13 @@ final class AlertsListTable extends WP_List_Table
     {
         return [
             'raised'       => ['raised', true],
+            'level'        => ['level', false],
             'kind'         => ['kind', false],
             'source'       => ['source', false],
             'title'        => ['title', false],
+            'response'     => ['response', false],
             'acknowledged' => ['acknowledged', false],
+            'replies'      => ['replies', false],
         ];
     }
 
@@ -102,9 +111,19 @@ final class AlertsListTable extends WP_List_Table
             'title',
         ];
 
+        $alerts = $this->alerts->list(self::SHOWN, 0);
+
+        // One query for the whole page rather than one per row — the
+        // same batching the responder lookups get, and for the same
+        // reason: ten rows is otherwise ten round trips for a column most
+        // of them have nothing in.
+        $replies = $this->replies->findForAlerts(
+            array_map(static fn(Alert $alert): int => $alert->id, $alerts),
+        );
+
         $rows = [];
-        foreach ($this->alerts->list(self::SHOWN, 0) as $alert) {
-            $rows[] = $this->row($alert);
+        foreach ($alerts as $alert) {
+            $rows[] = $this->row($alert, $replies[$alert->id] ?? []);
         }
 
         $this->items = $this->sorted($rows);
@@ -143,15 +162,43 @@ final class AlertsListTable extends WP_List_Table
 
         return match ($column_name) {
             'raised' => esc_html((string) ($item['raised'] ?? '')),
+            'level'  => $this->levelBadge((string) ($item['level'] ?? '')),
             'kind'   => '<code>' . esc_html((string) ($item['kind'] ?? '')) . '</code>',
             'source' => esc_html((string) ($item['source'] ?? '')),
-            'title'  => esc_html((string) ($item['title'] ?? ''))
-                . (($item['urgent'] ?? false) === true
-                    ? ' <strong style="color:#b32d2e;">(urgent)</strong>'
-                    : ''),
+            'title'  => esc_html((string) ($item['title'] ?? '')),
+            'response' => esc_html((string) ($item['response'] ?? '')),
             'acknowledged' => (string) ($item['acknowledgedHtml'] ?? ''),
+            'replies'      => (string) ($item['repliesHtml'] ?? ''),
             default        => '',
         };
+    }
+
+    /**
+     * The level as a coloured pill.
+     *
+     * <b>The colours are the handset's, not this table's.</b> An admin
+     * looking at this list and a responder looking at their phone should
+     * be seeing the same three colours mean the same three things, so
+     * these match the card backgrounds Hand paints. The word is there too
+     * rather than colour alone — a pill nobody can distinguish is a
+     * column of blank cells to a colourblind reader, and this is the
+     * column that says how loudly somebody's phone rang.
+     */
+    private function levelBadge(string $level): string
+    {
+        $colours = [
+            Alert::LEVEL_RED    => ['#b3261e', '#ffffff'],
+            Alert::LEVEL_YELLOW => ['#f9a825', '#241a00'],
+            Alert::LEVEL_BLUE   => ['#1565c0', '#ffffff'],
+        ];
+
+        [$background, $foreground] = $colours[$level] ?? $colours[Alert::LEVEL_YELLOW];
+
+        return '<span style="display:inline-block; padding:2px 8px; border-radius:10px;'
+            . ' font-size:11px; font-weight:600; text-transform:uppercase;'
+            . ' background:' . esc_attr($background) . '; color:' . esc_attr($foreground) . ';">'
+            . esc_html($level)
+            . '</span>';
     }
 
     /**
@@ -169,9 +216,10 @@ final class AlertsListTable extends WP_List_Table
      * reason: the names in that column are links, and sorting the markup
      * would file every linked one under "<".
      *
+     * @param array<int, AlertReply> $replies
      * @return array<string, mixed>
      */
-    private function row(Alert $alert): array
+    private function row(Alert $alert, array $replies = []): array
     {
         [$acknowledged, $acknowledgedHtml] = $this->acknowledgedBy($alert);
 
@@ -179,13 +227,64 @@ final class AlertsListTable extends WP_List_Table
             'id'               => $alert->id,
             'raised'           => $this->when($alert->createdAt),
             'raisedAt'         => $alert->createdAt,
+            'level'            => $alert->level,
+            // Rides along beside `level` for the same reason `raisedAt`
+            // rides beside `raised`: sorting the displayed value would
+            // file the three levels alphabetically — blue, red, yellow —
+            // and somebody sorting this column wants the loud ones
+            // together, not the ones beginning with B.
+            'levelRank'        => $this->levelRank($alert->level),
             'kind'             => $alert->kind,
             'source'           => $alert->source,
             'title'            => $alert->title,
-            'urgent'           => $alert->isUrgent(),
+            // Said in words rather than as the stored value: "first" and
+            // "none" are the wire's vocabulary, and this column is read by
+            // somebody asking whether a job got picked up.
+            'response'         => $alert->isFirstToRespond()
+                ? 'First to respond'
+                : 'Everyone closes',
             'acknowledged'     => $acknowledged,
             'acknowledgedHtml' => $acknowledgedHtml,
+            // Sorted on the count, shown as the words. Somebody sorting
+            // this column wants the messages that got answers at the top,
+            // not the ones whose reply happens to begin with A.
+            'replies'          => count($replies),
+            'repliesHtml'      => $this->repliesCell($replies),
         ];
+    }
+
+    /**
+     * The replies to one alert, as the table shows them.
+     *
+     * <b>This is where a reply to an administrator's own message is
+     * read.</b> A reply is dispatched back to whoever raised the alert,
+     * but wp-admin has no handset to dispatch to — so for every message
+     * sent from this screen, the stored row is the only copy there is.
+     *
+     * The text is escaped like any other: it is typed by a responder,
+     * and {@see \Reach\Alerts\AlertReply} is explicit that it carries the
+     * same warning as the alert it answers.
+     *
+     * @param array<int, AlertReply> $replies
+     */
+    private function repliesCell(array $replies): string
+    {
+        if ($replies === []) {
+            return '<span style="color:#646970;">—</span>';
+        }
+
+        $lines = [];
+        foreach ($replies as $reply) {
+            $name = $reply->responder !== '' ? $reply->responder : $reply->memberEmail;
+
+            $lines[] = '<div style="margin-bottom:4px;">'
+                . '<strong>' . esc_html($name) . '</strong> '
+                . '<span style="color:#646970;">' . esc_html($this->when($reply->createdAt)) . '</span>'
+                . '<br>' . esc_html($reply->body)
+                . '</div>';
+        }
+
+        return implode('', $lines);
     }
 
     /**
@@ -210,9 +309,11 @@ final class AlertsListTable extends WP_List_Table
             && strtolower($_GET['order']) === 'asc');
 
         usort($rows, static function (array $a, array $b) use ($column, $descending): int {
-            $compared = $column === 'raised'
-                ? ((int) ($a['raisedAt'] ?? 0)) <=> ((int) ($b['raisedAt'] ?? 0))
-                : strcasecmp((string) ($a[$column] ?? ''), (string) ($b[$column] ?? ''));
+            $compared = match ($column) {
+                'raised' => ((int) ($a['raisedAt'] ?? 0)) <=> ((int) ($b['raisedAt'] ?? 0)),
+                'level'  => ((int) ($a['levelRank'] ?? 0)) <=> ((int) ($b['levelRank'] ?? 0)),
+                default  => strcasecmp((string) ($a[$column] ?? ''), (string) ($b[$column] ?? '')),
+            };
 
             // Alert ids ascend with time, so ties fall back to the same
             // chronological order the table arrives in rather than to
@@ -261,6 +362,20 @@ final class AlertsListTable extends WP_List_Table
         }
 
         return [implode(', ', $names), implode(', ', $cells)];
+    }
+
+    /**
+     * The levels in the order they are loud, so the column sorts as a
+     * ladder. Anything unrecognised sorts with yellow, which is what
+     * {@see Alert::normaliseLevel()} would have made it.
+     */
+    private function levelRank(string $level): int
+    {
+        return match ($level) {
+            Alert::LEVEL_RED  => 3,
+            Alert::LEVEL_BLUE => 1,
+            default           => 2,
+        };
     }
 
     private function when(int $timestamp): string

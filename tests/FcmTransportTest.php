@@ -112,17 +112,25 @@ final class FcmTransportTest extends ReachTestCase
     }
 
     /** @param array<string, string> $payload */
+    /**
+     * <b>Built from the level, with the priority derived.</b> The two are
+     * one dial wearing two names — see {@see Alert::PRIORITY_NORMAL} — and
+     * a fixture that let them be set apart could assert a combination the
+     * repository will never write.
+     */
     private function alert(
-        string $priority = Alert::PRIORITY_NORMAL,
+        string $level = Alert::LEVEL_YELLOW,
         array $payload = [],
         string $title = 'Callback wanted',
         string $body = 'Male 12th-stepper wanted in BS5',
+        string $response = Alert::RESPONSE_FIRST,
+        bool $hasContact = false,
     ): Alert {
         return new Alert(
             id: 12,
             kind: 'call_request',
             source: 'reach',
-            priority: $priority,
+            priority: Alert::priorityFor($level),
             title: $title,
             body: $body,
             reference: 'CR-000123',
@@ -130,6 +138,9 @@ final class FcmTransportTest extends ReachTestCase
             targetEmail: '',
             createdAt: time(),
             expiresAt: time() + 900,
+            hasContact: $hasContact,
+            level: $level,
+            response: $response,
         );
     }
 
@@ -230,10 +241,73 @@ final class FcmTransportTest extends ReachTestCase
         $this->assertSame('Callback wanted CR-000123', $opened['title']);
         $this->assertSame('Male 12th-stepper wanted in BS5', $opened['body']);
         $this->assertSame('CR-000123', $opened['reference']);
-        $this->assertSame(FcmTransport::ANDROID_CHANNEL, $opened['channel']);
+        $this->assertSame('yellow', $opened['level']);
+        $this->assertSame('first', $opened['response']);
+        $this->assertSame(FcmTransport::ANDROID_CHANNEL_WARNING, $opened['channel']);
         $this->assertSame('reach_alert', $opened['sound']);
         // The raising plugin's extras go inside too.
         $this->assertSame('BS5', $opened['area']);
+    }
+
+    public function testTheContactFlagTravelsSoAPushedAlertCanOfferToFetchIt(): void
+    {
+        // <b>The flag, never the details.</b> Whether a contact exists is
+        // not personal data; the contact itself is, and still needs a
+        // separate authenticated request that Reach audits.
+        //
+        // Without this the push said nothing, so a handset that learned
+        // of an alert by push showed no Show contact button — and the
+        // poll copy that knew better arrived second and was discarded as
+        // a duplicate. On Android, where push usually wins, that made the
+        // whole caller-details flow unreachable.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $opened = $this->open(
+            $this->sealedFor($this->deliver($this->alert(hasContact: true), $device)),
+            $key,
+        );
+
+        $this->assertSame('1', $opened['has_contact']);
+    }
+
+    public function testAnAlertWithNoContactSaysSoRatherThanSayingNothing(): void
+    {
+        // Explicitly '0' rather than absent. Hand reads the key as
+        // "1"/"true" and anything else as false, so either would work
+        // today — but a handset can only distinguish "no contact" from
+        // "an older server that never said" if the field is always there.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $opened = $this->open(
+            $this->sealedFor($this->deliver($this->alert(), $device)),
+            $key,
+        );
+
+        $this->assertSame('0', $opened['has_contact']);
+    }
+
+    public function testAPluginCannotForgeTheContactFlag(): void
+    {
+        // The alert's own fields win on a key collision, so a payload
+        // claiming has_contact cannot make a handset offer to fetch
+        // details that are not there.
+        $device = $this->device('android');
+        $key = base64_encode(random_bytes(32));
+        $this->devices->payloadKeys[$device->id] = $key;
+
+        $opened = $this->open(
+            $this->sealedFor($this->deliver(
+                $this->alert(payload: ['has_contact' => '1']),
+                $device,
+            )),
+            $key,
+        );
+
+        $this->assertSame('0', $opened['has_contact']);
     }
 
     public function testTheFieldsTheHandsetOnceNeededInTheClearAreSealedToo(): void
@@ -539,11 +613,74 @@ final class FcmTransportTest extends ReachTestCase
         $this->assertSame('12', $data['alert_id']);
         $this->assertSame('call_request', $data['kind']);
         $this->assertSame('CR-000123', $data['reference']);
-        // Must match the channel Hand creates, or the alert lands on the
+        $this->assertSame('yellow', $data['level']);
+        $this->assertSame('first', $data['response']);
+        // Must match a channel Hand creates, or the alert lands on the
         // default channel with the default sound and none of the alarm
         // behaviour.
-        $this->assertSame(FcmTransport::ANDROID_CHANNEL, $data['channel']);
+        $this->assertSame(FcmTransport::ANDROID_CHANNEL_WARNING, $data['channel']);
         $this->assertSame('reach_alert', $data['sound']);
+    }
+
+    /**
+     * Three levels, three channels. An Android channel's importance and
+     * sound are fixed at creation, so they cannot be one channel
+     * reconfigured — see FcmTransport::ANDROID_CHANNEL.
+     *
+     * @dataProvider levelChannels
+     */
+    public function testTheChannelFollowsTheLevel(string $level, string $channel): void
+    {
+        $data = $this->deliver($this->alert($level), $this->device('ios'))['data'];
+
+        $this->assertSame($channel, $data['channel']);
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function levelChannels(): array
+    {
+        return [
+            'red'    => [Alert::LEVEL_RED, FcmTransport::ANDROID_CHANNEL],
+            'yellow' => [Alert::LEVEL_YELLOW, FcmTransport::ANDROID_CHANNEL_WARNING],
+            'blue'   => [Alert::LEVEL_BLUE, FcmTransport::ANDROID_CHANNEL_NOTICE],
+        ];
+    }
+
+    /**
+     * An older Hand build reads `priority` and ignores every field it has
+     * never heard of, so a red alert still has to reach it as urgent. See
+     * Alert::PRIORITY_NORMAL.
+     *
+     * @dataProvider levelPriorities
+     */
+    public function testTheDerivedPriorityTravelsForHandsetsThatPredateTheLevel(
+        string $level,
+        string $priority
+    ): void {
+        $data = $this->deliver($this->alert($level), $this->device('ios'))['data'];
+
+        $this->assertSame($priority, $data['priority']);
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function levelPriorities(): array
+    {
+        return [
+            'red'    => [Alert::LEVEL_RED, 'urgent'],
+            'yellow' => [Alert::LEVEL_YELLOW, 'normal'],
+            'blue'   => [Alert::LEVEL_BLUE, 'normal'],
+        ];
+    }
+
+    public function testABlueAlertAsksIosForNothingAndUsesTheSystemSound(): void
+    {
+        // Sending the helpline siren at a passive interruption level would
+        // be a handset making an emergency noise for a reminder.
+        $aps = $this->deliver($this->alert(Alert::LEVEL_BLUE), $this->device('ios'))
+            ['apns']['payload']['aps'];
+
+        $this->assertSame('default', $aps['sound']);
+        $this->assertSame('passive', $aps['interruption-level']);
     }
 
     public function testAPluginsPayloadCannotOverrideWhatTheAlertIs(): void
@@ -556,7 +693,7 @@ final class FcmTransportTest extends ReachTestCase
         )['data'];
 
         $this->assertSame('call_request', $data['kind']);
-        $this->assertSame(FcmTransport::ANDROID_CHANNEL, $data['channel']);
+        $this->assertSame(FcmTransport::ANDROID_CHANNEL_WARNING, $data['channel']);
         // Extras that do not collide still travel.
         $this->assertSame('BS5', $data['area']);
     }
@@ -600,7 +737,7 @@ final class FcmTransportTest extends ReachTestCase
         // Sending the critical flag without Apple's entitlement gets the
         // notification rejected rather than downgraded — it would silence
         // the very alerts it is meant to make louder.
-        $aps = $this->deliver($this->alert(Alert::PRIORITY_URGENT), $this->device('ios'))['apns']['payload']['aps'];
+        $aps = $this->deliver($this->alert(Alert::LEVEL_RED), $this->device('ios'))['apns']['payload']['aps'];
 
         $this->assertSame(0, $aps['sound']['critical']);
         // time-sensitive still breaks through a Focus mode, which is most
@@ -614,7 +751,7 @@ final class FcmTransportTest extends ReachTestCase
         $settings->setApnsCriticalEnabled(true);
 
         $aps = $this->deliver(
-            $this->alert(Alert::PRIORITY_URGENT),
+            $this->alert(Alert::LEVEL_RED),
             $this->device('ios'),
             $settings,
         )['apns']['payload']['aps'];
@@ -631,7 +768,7 @@ final class FcmTransportTest extends ReachTestCase
         $settings->setApnsCriticalEnabled(true);
 
         $aps = $this->deliver(
-            $this->alert(Alert::PRIORITY_NORMAL),
+            $this->alert(Alert::LEVEL_YELLOW),
             $this->device('ios'),
             $settings,
         )['apns']['payload']['aps'];

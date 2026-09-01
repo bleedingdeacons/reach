@@ -7,12 +7,15 @@ namespace Reach\Tests\Admin;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Admin\SendMessagePage;
+use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
+use Reach\Alerts\RecipientResolver;
 use Reach\Core\Capabilities;
 use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Reach\Devices\ResponderGate;
+use Reach\Tests\Fixtures\CommitteeStub;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
@@ -20,6 +23,7 @@ use Reach\Tests\Fixtures\MemberStub;
 use Reach\Tests\ReachTestCase;
 use ReflectionMethod;
 use Scrutiny\Privacy\PersonalDataPolicy;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
@@ -213,6 +217,116 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     /** @test */
+    public function the_form_offers_all_three_levels_and_defaults_to_yellow(): void
+    {
+        $html = $this->render($this->page());
+
+        $this->assertStringContainsString('value="red"', $html);
+        $this->assertStringContainsString('value="yellow"', $html);
+        $this->assertStringContainsString('value="blue"', $html);
+        // Yellow: an admin who does not choose has not thereby declared an
+        // emergency, and red takes over somebody's screen.
+        $this->assertMatchesRegularExpression('/value="yellow"[^>]*checked/', $html);
+    }
+
+    /** @test */
+    public function the_form_offers_first_to_respond_and_starts_ticked(): void
+    {
+        // Ticked, because that is what every message did before the
+        // control existed.
+        $html = $this->render($this->page());
+
+        $this->assertMatchesRegularExpression(
+            '/name="reach_first_to_respond"[^>]*checked/',
+            $html,
+        );
+    }
+
+    /** @test */
+    public function the_chosen_level_reaches_the_alert(): void
+    {
+        $_POST = [
+            'reach_scope'   => 'all',
+            'reach_subject' => 'Everybody out',
+            'reach_level'   => 'red',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertSame(Alert::LEVEL_RED, $alerts->alerts[0]->level);
+    }
+
+    /** @test */
+    public function an_unticked_box_makes_the_message_informational(): void
+    {
+        // An unticked checkbox posts nothing at all, so absent has to mean
+        // informational: the tick is the affirmative claim that somebody
+        // is meant to take this on.
+        $_POST = [
+            'reach_scope'   => 'all',
+            'reach_subject' => 'The office is shut on Monday',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertTrue($alerts->alerts[0]->isInformational());
+    }
+
+    /** @test */
+    public function a_ticked_box_makes_the_message_first_to_respond(): void
+    {
+        $_POST = [
+            'reach_scope'            => 'all',
+            'reach_subject'          => 'Callback wanted',
+            'reach_first_to_respond' => '1',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertTrue($alerts->alerts[0]->isFirstToRespond());
+    }
+
+    /** @test */
+    public function a_message_that_names_no_level_is_yellow(): void
+    {
+        $_POST = ['reach_scope' => 'all', 'reach_subject' => 'Anything'];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(alerts: $alerts));
+
+        $this->assertSame(Alert::LEVEL_YELLOW, $alerts->alerts[0]->level);
+    }
+
+    /** @test */
+    public function both_of_a_responders_handsets_get_the_same_level_and_response(): void
+    {
+        // One message told two ways would be a responder whose phone
+        // sirened and whose tablet did not.
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test', label: 'Phone'),
+            $this->device(id: 8, memberEmail: 'jo@example.test', label: 'Tablet'),
+        );
+        $_POST = [
+            'reach_scope'     => 'responder',
+            'reach_responder' => 'jo@example.test',
+            'reach_subject'   => 'Can you cover tonight?',
+            'reach_level'     => 'blue',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(devices: $devices, alerts: $alerts));
+
+        $this->assertCount(2, $alerts->alerts);
+        $this->assertSame(Alert::LEVEL_BLUE, $alerts->alerts[0]->level);
+        $this->assertSame(Alert::LEVEL_BLUE, $alerts->alerts[1]->level);
+        $this->assertTrue($alerts->alerts[0]->isInformational());
+        $this->assertTrue($alerts->alerts[1]->isInformational());
+    }
+
+    /** @test */
     public function a_message_to_a_responder_is_raised_once_per_handset(): void
     {
         // One alert per handset, so each carries its own acknowledgement
@@ -254,6 +368,250 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(1, $alerts->alerts);
     }
 
+    /**
+     * Intergroup
+     * └── Telephones
+     *
+     * Jo is on Telephones, Sam is on Intergroup, Kit is on neither.
+     */
+    private function committees(): InMemoryCommitteeRepository
+    {
+        return new InMemoryCommitteeRepository(
+            [
+                new CommitteeStub('intergroup', 'Intergroup', id: 1),
+                new CommitteeStub('telephones', 'Telephones', id: 2, parentId: 1),
+            ],
+            ['intergroup' => [10], 'telephones' => [11]],
+        );
+    }
+
+    /** @return array<int, MemberStub> */
+    private function committeeMembers(): array
+    {
+        return [
+            new MemberStub('sam@example.test', id: 10),
+            new MemberStub('jo@example.test', id: 11),
+            new MemberStub('kit@example.test', id: 12),
+        ];
+    }
+
+    /** @test */
+    public function a_message_to_a_committee_reaches_its_members_handsets(): void
+    {
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test'),
+            $this->device(id: 8, memberEmail: 'kit@example.test'),
+        );
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'telephones',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $target = $this->messageFromRequest($this->page(
+            devices: $devices,
+            alerts: $alerts,
+            members: $this->committeeMembers(),
+            committees: $this->committees(),
+        ));
+
+        $this->assertStringContainsString('reach_result=message_sent_committee', $target);
+        $this->assertCount(1, $alerts->alerts, 'Jo is on Telephones; Kit is on no committee');
+        $this->assertSame(7, $alerts->alerts[0]->targetDeviceId, 'Jo’s handset, not Kit’s');
+    }
+
+    /**
+     * Messaging a parent and not reaching the committees under it would be a
+     * trap: the tree says they are part of it.
+     *
+     * @test
+     */
+    public function a_message_to_a_committee_reaches_the_committees_under_it(): void
+    {
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test'),
+            $this->device(id: 8, memberEmail: 'sam@example.test'),
+        );
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'intergroup',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(
+            devices: $devices,
+            alerts: $alerts,
+            members: $this->committeeMembers(),
+            committees: $this->committees(),
+        ));
+
+        $this->assertCount(2, $alerts->alerts, 'Sam on Intergroup and Jo on Telephones beneath it');
+    }
+
+    /**
+     * Splitting by handset is a delivery decision. Ten people on a committee
+     * were sent one message, and an acknowledgement from any of them has to be
+     * able to find the rest.
+     *
+     * @test
+     */
+    public function a_message_to_a_committee_is_one_message_across_every_handset(): void
+    {
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test', label: 'Phone'),
+            $this->device(id: 8, memberEmail: 'jo@example.test', label: 'Tablet'),
+            $this->device(id: 9, memberEmail: 'sam@example.test'),
+        );
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'intergroup',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(
+            devices: $devices,
+            alerts: $alerts,
+            members: $this->committeeMembers(),
+            committees: $this->committees(),
+        ));
+
+        $this->assertCount(3, $alerts->alerts);
+
+        $uuids = array_unique(array_map(
+            static fn ($alert): string => $alert->messageUuid,
+            $alerts->alerts,
+        ));
+        $this->assertCount(1, $uuids, 'one message uuid across the whole committee');
+    }
+
+    /**
+     * A member can hold the parent and the child, and two paths must not ring
+     * the same phone twice.
+     *
+     * @test
+     */
+    public function a_member_on_two_committees_in_the_branch_is_only_sent_one_copy(): void
+    {
+        $committees = new InMemoryCommitteeRepository(
+            [
+                new CommitteeStub('intergroup', 'Intergroup', id: 1),
+                new CommitteeStub('telephones', 'Telephones', id: 2, parentId: 1),
+            ],
+            ['intergroup' => [11], 'telephones' => [11]],
+        );
+        $devices = $this->devicesWith($this->device(id: 7, memberEmail: 'jo@example.test'));
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'intergroup',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(
+            devices: $devices,
+            alerts: $alerts,
+            members: $this->committeeMembers(),
+            committees: $committees,
+        ));
+
+        $this->assertCount(1, $alerts->alerts);
+    }
+
+    /** @test */
+    public function a_committee_message_never_reaches_a_revoked_handset(): void
+    {
+        $devices = $this->devicesWith(
+            $this->device(id: 7, memberEmail: 'jo@example.test'),
+            $this->device(id: 8, memberEmail: 'jo@example.test', revokedAt: 1_000),
+        );
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'telephones',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $this->messageFromRequest($this->page(
+            devices: $devices,
+            alerts: $alerts,
+            members: $this->committeeMembers(),
+            committees: $this->committees(),
+        ));
+
+        $this->assertCount(1, $alerts->alerts, 'the revoked handset is not a destination');
+    }
+
+    /**
+     * Saying "sent" when nothing was sent is a lie an admin acts on.
+     *
+     * @test
+     */
+    public function a_committee_whose_members_have_no_handsets_is_reported_not_swallowed(): void
+    {
+        $devices = $this->devicesWith($this->device(id: 7, memberEmail: 'kit@example.test'));
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'telephones',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $target = $this->messageFromRequest($this->page(
+            devices: $devices,
+            alerts: $alerts,
+            members: $this->committeeMembers(),
+            committees: $this->committees(),
+        ));
+
+        $this->assertStringContainsString('reach_result=message_committee_silent', $target);
+        $this->assertCount(0, $alerts->alerts);
+    }
+
+    /** @test */
+    public function a_committee_message_needs_a_committee(): void
+    {
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => '',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $target = $this->messageFromRequest($this->page(
+            alerts: $alerts,
+            committees: $this->committees(),
+        ));
+
+        $this->assertStringContainsString('reach_result=message_no_committee', $target);
+        $this->assertCount(0, $alerts->alerts);
+    }
+
+    /**
+     * The control posts a slug, and a slug is only ever a string somebody's
+     * browser sent back.
+     *
+     * @test
+     */
+    public function an_unknown_committee_is_told_so_rather_than_silently_sending_nothing(): void
+    {
+        $_POST = [
+            'reach_scope'     => 'committee',
+            'reach_committee' => 'no-such-committee',
+            'reach_subject'   => 'Rota change',
+        ];
+        $alerts = new InMemoryAlertRepository();
+
+        $target = $this->messageFromRequest($this->page(
+            alerts: $alerts,
+            committees: $this->committees(),
+        ));
+
+        $this->assertStringContainsString('reach_result=message_unknown_committee', $target);
+        $this->assertCount(0, $alerts->alerts);
+    }
     /** @test */
     public function a_message_never_reaches_a_revoked_handset(): void
     {
@@ -387,9 +745,12 @@ final class SendMessagePageTest extends ReachTestCase
         ?DeviceRepository $devices = null,
         ?InMemoryAlertRepository $alerts = null,
         array $members = [],
+        ?InMemoryCommitteeRepository $committees = null,
     ): SendMessagePage {
         $devices ??= new InMemoryDeviceRepository();
         $alerts ??= new InMemoryAlertRepository();
+
+        $memberRepository = new InMemoryMemberRepository($members);
 
         // A real AlertApi over a real dispatcher, for the reason
         // DevicesPageTest gives: the send path is only worth asserting on
@@ -398,11 +759,23 @@ final class SendMessagePageTest extends ReachTestCase
             $alerts,
             new InMemoryAlertContactRepository(),
             $devices,
-            new ResponderGate(new InMemoryMemberRepository($members)),
+            new ResponderGate($memberRepository),
             [],
         ));
 
-        return new SendMessagePage($devices, $api, new InMemoryMemberRepository($members));
+        // A real resolver over the same doubles, for the same reason. It
+        // is the object this screen and Hand's compose route now share,
+        // so a double here would assert against something neither uses.
+        return new SendMessagePage(
+            $devices,
+            $api,
+            $memberRepository,
+            new RecipientResolver(
+                $devices,
+                $memberRepository,
+                $committees ?? new InMemoryCommitteeRepository(),
+            ),
+        );
     }
 
     private function devicesWith(Device ...$devices): InMemoryDeviceRepository

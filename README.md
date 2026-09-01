@@ -1,10 +1,11 @@
 # Reach
 
 [![CI](https://github.com/bleedingdeacons/reach/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bleedingdeacons/reach/actions/workflows/ci.yml)
+[![Semgrep](https://github.com/bleedingdeacons/reach/actions/workflows/semgrep.yml/badge.svg?branch=main)](https://github.com/bleedingdeacons/reach/actions/workflows/semgrep.yml)
 [![Coverage Status](https://coveralls.io/repos/github/bleedingdeacons/reach/badge.svg?branch=main)](https://coveralls.io/github/bleedingdeacons/reach?branch=main)
 ![PHPStan](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbleedingdeacons%2Freach%2Fmain%2Fphpstan.neon.dist&query=%24.parameters.level&label=PHPStan&prefix=level%20&color=brightgreen)
 ![PHPCS](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbleedingdeacons%2Freach%2Fmain%2F.phpcs.xml.dist&query=%2Fruleset%2Frule%5B1%5D%2F%40ref&label=PHPCS&color=brightgreen)
-![Version](https://img.shields.io/badge/version-2.2.1-blue)
+![Version](https://img.shields.io/badge/version-2.7.1-blue)
 ![PHP](https://img.shields.io/badge/php-8.1%2B-777bb4)
 ![Licence](https://img.shields.io/badge/licence-MIT%20(Modified)-green)
 
@@ -148,22 +149,51 @@ The Call attempts page is deliberately read-only. Edits and deletions would unde
 ## Hand — alerting the telephone-responder rota
 
 [Hand](https://github.com/bleedingdeacons/hand) is a .NET MAUI app for
-certified telephone responders. Reach is the server side: it enrols the
-handsets, holds the alerts, and pushes them.
+intergroup members. Reach is the server side: it enrols the handsets,
+holds the alerts, and pushes them.
 
 ### Who may use it
 
-Hand's gate is **stricter than the website's**. Reach admits a
-12th-stepper *or* a certified telephone responder. Hand admits certified
-telephone responders and nobody else — it is the helpline handset, and
-it receives alerts raised for the duty rota. A 12th-stepper with no
-responder role can sign in to Reach and will be refused by Hand.
+**A member Unity holds a usable record for: a valid email address and a
+home group.** That is the whole rule.
+
+It used to be much stricter — certified telephone responders and nobody
+else, because Hand was the helpline handset and nothing more. It now
+also carries messages between members, and gating that on a helpline
+certification kept it from the people it was useful to. A 12th-stepper
+with no responder role is admitted; so is a responder still working
+towards certification.
+
+The two halves of the rule each earn their place. The **address** is
+what a handset is matched on — it is the identity a device token is
+minted for and the thing an alert is routed by — so a member without one
+cannot be reached and must not be able to enrol; it is validated rather
+than merely counted, because `n/a` and half-typed addresses are in real
+member data. The **home group** is what separates a current member from
+a stub: Reconcile's imports and half-finished admin entries leave records
+with a name and nothing else, and those should not put a handset on the
+rota.
+
+> **What loosening it gave up.** The old gate meant a lapsed
+> certification stopped a handset at its next call, and that the
+> encrypted caller details an alert can carry only ever reached somebody
+> cleared to take a 12th-step call. Neither is true now: an alert's
+> contact details reach every enrolled handset it is addressed to,
+> whoever holds it. Scrutiny still audits every contact read, so "who
+> saw this caller's number, and when" remains answerable — what changed
+> is the size of the set that answer can come from.
 
 The gate (`Reach\Devices\ResponderGate`) is re-run on **every**
 authenticated request and again at dispatch time, rather than being
-frozen into the device token when it is issued. A responder whose
-certification lapses or who is removed from Unity stops receiving alerts
+frozen into the device token when it is issued. That half is unchanged
+and is the half worth keeping: a member whose record stops qualifying —
+their address removed, their home group cleared — stops receiving alerts
 at their next call, without anybody remembering to revoke the handset.
+
+This is Hand's gate alone. The website's is `Reach\Auth\OutreachEligibility`
+and is untouched: it still admits a 12th-stepper *or* a certified
+responder, because who may look members up is a different question from
+who may carry a handset.
 
 ### Enrolling a handset
 
@@ -204,10 +234,15 @@ $alertId = reach_send_alert([
     'message'   => 'Tonight 22:00–08:00 has nobody signed up.', // alias: body
     'source'    => 'trusted',
     'reference' => 'SHIFT-2026-08-15-N',
-    'priority'  => 'urgent',            // normal | urgent
+    'level'     => 'red',               // red | yellow | blue; default yellow
+    'response'  => 'first',             // first | none; default first
     'contact'   => 'Sam, 07700 900123', // see below — handled separately
     'target_email' => '',               // omit to alert the whole rota
     'ttl'       => 3600,                // seconds; default 1 hour
+    'payload'   => [                    // named properties, passed through
+        'shift' => 'night',
+        'area'  => 'BS5',
+    ],
 ]);
 
 if (is_wp_error($alertId)) { /* refused — see the error */ }
@@ -215,6 +250,69 @@ if (is_wp_error($alertId)) { /* refused — see the error */ }
 
 `subject`/`message` and `title`/`body` are the same two fields; the wire
 names win if both are sent, so existing integrations are unaffected.
+
+#### Level — how loud it is
+
+| Level | On the handset |
+| --- | --- |
+| `red` | Takes the screen over and rings like an incoming call until somebody answers. For what has to be dealt with now. |
+| `yellow` | A heads-up notification with a sound. Audible, missable, and right for most things. **The default.** |
+| `blue` | The tray, at ordinary importance. Reminders and information; wakes nobody. |
+
+The level is also the colour of the card in Hand, which is what makes a
+list of alerts readable without reading any of them.
+
+`priority` (`normal` | `urgent`) is the older spelling and is still
+accepted — `urgent` means `red`, `normal` means `yellow`. An explicit
+`level` wins if both are sent. New callers should use `level`, because
+`priority` cannot ask for `blue` at all. Reach still *sends* a derived
+`priority` on the wire so handsets predating the level keep working.
+
+#### Response — whether somebody has to take it on
+
+| Response | What happens |
+| --- | --- |
+| `first` | The first responder to acknowledge deals with it. Everyone else is told who answered and it clears off their handsets. Their button says **Acknowledge**. **The default.** |
+| `none` | Everybody reads it and closes their own copy. Nobody is told anything, and one responder closing it leaves it on every other screen. Their button says **Close**. |
+
+The two are independent: a red alert can be informational (a drill
+everybody must see) and a blue one can be first-to-respond (a
+low-priority job somebody still has to pick up).
+
+`payload` is a flat, named string map — a plugin's own properties,
+carried through to the handset untouched and readable there as
+`HandAlert.Payload`. Flat and string-valued because that is what the
+push can carry: FCM's data block is a string→string map, and anything
+nested would need re-encoding per transport with a different shape on
+each. It is capped at 2KB in total, and the alert's own fields win on a
+name collision, so a plugin cannot redefine `title` or `alert_id` by
+putting one in its payload. **The same rule applies as to everything
+else: no personal data.**
+
+### One send, one message
+
+Every alert carries a `message_uuid`, and every alert raised by the same
+send carries the same one.
+
+Usually that is a distinction without a difference — a broadcast is one
+row addressed to everybody. It matters when a send raises several rows:
+an administrator messaging a responder who holds a phone and a tablet
+raises one alert per handset, so that delivery to each can be seen
+separately. The uuid is what says those are nonetheless one message.
+
+That per-handset split originally went further: each row carried its own
+acknowledgement, so a silent handset could not hide behind the other one
+answering. "When somebody answers" below narrows that — answering on
+either handset now clears both — and the reasoning is there. What
+survives is that the acknowledgement records *which* handset answered.
+
+Callers do not supply it — Reach mints one — unless they are
+deliberately raising several alerts that are one message, in which case
+`message_uuid` accepts one they generated. Any RFC 9562 uuid will do,
+whatever version; it is an opaque grouping key and nothing reads meaning
+out of it. A value that is not a uuid at all is replaced rather than
+refused, because a send must never fail over an identifier that exists
+to group rows for display.
 
 ### Contact details
 
@@ -273,6 +371,73 @@ a `notification` block is handled by the system tray when the app is
 backgrounded and `onMessageReceived` never runs — so Hand would never
 get the chance to raise a full-screen intent, and a duty handset would
 get one polite ding instead of ringing.
+
+### When somebody answers
+
+Acknowledging tells the rest of the rota. Reach raises a second message
+of its own — kind `message_acknowledged` — addressed to everybody the
+first one went to **except** the handset that answered, saying who
+picked it up.
+
+This exists because a broadcast rings every enrolled handset at once,
+and the first responder to answer silences only their own. Everyone
+else's went on shouting about a job already being done, and they found
+out it was done by acknowledging it themselves — being woken for
+nothing, and then telling Reach they had dealt with something they had
+not.
+
+The notice carries the message it reports on as payload properties:
+
+| Property | Meaning |
+| --- | --- |
+| `ack_message_uuid` | The message that was answered |
+| `ack_alert_id` | The alert row that was acknowledged |
+| `ack_responder` | Who answered — a Unity anonymous name, never an address |
+| `ack_device_id` | Which handset answered |
+| `ack_at` | When, as a Unix timestamp |
+
+In Hand it is deliberately quiet: it appears in the list and the
+notification tray at ordinary importance, never alarms, and offers
+**Close** instead of Acknowledge — there is nothing here to take on.
+None of that is special-cased any more: the notice is raised as `blue`
+and `none`, and Hand reads those two fields exactly as it reads them on
+any other alert.
+
+**An answered message is over, for everybody — where somebody was meant
+to take it on.** For a `first` message the notice also *removes*
+the alert it reports on from every other handset, and Reach stops serving
+that message on the poll — otherwise the next poll would hand it straight
+back. A responder taking a job clears it off the rest of the rota's
+screens rather than leaving thirty people to dismiss it one by one. The
+handset that answered keeps its own card, because that is where the
+reference and the Show contact button are, and losing them the instant
+you accept a job is precisely wrong.
+
+A `none` message does none of that. Nobody is taking it on, so one
+responder closing their own copy says nothing about anybody else's and
+must not clear it from their screens — and no notice is raised, because
+there is no first answer to report.
+
+Two things are exempt from that suppression, and both are load-bearing.
+**The notice itself** is addressed to everybody and read by each of them
+separately, so the fastest handset to press Close must not decide nobody
+else gets to read who answered. **The empty uuid** is shared by every row
+written before that column existed, so matching on it would let any one
+of them silence all the others; those keep the per-device behaviour they
+were written under.
+
+One cost, stated plainly: an administrator's message to a responder with
+two handsets is deliberately two rows, so that Recent alerts can answer
+"did *this* handset ring". Once either one is answered the other is
+suppressed, so that screen now shows which handset answered rather than
+that both rang. That is the intended trade — the same person dismissing
+the same message twice was the thing worth removing.
+
+Three things keep it from misbehaving. It is raised only on the
+acknowledgement that actually landed, so a handset retrying after a
+dropped response does not tell the rota twice. It is never raised for a
+notice, or one answered call would become an unbounded correspondence.
+And it is never urgent, whatever the alert it reports on was.
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |

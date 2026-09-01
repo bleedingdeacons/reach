@@ -6,6 +6,7 @@ namespace Reach\Tests;
 
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertRequest;
+use Reach\Alerts\MessageUuid;
 use Reach\Alerts\WpdbAlertRepository;
 use Reach\Tests\ReachTestCase;
 
@@ -146,7 +147,8 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         $db = $this->db();
         $db->nextRow = [
             'id' => 12, 'kind' => 'call_request', 'source' => 'reach',
-            'priority' => 'urgent', 'title' => 'Callback wanted',
+            'priority' => 'urgent', 'level' => 'red', 'response' => 'first',
+            'title' => 'Callback wanted',
             'body' => 'BS5', 'reference' => 'CR-000123',
             'payload' => '{"area":"BS5"}', 'target_email' => 'jo@example.com',
             'created_at' => 1_000, 'expires_at' => 2_000,
@@ -165,6 +167,48 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         // off rather than reading as "no contact held".
         $this->assertFalse($alert->hasContact);
         $this->assertStringContainsString('WHERE id = 12 LIMIT 1', $db->queries[0]);
+    }
+
+    public function testARowWrittenBeforeTheLevelExistedKeepsItsUrgency(): void
+    {
+        // dbDelta stamps existing rows with the new column's default, so
+        // the level column is empty on every row already in the table when
+        // this ships. Reading those as yellow would silently demote an
+        // urgent alert; the priority they *were* written with is the
+        // answer. See WpdbAlertRepository::level().
+        $db = $this->db();
+        $db->nextRow = [
+            'id' => 12, 'kind' => 'call_request', 'source' => 'reach',
+            'priority' => 'urgent', 'level' => '', 'response' => 'first',
+            'title' => 'Callback wanted', 'body' => 'BS5', 'reference' => 'CR-000123',
+            'payload' => null, 'target_email' => '',
+            'created_at' => 1_000, 'expires_at' => 2_000,
+        ];
+
+        $alert = (new WpdbAlertRepository($db))->findById(12);
+
+        $this->assertNotNull($alert);
+        $this->assertSame(Alert::LEVEL_RED, $alert->level);
+        $this->assertTrue($alert->isUrgent());
+    }
+
+    public function testARowWrittenBeforeTheResponseExistedIsFirstToRespond(): void
+    {
+        // Every alert was first-to-respond before the column existed,
+        // because that was the only behaviour there was.
+        $db = $this->db();
+        $db->nextRow = [
+            'id' => 12, 'kind' => 'call_request', 'source' => 'reach',
+            'priority' => 'normal', 'level' => '', 'response' => 'first',
+            'title' => 'Callback wanted', 'body' => 'BS5', 'reference' => '',
+            'payload' => null, 'target_email' => '',
+            'created_at' => 1_000, 'expires_at' => 2_000,
+        ];
+
+        $alert = (new WpdbAlertRepository($db))->findById(12);
+
+        $this->assertNotNull($alert);
+        $this->assertTrue($alert->isFirstToRespond());
     }
 
     public function testFindByIdReturnsNullOnMiss(): void
@@ -256,6 +300,110 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
             "AND (a.target_email = '' OR a.target_email = 'jo@example.com')\n                AND (a.target_device_id",
             $q,
         );
+    }
+
+    public function testInstallCarriesTheMessageAndExclusionColumns(): void
+    {
+        $GLOBALS['__reach_dbdelta'] = [];
+        $db = $this->db();
+
+        WpdbAlertRepository::install($db);
+
+        $sql = $GLOBALS['__reach_dbdelta'][0];
+
+        // Both default to the "nothing special" value, which is what lets
+        // dbDelta add them to a table full of existing alerts without any
+        // of those rows changing meaning: an empty uuid groups with
+        // nothing, and an exclusion of 0 withholds from nobody.
+        $this->assertStringContainsString("message_uuid CHAR(36) NOT NULL DEFAULT ''", $sql);
+        $this->assertStringContainsString('exclude_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0', $sql);
+
+        // Indexed because the notifier looks a whole message up by it on
+        // every acknowledgement.
+        $this->assertStringContainsString('KEY message_uuid (message_uuid)', $sql);
+    }
+
+    public function testTheMessageUuidAndExclusionAreStoredAndReadBack(): void
+    {
+        $db = $this->db();
+        $uuid = MessageUuid::generate();
+
+        $alert = (new WpdbAlertRepository($db))->create(
+            $this->request(['message_uuid' => $uuid, 'exclude_device_id' => 4]),
+            1_700_000_000,
+        );
+
+        $this->assertSame($uuid, $db->inserted[0]['data']['message_uuid']);
+        $this->assertSame(4, $db->inserted[0]['data']['exclude_device_id']);
+        $this->assertSame($uuid, $alert->messageUuid);
+        $this->assertTrue($alert->excludes(4));
+        $this->assertFalse($alert->excludes(5));
+    }
+
+    public function testPendingForWithholdsAnAlertExcludedFromTheAskingHandset(): void
+    {
+        // The poll half of the exclusion. The push half is the dispatcher,
+        // and it has to be both: an exclusion honoured on one route is an
+        // alert that arrives by the other.
+        //
+        // Outside the target branch on purpose. A notice is broadcast, and
+        // "broadcast" is exactly the shape the one handset it is withheld
+        // from would otherwise match.
+        $db = $this->db();
+
+        (new WpdbAlertRepository($db))->pendingFor('jo@example.com', 7, 1_700_000_000, 20);
+
+        $this->assertStringContainsString('a.exclude_device_id <> 7', $db->queries[0]);
+    }
+
+    public function testPendingForDropsAMessageSomebodyHasAlreadyAnswered(): void
+    {
+        // An answered message is over, for everybody — the poll half of a
+        // responder taking a job clearing it off the rest of the rota's
+        // screens. Pinned here as well as in the fake because the two have
+        // drifted before: see the note on InMemoryAlertRepository.
+        $db = $this->db();
+
+        (new WpdbAlertRepository($db))->pendingFor('jo@example.com', 7, 1_700_000_000, 20);
+
+        $q = $db->queries[0];
+
+        // Any acknowledgement against any row of the same message counts,
+        // which is why it joins back to the alerts table rather than
+        // testing this row's own id.
+        $this->assertStringContainsString('NOT EXISTS', $q);
+        $this->assertStringContainsString('sibling.message_uuid = a.message_uuid', $q);
+
+        // Exempt: anything informational goes to everybody and is read
+        // separately, so one handset closing its own copy must not take it
+        // off the others.
+        $this->assertStringContainsString("a.response = 'none'", $q);
+
+        // Exempt: every row older than the column shares the empty uuid
+        // and is not one message.
+        $this->assertStringContainsString("a.message_uuid = ''", $q);
+    }
+
+    public function testFindByMessageUuidSelectsTheWholeMessageOldestFirst(): void
+    {
+        $db = $this->db();
+        $uuid = MessageUuid::generate();
+
+        (new WpdbAlertRepository($db))->findByMessageUuid($uuid);
+
+        $q = $db->queries[0];
+        $this->assertStringContainsString("WHERE message_uuid = '" . $uuid . "'", $q);
+        $this->assertStringContainsString('ORDER BY id ASC', $q);
+    }
+
+    public function testFindByMessageUuidAsksNothingForTheEmptyUuid(): void
+    {
+        // Rows written before the column existed all carry the empty
+        // string, and they are not one message.
+        $db = $this->db();
+
+        $this->assertSame([], (new WpdbAlertRepository($db))->findByMessageUuid(''));
+        $this->assertSame([], $db->queries);
     }
 
     public function testPendingForReadsOnlyWhetherAContactExists(): void

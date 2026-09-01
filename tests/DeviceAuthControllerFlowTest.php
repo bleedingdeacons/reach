@@ -386,18 +386,22 @@ final class DeviceAuthControllerFlowTest extends ReachTestCase
         $this->assertSame('reach_invalid_credentials', $result->get_error_code());
     }
 
-    public function testACorrectPasswordFromAnUncertifiedResponderSaysSo(): void
+    public function testACorrectPasswordFromAnIneligibleMemberSaysSo(): void
     {
         // Distinct from invalid credentials on purpose: the password was
         // right, so there is nothing left to hide about the account, and
-        // "your certification has lapsed" is what the responder needs in
-        // order to do something about it.
+        // being told why is what lets somebody do something about it.
+        //
+        // The reason changed with the gate — it used to be a lapsed
+        // certification, and is now a record without a home group — but
+        // the shape of the answer did not, and that is what this pins.
         $this->credentials->seedPassword('lapsed@example.com', 'correct horse battery');
         $controller = $this->controller(new MemberStub(
             personalEmail: 'lapsed@example.com',
             twelfthStepper: false,
             telephoneResponder: true,
-            responderCertification: ResponderCertification::None,
+            responderCertification: ResponderCertification::Certified,
+            homeGroup: 0,
         ));
 
         $result = $controller->password($this->request([

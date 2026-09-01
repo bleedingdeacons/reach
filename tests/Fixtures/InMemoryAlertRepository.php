@@ -11,10 +11,10 @@ use Reach\Alerts\AlertRequest;
 /**
  * In-memory {@see AlertRepository} for tests.
  *
- * Reproduces the two contract points the delivery paths lean on: the
- * poll returns only live, unacknowledged alerts addressed to the caller
- * — by device where one is named, by responder otherwise — and
- * acknowledgement is idempotent.
+ * Reproduces the contract points the delivery paths lean on: the poll
+ * returns only live, unacknowledged alerts addressed to the caller — by
+ * device where one is named, by responder otherwise — never one
+ * withheld from the asking handset, and acknowledgement is idempotent.
  *
  * <b>"By device where one is named" is a precedence, not a second
  * condition.</b> This fake had it right while the SQL had it wrong, which
@@ -49,6 +49,11 @@ final class InMemoryAlertRepository implements AlertRepository
             $now,
             $request->expiresAt($now),
             targetDeviceId: $request->targetDeviceId,
+            messageUuid: $request->messageUuid,
+            excludeDeviceId: $request->excludeDeviceId,
+            level: $request->level,
+            response: $request->response,
+            senderEmail: $request->senderEmail,
         );
 
         $this->alerts[] = $alert;
@@ -67,12 +72,35 @@ final class InMemoryAlertRepository implements AlertRepository
         return null;
     }
 
+    public function findByMessageUuid(string $messageUuid, int $limit = 100): array
+    {
+        if ($messageUuid === '') {
+            return [];
+        }
+
+        $out = [];
+        foreach ($this->alerts as $alert) {
+            if ($alert->messageUuid === $messageUuid) {
+                $out[] = $alert;
+            }
+        }
+
+        return array_slice($out, 0, $limit);
+    }
+
     public function pendingFor(string $memberEmail, int $deviceId, int $now, int $limit): array
     {
         $pending = [];
 
         foreach ($this->alerts as $alert) {
             if ($alert->isExpired($now)) {
+                continue;
+            }
+
+            // Withheld from this handset, whatever it is addressed to.
+            // Mirrors the AND in WpdbAlertRepository::pendingFor(), which
+            // sits outside the target branch for the same reason.
+            if ($alert->excludes($deviceId)) {
                 continue;
             }
 
@@ -89,6 +117,14 @@ final class InMemoryAlertRepository implements AlertRepository
             }
 
             if ($this->hasAck($alert->id, $deviceId)) {
+                continue;
+            }
+
+            // An answered message is over, for everybody. Mirrors the
+            // NOT EXISTS in WpdbAlertRepository::pendingFor(), exemptions
+            // and all — see there for why the notice and the empty uuid
+            // are excused.
+            if ($this->messageAnswered($alert)) {
                 continue;
             }
 
@@ -156,6 +192,35 @@ final class InMemoryAlertRepository implements AlertRepository
         $this->alerts = $kept;
 
         return $removed;
+    }
+
+    /**
+     * Whether any handset has already answered this alert's message.
+     *
+     * Anything informational is exempt: nobody was taking it on, so one
+     * handset closing its own copy must not take it off the others. So
+     * is the empty uuid, which every row written before the column
+     * existed shares and which is therefore not a message.
+     */
+    private function messageAnswered(Alert $alert): bool
+    {
+        if (!$alert->isFirstToRespond() || $alert->messageUuid === '') {
+            return false;
+        }
+
+        foreach ($this->alerts as $sibling) {
+            if ($sibling->messageUuid !== $alert->messageUuid) {
+                continue;
+            }
+
+            foreach ($this->acks as $ack) {
+                if ($ack['alert_id'] === $sibling->id) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function hasAck(int $alertId, int $deviceId): bool

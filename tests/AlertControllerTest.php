@@ -5,18 +5,26 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
+use Reach\Alerts\AcknowledgementNotifier;
+use Reach\Alerts\Alert;
+use Reach\Alerts\AlertApi;
+use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
+use Reach\Alerts\RecipientResolver;
 use Reach\Auth\DeviceTokenMinter;
+use Reach\Core\RateLimiter;
 use Reach\Devices\CurrentDevice;
 use Reach\Devices\Device;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\AlertController;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
+use Reach\Tests\Fixtures\InMemoryAlertReplyRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
 use Unity\Members\ResponderCertification;
+use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use WP_Error;
 use WP_REST_Request;
@@ -37,6 +45,7 @@ final class AlertControllerTest extends ReachTestCase
     private InMemoryDeviceRepository $devices;
     private InMemoryAlertRepository $alerts;
     private InMemoryAlertContactRepository $contacts;
+    private InMemoryAlertReplyRepository $replies;
     private DeviceTokenMinter $minter;
     private SpyAuditLogger $audit;
 
@@ -49,6 +58,7 @@ final class AlertControllerTest extends ReachTestCase
         $this->devices = new InMemoryDeviceRepository();
         $this->alerts = new InMemoryAlertRepository();
         $this->contacts = new InMemoryAlertContactRepository();
+        $this->replies = new InMemoryAlertReplyRepository();
         $this->minter = new DeviceTokenMinter();
         // Held rather than built inside controller(), because the
         // contact endpoint's audit entry is the thing under test on that
@@ -211,10 +221,17 @@ final class AlertControllerTest extends ReachTestCase
         $this->assertCount(1, $this->alerts->acknowledgementsFor($alert->id));
     }
 
-    public function testOneHandsetAcknowledgingDoesNotSilenceAnother(): void
+    public function testOneHandsetAcknowledgingClearsTheAlertFromTheOthers(): void
     {
-        // Alerts go to the whole rota; each handset rings and answers
-        // for itself.
+        // An answered message is over, for everybody. This used to assert
+        // the opposite — that the second handset's copy stayed
+        // outstanding, because each handset rang and answered for itself
+        // — and the rule was deliberately reversed: a responder taking a
+        // job should clear it off the rest of the rota's screens rather
+        // than leave thirty people to dismiss it one by one.
+        //
+        // What the others are left with is the notice saying who took it,
+        // which is the whole of what they still need to know.
         $first = $this->enrol('one@example.com');
         $second = $this->enrol('two@example.com');
         $alert = $this->raise(['kind' => 'test', 'title' => 'Everybody']);
@@ -224,7 +241,10 @@ final class AlertControllerTest extends ReachTestCase
 
         $result = $controller->pending($this->authed($second));
         $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertCount(1, $result->get_data()['alerts']);
+
+        $kinds = array_column($result->get_data()['alerts'], 'kind');
+        $this->assertNotContains('test', $kinds);
+        $this->assertContains(Alert::KIND_ACKNOWLEDGED, $kinds);
     }
 
     public function testCannotAcknowledgeAnotherRespondersTargetedAlert(): void
@@ -498,12 +518,30 @@ final class AlertControllerTest extends ReachTestCase
 
         $gate = new ResponderGate(new InMemoryMemberRepository($members));
 
+        // A real notifier over a real dispatcher with no transports: the
+        // notice it raises is stored in the same in-memory repository the
+        // assertions read, which is what lets a test see the second
+        // message an acknowledgement produces without a push to stub.
+        $dispatcher = new AlertDispatcher($this->alerts, $this->contacts, $this->devices, $gate, []);
+        $notifier = new AcknowledgementNotifier($this->alerts, $dispatcher);
+
+        $memberRepository = new InMemoryMemberRepository($members);
+
         return new AlertController(
             $this->alerts,
             $this->contacts,
             new CurrentDevice($this->devices, $this->minter, $gate),
             $this->audit,
             $this->devices,
+            $notifier,
+            $this->replies,
+            new RecipientResolver(
+                $this->devices,
+                $memberRepository,
+                new InMemoryCommitteeRepository(),
+            ),
+            new AlertApi($dispatcher),
+            new RateLimiter(),
         );
     }
 

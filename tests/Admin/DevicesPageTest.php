@@ -9,6 +9,7 @@ use BleedingDeacons\WpMocks\WpState;
 use Brain\Monkey\Functions;
 use LogicException;
 use Reach\Admin\DevicesPage;
+use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Alerts\AlertRequest;
@@ -17,6 +18,7 @@ use Reach\Devices\Device;
 use Reach\Devices\DeviceRepository;
 use Reach\Devices\ResponderGate;
 use Reach\Tests\Fixtures\InMemoryAlertContactRepository;
+use Reach\Tests\Fixtures\InMemoryAlertReplyRepository;
 use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
@@ -624,21 +626,42 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function an_urgent_alert_is_flagged_as_such(): void
+    public function the_level_column_shows_the_level(): void
     {
         $alerts = new InMemoryAlertRepository();
         $alerts->create($this->alertRequest(priority: 'urgent'), $this->createdAt());
 
-        $this->assertStringContainsString('(urgent)', $this->renderList($this->page(alerts: $alerts)));
+        $this->assertStringContainsString('>red<', $this->renderList($this->page(alerts: $alerts)));
     }
 
     /** @test */
-    public function an_ordinary_alert_is_not_flagged_urgent(): void
+    public function an_alert_that_named_no_level_shows_as_yellow(): void
     {
         $alerts = new InMemoryAlertRepository();
         $alerts->create($this->alertRequest(), $this->createdAt());
 
-        $this->assertStringNotContainsString('(urgent)', $this->renderList($this->page(alerts: $alerts)));
+        $html = $this->renderList($this->page(alerts: $alerts));
+
+        $this->assertStringContainsString('>yellow<', $html);
+        $this->assertStringNotContainsString('>red<', $html);
+    }
+
+    /** @test */
+    public function the_response_column_says_whether_somebody_has_to_take_it_on(): void
+    {
+        // The column answers "will this clear off the rest of the rota
+        // when somebody picks it up", which is not a thing the level says.
+        $alerts = new InMemoryAlertRepository();
+        $alerts->create($this->alertRequest(), $this->createdAt());
+        $alerts->create(
+            $this->alertRequest(extra: ['response' => Alert::RESPONSE_NONE]),
+            $this->createdAt(),
+        );
+
+        $html = $this->renderList($this->page(alerts: $alerts));
+
+        $this->assertStringContainsString('First to respond', $html);
+        $this->assertStringContainsString('Everyone closes', $html);
     }
 
     /** @test */
@@ -1233,8 +1256,11 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /** @test */
-    public function the_test_alert_is_a_broadcast_at_normal_priority(): void
+    public function the_test_alert_is_a_red_broadcast_nobody_has_to_take_on(): void
     {
+        // Red because the whole value of a test is exercising the loudest
+        // path there is; informational because its own body says no action
+        // is needed, so the handset offers Close rather than Acknowledge.
         $this->signedInAs('Site Admin');
         $alerts = new InMemoryAlertRepository();
 
@@ -1242,7 +1268,8 @@ final class DevicesPageTest extends ReachTestCase
                 $this->testAlertFromRequest($this->page(alerts: $alerts));
 
         $this->assertTrue($alerts->alerts[0]->isBroadcast());
-        $this->assertFalse($alerts->alerts[0]->isUrgent());
+        $this->assertSame(Alert::LEVEL_RED, $alerts->alerts[0]->level);
+        $this->assertTrue($alerts->alerts[0]->isInformational());
     }
 
     /** @test */
@@ -1822,9 +1849,11 @@ final class DevicesPageTest extends ReachTestCase
         ?DeviceRepository $devices = null,
         ?InMemoryAlertRepository $alerts = null,
         array $members = [],
+        ?InMemoryAlertReplyRepository $replies = null,
     ): DevicesPage {
         $devices ??= new InMemoryDeviceRepository();
         $alerts ??= new InMemoryAlertRepository();
+        $replies ??= new InMemoryAlertReplyRepository();
 
         // A real AlertApi over a real dispatcher: the test-alert path is
         // only worth asserting on if it goes through the machinery an
@@ -1837,7 +1866,13 @@ final class DevicesPageTest extends ReachTestCase
             [],
         ));
 
-        return new DevicesPage($devices, $alerts, $api, new InMemoryMemberRepository($members));
+        return new DevicesPage(
+            $devices,
+            $alerts,
+            $api,
+            new InMemoryMemberRepository($members),
+            $replies,
+        );
     }
 
     private function devicesWith(Device ...$devices): InMemoryDeviceRepository
@@ -1873,9 +1908,13 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    private function alertRequest(string $priority = 'normal', string $kind = 'call_request'): AlertRequest
-    {
-        $request = AlertRequest::fromArray([
+    /** @param array<string, mixed> $extra */
+    private function alertRequest(
+        string $priority = 'normal',
+        string $kind = 'call_request',
+        array $extra = []
+    ): AlertRequest {
+        $request = AlertRequest::fromArray($extra + [
             'kind'     => $kind,
             'source'   => 'reach',
             'title'    => 'Callback wanted',

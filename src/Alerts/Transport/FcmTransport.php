@@ -70,11 +70,30 @@ final class FcmTransport implements AlertTransport
     use HasLogger;
 
     /**
-     * Notification channel id on Android. Must match the channel Hand
-     * creates, or the alert lands on the default channel with the
-     * default sound and none of the alarm behaviour.
+     * Notification channel ids on Android, one per level. Each must match
+     * a channel Hand creates, or the alert lands on the default channel
+     * with the default sound and none of the alarm behaviour.
+     *
+     * <b>Three channels rather than one channel reconfigured three
+     * ways.</b> An Android channel's importance and sound are fixed when
+     * it is created and cannot be changed afterwards — only the user can
+     * change them, from system settings. So the levels have to be
+     * separate channels, and a level added later has to be a new id
+     * rather than an edit to one of these.
+     *
+     * <b>Hand chooses the channel it actually posts to.</b> These travel
+     * so the two ends agree, not because the handset is taking
+     * instruction: it derives the same answer from the level. Sending it
+     * is what makes a disagreement visible in a push payload instead of
+     * only in behaviour.
      */
     public const ANDROID_CHANNEL = 'reach_alerts';
+
+    /** Yellow: audible and heads-up, but it does not take the screen. */
+    public const ANDROID_CHANNEL_WARNING = 'reach_warnings';
+
+    /** Blue: the tray, at ordinary importance. Never wakes anybody. */
+    public const ANDROID_CHANNEL_NOTICE = 'reach_notices';
 
     /**
      * Sound resource names, per platform. Android resolves this against
@@ -331,15 +350,46 @@ final class FcmTransport implements AlertTransport
         // is, and what it acknowledges against.
         return [
             'alert_id'  => (string) $alert->id,
+            // The send this delivery came from. Hand matches an
+            // acknowledgement notice to the message it is about on this
+            // — see Reach\Alerts\MessageUuid — so it has to be inside
+            // the sealed blob rather than alongside it.
+            'message_uuid' => $alert->messageUuid,
             'kind'      => $alert->kind,
             'source'    => $alert->source,
-            'priority'  => $alert->priority,
+            // How loud, and what colour Hand paints the card.
+            'level'     => $alert->level,
+            // Whether the card's button says Acknowledge or Close.
+            'response'  => $alert->response,
+            // Derived from the level, for handsets that predate it. See
+            // Alert::PRIORITY_NORMAL.
+            'priority'  => Alert::priorityFor($alert->level),
             'title'     => $alert->title,
             'body'      => $alert->body,
             'reference' => $alert->reference,
-            'channel'   => self::ANDROID_CHANNEL,
+            // <b>The flag, never the details.</b> Whether a contact
+            // exists is not personal data and has to travel, or a handset
+            // that learns of an alert by push never offers to fetch them
+            // — and the poll copy that knows better is discarded as a
+            // duplicate. The contact itself still requires a separate,
+            // authenticated, audited request. See Alert::withContact().
+            'has_contact' => $alert->hasContact ? '1' : '0',
+            'channel'   => self::channelFor($alert),
             'sound'     => self::ANDROID_SOUND,
         ] + $alert->payload;
+    }
+
+    /**
+     * The Android channel a level belongs on. See {@see ANDROID_CHANNEL}
+     * on why there are three of them and who actually decides.
+     */
+    private static function channelFor(Alert $alert): string
+    {
+        return match ($alert->level) {
+            Alert::LEVEL_RED  => self::ANDROID_CHANNEL,
+            Alert::LEVEL_BLUE => self::ANDROID_CHANNEL_NOTICE,
+            default           => self::ANDROID_CHANNEL_WARNING,
+        };
     }
 
     /**
@@ -352,17 +402,32 @@ final class FcmTransport implements AlertTransport
     {
         $critical = $alert->isUrgent() && $this->settings->isApnsCriticalEnabled();
 
+        // Blue is information, and on iOS that means two things at once:
+        // the passive interruption level, so it does not interrupt at all,
+        // and the system sound rather than the helpline siren. Sending
+        // reach_alert.wav at a passive level would be a handset that made
+        // an emergency noise for a reminder.
+        $quiet = $alert->level === Alert::LEVEL_BLUE;
+
         return [
             'alert' => [
                 'title' => $alert->title,
                 'body'  => $alert->body,
             ],
-            'sound' => [
+            'sound' => $quiet ? 'default' : [
                 'critical' => $critical ? 1 : 0,
                 'name'     => self::IOS_SOUND,
                 'volume'   => 1.0,
             ],
-            'interruption-level' => $critical ? 'critical' : 'time-sensitive',
+            // Red asks for critical where Apple has granted it and
+            // time-sensitive where it has not; yellow asks for
+            // time-sensitive, which breaks through a Focus mode without
+            // overriding the ringer switch; blue asks for nothing.
+            'interruption-level' => match (true) {
+                $critical => 'critical',
+                $quiet    => 'passive',
+                default   => 'time-sensitive',
+            },
             // Wakes the app when it is merely backgrounded rather than
             // terminated, so it can start the looping alarm that the
             // 30-second payload sound cannot provide on its own.

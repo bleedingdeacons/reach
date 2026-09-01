@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Alerts\WpdbAlertContactRepository;
+use Reach\Alerts\WpdbAlertReplyRepository;
 use Reach\Alerts\WpdbAlertRepository;
 use Reach\Auth\WpdbPasswordCredentialRepository;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
@@ -53,6 +54,26 @@ final class Schema
     /**
      * Schema version. Bump on any change to a CREATE TABLE above.
      *
+     * 9 — added alerts.sender_email, so an alert raised from a handset
+     *     records the responder behind it and a reply has somewhere to
+     *     go, and the alert_replies table those replies are kept in.
+     *     Neither needs a backfill: empty is what every existing row
+     *     means, nothing having been able to raise one from a handset
+     *     until now.
+     * 8 — added alerts.level and alerts.response. The first is how loud
+     *     an alert is and what colour Hand paints its card (red, yellow,
+     *     blue); the second is whether the first responder to acknowledge
+     *     takes it on and the rest are cleared, or everybody reads and
+     *     closes their own copy. Neither needs a backfill: response
+     *     defaults to 'first', which is the only thing an existing row
+     *     could have meant, and level defaults to empty, which the
+     *     repository reads as "ask the priority this row was written
+     *     with" rather than as a level of its own.
+     * 7 — added alerts.message_uuid, so the several rows one send can
+     *     raise are recognisably one message, and
+     *     alerts.exclude_device_id, so the notice announcing an
+     *     acknowledgement can reach everybody the message went to except
+     *     the handset that made it.
      * 6 — added devices.lock_screen, so a handset that has been set to
      *     display alert text on its lock screen can say so. Not a fault
      *     the handset can fix on its own — it is its owner's setting —
@@ -68,7 +89,7 @@ final class Schema
      *     and alert contacts.
      * 1 — everything before schema versioning existed.
      */
-    public const VERSION = 6;
+    public const VERSION = 9;
 
     public const OPTION = 'reach_schema_version';
 
@@ -140,5 +161,6 @@ final class Schema
         WpdbDeviceRepository::install($wpdb);
         WpdbAlertRepository::install($wpdb);
         WpdbAlertContactRepository::install($wpdb);
+        WpdbAlertReplyRepository::install($wpdb);
     }
 }

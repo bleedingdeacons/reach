@@ -479,6 +479,16 @@ final class DeviceAuthController
             'platform'      => $device->platform,
             'push_provider' => $device->pushProvider,
             'label'         => $device->label,
+            // <b>Feature discovery, not a permission.</b> Every enrolled
+            // handset may raise a message — see
+            // {@see \Reach\Rest\AlertController::raise()} on why there is
+            // no capability to report. What this answers is whether this
+            // *server* has those routes at all, so a handset newer than
+            // the Reach it is pointed at hides the compose screen instead
+            // of offering a button that 404s. Hand reads an absent value
+            // as false, which is the ordinary way round for an app that
+            // updates itself faster than the site it talks to.
+            'can_send'      => true,
         ], 200);
     }
 

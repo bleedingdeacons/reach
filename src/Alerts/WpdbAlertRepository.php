@@ -66,6 +66,28 @@ final class WpdbAlertRepository implements AlertRepository
      * The (target_email, expires_at) index covers the poll query, which
      * is the hottest thing in this feature — every handset runs it every
      * few seconds while on duty.
+     *
+     * <b>`level` defaults to empty rather than to a level, and that is
+     * the whole of its migration.</b> dbDelta stamps every existing row
+     * with a new column's default, so defaulting to `yellow` would
+     * flatten the urgent alerts already in the table down to a heads-up.
+     * Empty instead means "this row predates the level", which
+     * {@see level()} answers by reading the priority the row was actually
+     * written with. Nothing ever writes an empty one — {@see create()}
+     * always has a level to put there.
+     *
+     * <b>`sender_email` defaults to empty and needs no backfill.</b>
+     * dbDelta stamps existing rows with it, and empty is exactly what
+     * they mean: nothing raised them from a handset, because until this
+     * column existed nothing could. See {@see Alert::$senderEmail}.
+     *
+     * `response` defaults to `first` because that stamp is simply true:
+     * every row written before the column existed was first-to-respond,
+     * that being the only behaviour there was.
+     *
+     * <b>No comments in the SQL.</b> dbDelta parses these statements with
+     * regular expressions rather than a SQL parser, and it does not
+     * expect to find comments among the column definitions.
      */
     public static function install(wpdb $wpdb): void
     {
@@ -82,16 +104,22 @@ final class WpdbAlertRepository implements AlertRepository
             kind VARCHAR(32) NOT NULL,
             source VARCHAR(64) NOT NULL DEFAULT '',
             priority VARCHAR(16) NOT NULL DEFAULT 'normal',
+            level VARCHAR(16) NOT NULL DEFAULT '',
+            response VARCHAR(16) NOT NULL DEFAULT 'first',
             title VARCHAR(200) NOT NULL,
             body TEXT NOT NULL,
             reference VARCHAR(64) NOT NULL DEFAULT '',
             payload TEXT NULL,
+            message_uuid CHAR(36) NOT NULL DEFAULT '',
             target_email VARCHAR(254) NOT NULL DEFAULT '',
+            sender_email VARCHAR(254) NOT NULL DEFAULT '',
             target_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            exclude_device_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
             created_at BIGINT UNSIGNED NOT NULL,
             expires_at BIGINT UNSIGNED NOT NULL,
             PRIMARY KEY  (id),
             KEY target_expiry (target_email, expires_at),
+            KEY message_uuid (message_uuid),
             KEY created_at (created_at)
         ) {$charset};";
 
@@ -123,16 +151,30 @@ final class WpdbAlertRepository implements AlertRepository
                 'kind'         => $request->kind,
                 'source'       => $request->source,
                 'priority'     => $request->priority,
+                'level'        => $request->level,
+                'response'     => $request->response,
                 'title'        => $request->title,
                 'body'         => $request->body,
                 'reference'    => $request->reference,
                 'payload'      => $payloadJson,
+                'message_uuid' => $request->messageUuid,
                 'target_email' => $request->targetEmail,
+                'sender_email' => $request->senderEmail,
                 'target_device_id' => $request->targetDeviceId,
+                'exclude_device_id' => $request->excludeDeviceId,
                 'created_at'   => $now,
                 'expires_at'   => $request->expiresAt($now),
             ],
-            ['%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d'],
+            // <b>Counted, not eyeballed.</b> Twelve strings then four
+            // integers, matching the array above key for key. A format
+            // array out of step with its data does not raise — wpdb
+            // simply applies the wrong placeholder to each value from the
+            // mismatch onwards, and the row is written with the columns
+            // quietly shifted.
+            [
+                '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
+                '%d', '%d', '%d', '%d',
+            ],
         );
 
         return new Alert(
@@ -148,6 +190,11 @@ final class WpdbAlertRepository implements AlertRepository
             $now,
             $request->expiresAt($now),
             targetDeviceId: $request->targetDeviceId,
+            messageUuid: $request->messageUuid,
+            excludeDeviceId: $request->excludeDeviceId,
+            level: $request->level,
+            response: $request->response,
+            senderEmail: $request->senderEmail,
         );
     }
 
@@ -177,6 +224,32 @@ final class WpdbAlertRepository implements AlertRepository
         // in the order things actually happened.
         $contacts = WpdbAlertContactRepository::tableName($this->wpdb);
 
+        // <b>An answered message is over, for everybody — when somebody
+        // was meant to take it on.</b> The third condition below drops any
+        // alert whose message already carries an acknowledgement from any
+        // handset, which is what makes a responder taking a job clear it
+        // off the rest of the rota's screens instead of leaving thirty
+        // people to dismiss it one by one. Hand removes it locally the
+        // moment the notice arrives; this is what stops the next poll
+        // handing it straight back.
+        //
+        // Two exemptions, and both are load-bearing:
+        //
+        //  * <b>Anything informational.</b> Nobody is taking it on, so one
+        //    responder closing it says nothing about anybody else's copy
+        //    and must not clear it from their screens. This used to test
+        //    the acknowledgement notice's *kind*, which was the only thing
+        //    that behaved this way; {@see Alert::RESPONSE_NONE} is that
+        //    same exemption made askable, and the notice is now simply one
+        //    thing that asks for it. Suppression follows the requirement
+        //    rather than the kind because that is the actual distinction:
+        //    an alert is a job one person takes, a message is news
+        //    everybody gets.
+        //  * <b>The empty uuid.</b> Rows written before that column
+        //    existed all share it and are not one message; matching on it
+        //    would let any one of them silence all the others. Those fall
+        //    back to the per-device behaviour they were written under.
+        //
         // The second LEFT JOIN reads only whether a contact row exists —
         // never the encrypted column itself. Personal data must not travel
         // on the path every handset runs every few seconds; the app is told
@@ -193,14 +266,27 @@ final class WpdbAlertRepository implements AlertRepository
         // rule out. It would have gone missing on the pull-only heads and
         // after any push failure.
         $rows = $this->wpdb->get_results($this->wpdb->prepare(
-            "SELECT a.id, a.kind, a.source, a.priority, a.title, a.body, a.reference,
-                    a.payload, a.target_email, a.target_device_id, a.created_at, a.expires_at,
+            "SELECT a.id, a.kind, a.source, a.priority, a.level, a.response, a.title,
+                    a.body, a.reference, a.payload, a.message_uuid, a.target_email,
+                    a.sender_email, a.target_device_id, a.exclude_device_id,
+                    a.created_at, a.expires_at,
                     (c.alert_id IS NOT NULL) AS has_contact
                FROM {$table} a
                LEFT JOIN {$acks} k ON k.alert_id = a.id AND k.device_id = %d
                LEFT JOIN {$contacts} c ON c.alert_id = a.id
               WHERE k.alert_id IS NULL
                 AND a.expires_at > %d
+                AND a.exclude_device_id <> %d
+                AND (
+                      a.response = %s
+                   OR a.message_uuid = ''
+                   OR NOT EXISTS (
+                        SELECT 1
+                          FROM {$acks} answered
+                          JOIN {$table} sibling ON sibling.id = answered.alert_id
+                         WHERE sibling.message_uuid = a.message_uuid
+                      )
+                )
                 AND (
                       (a.target_device_id > 0 AND a.target_device_id = %d)
                    OR (a.target_device_id = 0
@@ -211,7 +297,31 @@ final class WpdbAlertRepository implements AlertRepository
             $deviceId,
             $now,
             $deviceId,
+            Alert::RESPONSE_NONE,
+            $deviceId,
             $memberEmail,
+            $limit,
+        ), ARRAY_A);
+
+        return $this->hydrateAll($rows);
+    }
+
+    public function findByMessageUuid(string $messageUuid, int $limit = 100): array
+    {
+        if ($messageUuid === '') {
+            return [];
+        }
+
+        $limit = max(1, min(500, $limit));
+        $table = self::tableName($this->wpdb);
+
+        $rows = $this->wpdb->get_results($this->wpdb->prepare(
+            "SELECT {$this->columns()}
+               FROM {$table}
+              WHERE message_uuid = %s
+              ORDER BY id ASC
+              LIMIT %d",
+            $messageUuid,
             $limit,
         ), ARRAY_A);
 
@@ -333,8 +443,9 @@ final class WpdbAlertRepository implements AlertRepository
     /** @return literal-string */
     private function columns(): string
     {
-        return 'id, kind, source, priority, title, body, reference, payload, '
-            . 'target_email, target_device_id, created_at, expires_at';
+        return 'id, kind, source, priority, level, response, title, body, reference, payload, '
+            . 'message_uuid, target_email, sender_email, target_device_id, exclude_device_id, '
+            . 'created_at, expires_at';
     }
 
     /**
@@ -378,7 +489,35 @@ final class WpdbAlertRepository implements AlertRepository
             // (the admin list, findById); those callers do not use it.
             (bool) ($row['has_contact'] ?? false),
             (int) ($row['target_device_id'] ?? 0),
+            (string) ($row['message_uuid'] ?? ''),
+            (int) ($row['exclude_device_id'] ?? 0),
+            // <b>A row with no level falls back to its priority, not to
+            // the default.</b> Both are rows this code has to read: one
+            // written before the columns existed, one selected by a query
+            // that did not ask for them. Defaulting those to yellow would
+            // silently demote an urgent alert to a heads-up — so the older
+            // field answers where the newer one is absent, which is the
+            // whole reason it is still stored. See Alert::PRIORITY_NORMAL.
+            $this->level($row),
+            Alert::normaliseResponse((string) ($row['response'] ?? '')),
+            (string) ($row['sender_email'] ?? ''),
         );
+    }
+
+    /**
+     * The level a row is at. See the call site in {@see hydrate()} on why
+     * an absent one asks the priority rather than taking the default.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function level(array $row): string
+    {
+        $level = (string) ($row['level'] ?? '');
+        if ($level !== '') {
+            return Alert::normaliseLevel($level);
+        }
+
+        return Alert::levelForPriority((string) ($row['priority'] ?? ''));
     }
 
     /**
