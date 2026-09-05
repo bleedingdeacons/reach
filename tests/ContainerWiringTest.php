@@ -23,6 +23,7 @@ use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
 use Unity\Committees\Interfaces\CommitteeRepository;
 use Unity\Groups\Interfaces\GroupRepository;
+use Unity\Auth\Interfaces\PasswordCredentialRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 use WP_REST_Request;
@@ -31,6 +32,7 @@ use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryCommitteeRepository;
 use Unity\Testing\Doubles\InMemoryGroupRepository;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
@@ -215,6 +217,11 @@ final class ContainerWiringTest extends ReachTestCase
             // the double has to as well or the wiring test fails on a
             // dependency the real container always has.
             GroupRepository::class     => new InMemoryGroupRepository([]),
+            // The password store moved to Unity, which registers it into
+            // this same container in production. The double has to stand
+            // in for that here, exactly as it does for the repositories
+            // above — Reach no longer binds one of its own.
+            PasswordCredentialRepository::class => new InMemoryPasswordCredentialRepository(),
             AuditLogger::class         => new SpyAuditLogger(),
             MemberViewFactory::class   => new FakeMemberViewFactory(),
         ]);

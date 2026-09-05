@@ -32,7 +32,7 @@ use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\DeviceTokenMinter;
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\PasswordAuthenticator;
-use Reach\Auth\PasswordCredentialRepository;
+use Unity\Auth\Interfaces\PasswordCredentialRepository;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
 use Reach\Auth\ProviderRegistry;
@@ -41,7 +41,6 @@ use Reach\Auth\Providers\FacebookProvider;
 use Reach\Auth\Providers\GoogleProvider;
 use Reach\Auth\Providers\MicrosoftProvider;
 use Reach\Auth\StateStore;
-use Reach\Auth\WpdbPasswordCredentialRepository;
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
 use Reach\CallAttempts\ResponsivenessScorer;
@@ -202,12 +201,17 @@ final class ReachServiceProvider
         });
 
         // Email + password sign-in (the second auth path alongside OAuth).
-        // The credential store is bound by interface so the authenticator
-        // can be unit-tested against an in-memory fake.
-        $container->register(PasswordCredentialRepository::class, function () {
-            global $wpdb;
-            return new WpdbPasswordCredentialRepository($wpdb);
-        });
+        //
+        // The credential store is Unity's, and is deliberately not
+        // registered here. Reach used to bind its own implementation over
+        // its own wp_reach_credentials table, and Fellowship did the same
+        // over its own — so a member who set a password in one could not
+        // sign into the other with it, and a reset in one left the other
+        // stale with nothing to say so. A member has one password.
+        //
+        // Unity registers the binding in UnityServiceProvider, into the
+        // same container this provider writes into, so PasswordAuthenticator
+        // below resolves it unchanged.
         $container->register(PasswordResetMailer::class, fn() => new PasswordResetMailer());
         $container->register(PasswordPolicy::class, fn() => new PasswordPolicy());
         $container->register(PasswordAuthenticator::class, fn(ContainerInterface $c) => new PasswordAuthenticator(

@@ -210,6 +210,16 @@ Password  Hand POSTs email + password to /auth/device/password
           → token, no browser involved
 ```
 
+**The password store is Unity's, not Reach's.** Reach used to keep its own
+`wp_reach_credentials` table, and Fellowship kept an identical
+`wp_fellowship_credentials` one, so a member who set a password in one
+could not sign into the other with it and a reset in one left the other
+stale with nothing to say so. A member has one password. It now lives in
+`wp_unity_credentials`, bound as
+`Unity\Auth\Interfaces\PasswordCredentialRepository`, and Unity migrates
+the old rows on its first admin page load after the upgrade — newest row
+wins, old tables left in place to be removed by hand.
+
 The code, not the token, is what travels through the browser — RFC 8252
 ("OAuth 2.0 for Native Apps"), because a redirect lands in browser
 history and can be read by anything else registered for the scheme.

@@ -18,6 +18,7 @@ use Reach\Session\SessionCookie;
 use ReflectionClass;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
+use Unity\Auth\Interfaces\PasswordCredentialRepository;
 use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\Interfaces\MemberViewFactory;
 use WP_Error;
@@ -25,6 +26,7 @@ use WP_REST_Request;
 use WP_REST_Response;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
+use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Unity\Testing\Doubles\FakeContainer;
 use Reach\Tests\Fixtures\FakeMemberViewFactory;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
@@ -72,6 +74,9 @@ final class ControllerRoutesTest extends ReachTestCase
             ]),
             AuditLogger::class       => new SpyAuditLogger(),
             MemberViewFactory::class => new FakeMemberViewFactory(),
+            // Unity registers the password store into this same container
+            // in production; Reach no longer binds one of its own.
+            PasswordCredentialRepository::class => new InMemoryPasswordCredentialRepository(),
         ]);
         (new ReachServiceProvider())->register($this->container);
     }
