@@ -19,7 +19,7 @@ use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertContactRepository;
 use Reach\Alerts\AlertReplyRepository;
 use Reach\Alerts\AlertRepository;
-use Reach\Auth\PasswordCredentialRepository;
+use Unity\Auth\Interfaces\PasswordCredentialRepository;
 use Reach\Core\ReachServiceProvider;
 use Reach\Core\Capabilities;
 use Reach\Core\Schema;

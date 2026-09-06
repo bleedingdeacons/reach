@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Unity\Auth\Interfaces\PasswordCredentialRepository;
+use Unity\Auth\PasswordCredential;
 use Unity\Members\Interfaces\MemberRepository;
 
 /**

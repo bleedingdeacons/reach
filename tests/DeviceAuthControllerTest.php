@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
+use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\DeviceTokenMinter;

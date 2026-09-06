@@ -11,7 +11,6 @@ if (!defined('ABSPATH')) {
 use Reach\Alerts\WpdbAlertContactRepository;
 use Reach\Alerts\WpdbAlertReplyRepository;
 use Reach\Alerts\WpdbAlertRepository;
-use Reach\Auth\WpdbPasswordCredentialRepository;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
 use Reach\CallRequests\WpdbCallRequestRepository;
 use Reach\Devices\WpdbDeviceRepository;
@@ -157,7 +156,9 @@ final class Schema
     {
         WpdbCallAttemptRepository::install($wpdb);
         WpdbCallRequestRepository::install($wpdb);
-        WpdbPasswordCredentialRepository::install($wpdb);
+        // Password credentials are not here: the table is Unity's, and
+        // Unity installs it on its own version change. See
+        // Unity\Auth\WpdbPasswordCredentialRepository.
         WpdbDeviceRepository::install($wpdb);
         WpdbAlertRepository::install($wpdb);
         WpdbAlertContactRepository::install($wpdb);
