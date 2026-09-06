@@ -9,6 +9,7 @@ use Reach\Tests\ReachTestCase;
 use Reach\Auth\PasswordAuthenticator;
 use Unity\Auth\PasswordCredential;
 use Unity\Auth\Interfaces\PasswordCredentialRepository;
+use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
 use Reach\Auth\PasswordResetResult;
@@ -354,101 +355,5 @@ final class PasswordAuthenticatorTest extends ReachTestCase
         $message = (string) end($mail)['message'];
         $this->assertSame(1, preg_match('/token=([A-Za-z0-9\-_]+)/', $message, $m));
         return $m[1];
-    }
-}
-
-/**
- * In-memory {@see PasswordCredentialRepository} for the authenticator tests.
- *
- * Mirrors the production wpdb repository's important semantics: upsert on
- * password set (clearing token + lockout), UPDATE-only failed-attempt
- * recording (an unknown email never gets a row), and token lookup by hash.
- */
-final class InMemoryPasswordCredentialRepository implements PasswordCredentialRepository
-{
-    /** @var array<string, PasswordCredential> */
-    public array $rows = [];
-
-    public function seedPassword(string $email, string $plainPassword): void
-    {
-        $this->rows[$email] = new PasswordCredential(
-            $email,
-            password_hash($plainPassword, PASSWORD_DEFAULT),
-            '',
-            0,
-            0,
-            0,
-            0,
-        );
-    }
-
-    public function find(string $email): ?PasswordCredential
-    {
-        return $this->rows[$email] ?? null;
-    }
-
-    public function findByResetTokenHash(string $tokenHash): ?PasswordCredential
-    {
-        if ($tokenHash === '') {
-            return null;
-        }
-        foreach ($this->rows as $row) {
-            if ($row->resetTokenHash === $tokenHash) {
-                return $row;
-            }
-        }
-        return null;
-    }
-
-    public function upsertPasswordHash(string $email, string $passwordHash, int $now): void
-    {
-        // Set password, clear token + lockout — the production "clean slate".
-        $this->rows[$email] = new PasswordCredential($email, $passwordHash, '', 0, 0, 0, $now);
-    }
-
-    public function storeResetToken(string $email, string $tokenHash, int $expiresAt, int $now): void
-    {
-        $existing = $this->rows[$email] ?? null;
-        $this->rows[$email] = new PasswordCredential(
-            $email,
-            $existing?->passwordHash ?? '',
-            $tokenHash,
-            $expiresAt,
-            $existing?->failedAttempts ?? 0,
-            $existing?->lockedUntil ?? 0,
-            $now,
-        );
-    }
-
-    public function clearResetToken(string $email, int $now): void
-    {
-        $e = $this->rows[$email] ?? null;
-        if ($e === null) {
-            return;
-        }
-        $this->rows[$email] = new PasswordCredential($email, $e->passwordHash, '', 0, $e->failedAttempts, $e->lockedUntil, $now);
-    }
-
-    public function recordFailedAttempt(string $email, int $failedAttempts, int $lockedUntil, int $now): void
-    {
-        $e = $this->rows[$email] ?? null;
-        if ($e === null) {
-            return; // UPDATE-only: no row for unknown emails.
-        }
-        $this->rows[$email] = new PasswordCredential($email, $e->passwordHash, $e->resetTokenHash, $e->resetExpiresAt, $failedAttempts, $lockedUntil, $now);
-    }
-
-    public function resetFailedAttempts(string $email, int $now): void
-    {
-        $e = $this->rows[$email] ?? null;
-        if ($e === null) {
-            return;
-        }
-        $this->rows[$email] = new PasswordCredential($email, $e->passwordHash, $e->resetTokenHash, $e->resetExpiresAt, 0, 0, $now);
-    }
-
-    public function delete(string $email): void
-    {
-        unset($this->rows[$email]);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Auth\OutreachEligibility;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
