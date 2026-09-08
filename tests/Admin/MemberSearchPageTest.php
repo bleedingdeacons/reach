@@ -17,6 +17,7 @@ use Reach\Tests\ReachTestCase;
 use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberView;
+use Unity\Members\PreferredContact;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 
 /**
@@ -44,6 +45,9 @@ final class MemberSearchPageTest extends ReachTestCase
 {
     /** A number that is clearly not anyone's: Ofcom's drama range. */
     private const FAKE_MOBILE = '07700 900123';
+
+    /** The landline half of the same range. */
+    private const FAKE_LANDLINE = '01632 960123';
 
     protected function setUp(): void
     {
@@ -391,6 +395,115 @@ final class MemberSearchPageTest extends ReachTestCase
 
         $this->assertStringContainsString('<em>&mdash;</em>', $html);
         $this->assertStringNotContainsString('tel:', $html);
+    }
+
+    /**
+     * The landline gets its own dialable column: a member who asked to be
+     * rung at home is no use to an admin whose only column is the mobile.
+     *
+     * @test
+     */
+    public function the_landline_is_shown_as_a_dialable_number_of_its_own(): void
+    {
+        $_GET = ['location' => 'BS1'];
+
+        $html = $this->render($this->page(
+            members: [$this->twelfthStepper(id: 7)],
+            views: [new MemberViewStub(
+                id: 7,
+                anonymousName: 'Bob T.',
+                landlineNumber: self::FAKE_LANDLINE,
+            )],
+        ));
+
+        $this->assertStringContainsString('>Landline</th>', $html);
+        $this->assertStringContainsString(
+            '<a href="tel:' . str_replace(' ', '%20', self::FAKE_LANDLINE) . '">' . self::FAKE_LANDLINE . '</a>',
+            $html
+        );
+    }
+
+    /**
+     * @test
+     * @dataProvider preferences
+     */
+    public function the_number_the_member_asked_to_be_rung_on_is_tagged(
+        PreferredContact $preference,
+        string $taggedNumber,
+        string $untaggedNumber,
+    ): void {
+        $_GET = ['location' => 'BS1'];
+
+        $html = $this->normalise($this->render($this->page(
+            members: [$this->twelfthStepper(id: 7)],
+            views: [new MemberViewStub(
+                id: 7,
+                anonymousName: 'Bob T.',
+                mobileNumber: self::FAKE_MOBILE,
+                landlineNumber: self::FAKE_LANDLINE,
+                preferredContact: $preference,
+            )],
+        )));
+
+        $this->assertStringContainsString(
+            '>' . $taggedNumber . '</a> <span class="description">preferred</span>',
+            $html
+        );
+        $this->assertStringNotContainsString(
+            '>' . $untaggedNumber . '</a> <span class="description">preferred</span>',
+            $html
+        );
+    }
+
+    /** @return array<string, array{0: PreferredContact, 1: string, 2: string}> */
+    public static function preferences(): array
+    {
+        return [
+            'prefers the mobile'   => [PreferredContact::Mobile, self::FAKE_MOBILE, self::FAKE_LANDLINE],
+            'prefers the landline' => [PreferredContact::Landline, self::FAKE_LANDLINE, self::FAKE_MOBILE],
+        ];
+    }
+
+    /**
+     * With one number on file there is nothing to prefer it over, so the row
+     * says nothing about the preference — including when the stored value
+     * still says Landline for a member whose landline has since been deleted,
+     * which ACF leaves behind because it keeps the last saved choice for a
+     * field its conditional logic has hidden.
+     *
+     * @test
+     * @dataProvider lonelyNumbers
+     */
+    public function one_number_on_file_is_never_tagged_preferred(
+        string $mobile,
+        string $landline,
+        PreferredContact $preference,
+    ): void {
+        $_GET = ['location' => 'BS1'];
+
+        $html = $this->render($this->page(
+            members: [$this->twelfthStepper(id: 7)],
+            views: [new MemberViewStub(
+                id: 7,
+                anonymousName: 'Bob T.',
+                mobileNumber: $mobile,
+                landlineNumber: $landline,
+                preferredContact: $preference,
+            )],
+        ));
+
+        $this->assertStringNotContainsString('preferred', $html);
+        $this->assertStringContainsString('<em>&mdash;</em>', $html, 'the missing number still shows a dash');
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: PreferredContact}> */
+    public static function lonelyNumbers(): array
+    {
+        return [
+            'mobile only'                     => [self::FAKE_MOBILE, '', PreferredContact::Mobile],
+            'landline only'                   => ['', self::FAKE_LANDLINE, PreferredContact::Landline],
+            'a preference for a deleted line' => [self::FAKE_MOBILE, '  ', PreferredContact::Landline],
+        ];
     }
 
     /**

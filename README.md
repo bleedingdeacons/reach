@@ -17,7 +17,7 @@ Public-facing front end for finding 12th-step members. Email-verified sign-in vi
 - PHP 8.1+ with `openssl` and `json`
 - [Unity](https://github.com/bleedingdeacons/unity) and [Scrutiny](https://github.com/bleedingdeacons/scrutiny) must be active
 
-Reach hooks into Unity on `unity/loaded` and uses Unity's `MemberRepository` to source members. Every member surfaced is audit-logged through Scrutiny with the requesting visitor's verified email attached, so a regulator can answer "which Reach user saw this member's mobile, and when" from Scrutiny's audit table.
+Reach hooks into Unity on `unity/loaded` and uses Unity's `MemberRepository` to source members. Every member surfaced is audit-logged through Scrutiny with the requesting visitor's verified email attached, so a regulator can answer "which Reach user saw this member's numbers, and when" from Scrutiny's audit table.
 
 ## Pages
 
@@ -502,7 +502,7 @@ than reloading it.
 
 ## Audit logging
 
-Every result returned by `/reach/v1/nearest-members` produces one `logBatch` entry in Scrutiny per member (one per audited PII field), with a structured `detail` string identifying the viewer:
+Every result returned by `/reach/v1/nearest-members` produces one `logBatch` entry in Scrutiny per member per audited PII field — `mobile_number` always, plus `landline_number` for the members who have one — with a structured `detail` string identifying the viewer:
 
 ```
 caller:Alice K.#42
@@ -516,7 +516,7 @@ caller:Alice K.#42;result:Spoke
 
 Scrutiny's audit admin parses this shape and renders the name as a link to the viewer/caller's member edit page. The raw email is never written to the audit row.
 
-So "which Reach visitor saw which member's mobile, and when, and which attempts they then logged" is answerable directly from Scrutiny's audit table.
+So "which Reach visitor saw which member's numbers, and when, and which attempts they then logged" is answerable directly from Scrutiny's audit table.
 
 ## OAuth credentials
 

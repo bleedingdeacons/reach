@@ -13,6 +13,7 @@ use Reach\Resolution\ScoredMember;
 use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\MemberView;
 use Unity\Members\Interfaces\MemberViewFactory;
+use Unity\Members\PreferredContact;
 
 /**
  * Admin search for the nearest 12th-steppers to an area.
@@ -42,9 +43,10 @@ use Unity\Members\Interfaces\MemberViewFactory;
  *
  * Capability & placement
  * ----------------------
- * Gated behind scrutiny_view_personal_data (a search surfaces mobile
- * numbers), matching the rest of Reach's admin. Attaches as a submenu
- * under the top-level "Reach" menu registered by CallAttemptsPage.
+ * Gated behind scrutiny_view_personal_data (a search surfaces members'
+ * phone numbers), matching the rest of Reach's admin. Attaches as a
+ * submenu under the top-level "Reach" menu registered by
+ * CallAttemptsPage.
  */
 final class MemberSearchPage
 {
@@ -219,12 +221,13 @@ final class MemberSearchPage
                     <th scope="col" style="width: 100px;">Distance</th>
                     <th scope="col" style="width: 180px;">Accepts</th>
                     <th scope="col" style="width: 160px;">Mobile</th>
+                    <th scope="col" style="width: 160px;">Landline</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if ($views === []) : ?>
                     <tr>
-                        <td colspan="5">No 12th-steppers match this search.</td>
+                        <td colspan="6">No 12th-steppers match this search.</td>
                     </tr>
                 <?php else :
                     foreach ($views as $view) : ?>
@@ -234,6 +237,7 @@ final class MemberSearchPage
                                         // (e.g. "Kingswood" out of "Kingswood|Hanham") so the
                                         // area shown is the one the distance refers to.
                                             $area = $scored->matchedArea ?? $view->getArea();
+                                            $preference = $this->preference($view);
                                             ?>
                     <tr>
                         <td><?php echo $this->nameCell($view); ?></td>
@@ -242,7 +246,8 @@ final class MemberSearchPage
                             <?php echo $scored !== null ? esc_html($this->formatDistance($scored)) : '&mdash;'; ?>
                         </td>
                         <td><?php echo esc_html($this->acceptsLabel($view->getAccepts())); ?></td>
-                        <td><?php echo $this->mobileCell($view->getMobileNumber()); ?></td>
+                        <td><?php echo $this->numberCell($view->getMobileNumber(), $preference === PreferredContact::Mobile); ?></td>
+                        <td><?php echo $this->numberCell($view->getLandlineNumber(), $preference === PreferredContact::Landline); ?></td>
                     </tr>
                     <?php endforeach;
                 endif; ?>
@@ -297,16 +302,45 @@ final class MemberSearchPage
     }
 
     /**
-     * Render the mobile number as a tel: link so admins can dial from
-     * the search results. Blank when the member has no number on file.
+     * Which number this member asked to be rung on, or null when the
+     * question does not arise.
+     *
+     * A preference is only worth showing when there are two numbers to
+     * choose between: a member with one number on file is rung on it
+     * whatever the stored preference says, and tagging the only number
+     * in the row "preferred" is noise. Note the stored value can still
+     * say Landline for a member whose landline has since been deleted
+     * — ACF keeps the last saved choice for a hidden field — which is
+     * the other reason this asks about the numbers rather than
+     * trusting the preference alone.
      */
-    private function mobileCell(string $mobile): string
+    private function preference(MemberView $view): ?PreferredContact
     {
-        $mobile = trim($mobile);
-        if ($mobile === '') {
+        if (trim($view->getMobileNumber()) === '' || trim($view->getLandlineNumber()) === '') {
+            return null;
+        }
+
+        return $view->getPreferredContact();
+    }
+
+    /**
+     * Render one of a member's numbers as a tel: link so admins can
+     * dial from the search results, tagged when it is the number the
+     * member asked to be rung on. Blank when they have no number of
+     * that kind on file.
+     */
+    private function numberCell(string $number, bool $preferred): string
+    {
+        $number = trim($number);
+        if ($number === '') {
             return '<em>&mdash;</em>';
         }
-        return '<a href="' . esc_url('tel:' . $mobile) . '">' . esc_html($mobile) . '</a>';
+
+        $cell = '<a href="' . esc_url('tel:' . $number) . '">' . esc_html($number) . '</a>';
+        if ($preferred) {
+            $cell .= ' <span class="description">preferred</span>';
+        }
+        return $cell;
     }
 
     /**
