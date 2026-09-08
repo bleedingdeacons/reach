@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reach\Tests\Fixtures;
 
 use Unity\Members\Interfaces\MemberView;
+use Unity\Members\PreferredContact;
 use Unity\Members\ResponderCertification;
 
 /**
@@ -21,7 +22,7 @@ use Unity\Members\ResponderCertification;
  *
  *     new MemberViewStub(id: 7, anonymousName: 'Alice K.', area: 'Bedminster')
  *
- * Note the mobile number is blank by default. These screens are the personal-
+ * Note both numbers are blank by default. These screens are the personal-
  * data surface of a public finder, so a fixture only carries a number when the
  * test is specifically about how numbers are rendered or gated — and then it
  * is an obviously fake one.
@@ -34,6 +35,8 @@ final class MemberViewStub implements MemberView
         private string $anonymousName = 'Test',
         private string $personalEmail = '',
         private string $mobileNumber = '',
+        private string $landlineNumber = '',
+        private PreferredContact $preferredContact = PreferredContact::Mobile,
         private int $homeGroupId = 0,
         private string $homeGroupName = '',
         private bool $isGSR = false,
@@ -66,6 +69,16 @@ final class MemberViewStub implements MemberView
     public function getMobileNumber(): string
     {
         return $this->mobileNumber;
+    }
+
+    public function getLandlineNumber(): string
+    {
+        return $this->landlineNumber;
+    }
+
+    public function getPreferredContact(): PreferredContact
+    {
+        return $this->preferredContact;
     }
 
     public function getHomeGroupId(): int
