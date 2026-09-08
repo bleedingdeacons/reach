@@ -376,7 +376,7 @@
 
             var contact = document.createElement('div');
             contact.className = 'reach-result__contact';
-            if (m.mobile_number) {
+            if (m.mobile_number || m.landline_number) {
                 // Clicking call/text after the user has already logged
                 // an outcome for this member implies a *new* attempt is
                 // about to happen — clear the previous "Logged: …"
@@ -398,24 +398,62 @@
                     setTimeout(renderList, 0);
                 };
 
-                var tel = document.createElement('a');
-                tel.href = 'tel:' + m.mobile_number.replace(/\s+/g, '');
-                tel.appendChild(icon('call'));
-                var telLabel = document.createElement('span');
-                telLabel.className = 'reach-result__contact-label';
-                telLabel.textContent = 'Call ' + formatPhone(m.mobile_number);
-                tel.appendChild(telLabel);
-                tel.addEventListener('click', reopenFeedback);
-                contact.appendChild(tel);
-                var sms = document.createElement('a');
-                sms.href = 'sms:' + m.mobile_number.replace(/\s+/g, '');
-                sms.appendChild(icon('message'));
-                var smsLabel = document.createElement('span');
-                smsLabel.className = 'reach-result__contact-label';
-                smsLabel.textContent = 'Text ' + formatPhone(m.mobile_number);
-                sms.appendChild(smsLabel);
-                sms.addEventListener('click', reopenFeedback);
-                contact.appendChild(sms);
+                var contactLink = function (scheme, iconName, number, label) {
+                    var a = document.createElement('a');
+                    a.href = scheme + ':' + number.replace(/\s+/g, '');
+                    a.appendChild(icon(iconName));
+                    var span = document.createElement('span');
+                    span.className = 'reach-result__contact-label';
+                    span.textContent = label;
+                    a.appendChild(span);
+                    a.addEventListener('click', reopenFeedback);
+                    return a;
+                };
+
+                // Only worth saying which number the member prefers
+                // when they have given us two to choose between; with
+                // one number there is nothing to prefer it over.
+                var hasBoth = !!(m.mobile_number && m.landline_number);
+                var prefersLandline = m.preferred_contact === 'Landline' && !!m.landline_number;
+
+                var mobileLinks = [];
+                if (m.mobile_number) {
+                    mobileLinks.push(contactLink(
+                        'tel',
+                        'call',
+                        m.mobile_number,
+                        'Call ' + formatPhone(m.mobile_number) + (hasBoth && !prefersLandline ? ' (preferred)' : '')
+                    ));
+                    mobileLinks.push(contactLink(
+                        'sms',
+                        'message',
+                        m.mobile_number,
+                        'Text ' + formatPhone(m.mobile_number)
+                    ));
+                }
+
+                var landlineLinks = [];
+                if (m.landline_number) {
+                    // Named as a landline rather than left to look like
+                    // a second mobile: it has no Text beside it, and a
+                    // caller deciding when to ring wants to know they
+                    // are dialling a house, not a pocket.
+                    landlineLinks.push(contactLink(
+                        'tel',
+                        'call',
+                        m.landline_number,
+                        'Call landline ' + formatPhone(m.landline_number) + (hasBoth && prefersLandline ? ' (preferred)' : '')
+                    ));
+                }
+
+                // Preferred number first: the top link is the one a
+                // caller in a hurry taps.
+                var ordered = prefersLandline
+                    ? landlineLinks.concat(mobileLinks)
+                    : mobileLinks.concat(landlineLinks);
+                ordered.forEach(function (link) {
+                    contact.appendChild(link);
+                });
             }
             li.appendChild(contact);
 

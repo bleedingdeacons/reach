@@ -22,6 +22,7 @@ use Reach\Core\RateLimiter;
 use ReflectionClass;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Members\Interfaces\Member;
+use Unity\Members\PreferredContact;
 use Unity\Members\ResponderCertification;
 use Unity\Members\Interfaces\MemberRepository;
 use WP_REST_Request;
@@ -52,6 +53,10 @@ use Scrutiny\Testing\Doubles\SpyAuditLogger;
  */
 final class NearestMembersControllerTest extends ReachTestCase
 {
+    /** Numbers that are clearly nobody's: Ofcom's drama ranges. */
+    private const FAKE_MOBILE = '07700 900123';
+    private const FAKE_LANDLINE = '01632 960123';
+
     public function testHappySnapshotIncludesRequesterAnonymousNameInAuditDetail(): void
     {
         $requester = $this->stubMember(
@@ -248,9 +253,86 @@ final class NearestMembersControllerTest extends ReachTestCase
     }
 
     /**
+     * A caller ringing a 12th-stepper needs both numbers and to know
+     * which one the member asked to be rung on — a landline held on the
+     * member record but left out of the response is a number nobody can
+     * dial.
+     */
+    public function testTheResponseCarriesBothNumbersAndTheContactPreference(): void
+    {
+        $exposed = $this->stubMember(
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
+            mobile: self::FAKE_MOBILE,
+            landline: self::FAKE_LANDLINE,
+            preferredContact: PreferredContact::Landline,
+        );
+
+        $response = $this->controllerWith(
+            members: [$exposed],
+            audit: new SpyAuditLogger(),
+            sessionEmail: 'alice@example.com',
+        )->getNearest($this->request('BS1', limit: 10));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $response);
+
+        $member = $response->get_data()['members'][0];
+        $this->assertSame(self::FAKE_MOBILE, $member['mobile_number']);
+        $this->assertSame(self::FAKE_LANDLINE, $member['landline_number']);
+        // The enum's own value, so the find page can order its call
+        // buttons off the field without re-deciding the empty case.
+        $this->assertSame('Landline', $member['preferred_contact']);
+    }
+
+    /**
+     * The landline is audited as a PII view for the members who have
+     * one and for nobody else: logging it for every member would double
+     * the audit volume of a search while recording an exposure that
+     * never happened.
+     */
+    public function testTheLandlineIsAuditedOnlyForMembersWhoHaveOne(): void
+    {
+        $withLandline = $this->stubMember(
+            id: 2,
+            name: 'Bob T.',
+            twelfth: true,
+            email: 'bob@example.com',
+            area: 'BS1 1AB',
+            mobile: self::FAKE_MOBILE,
+            landline: self::FAKE_LANDLINE,
+        );
+        $mobileOnly = $this->stubMember(
+            id: 3,
+            name: 'Carol M.',
+            twelfth: true,
+            email: 'carol@example.com',
+            area: 'BS1 1AC',
+            mobile: self::FAKE_MOBILE,
+        );
+
+        $audit = new SpyAuditLogger();
+        $this->controllerWith(
+            members: [$withLandline, $mobileOnly],
+            audit: $audit,
+            sessionEmail: 'alice@example.com',
+        )->getNearest($this->request('BS1', limit: 10));
+
+        $perMember = [];
+        foreach ($audit->entries as $entry) {
+            $perMember[$entry['entityId']][] = $entry['fieldName'];
+        }
+
+        $this->assertSame(['mobile_number', 'landline_number'], $perMember[2] ?? []);
+        $this->assertSame(['mobile_number'], $perMember[3] ?? []);
+    }
+
+    /**
      * The search cap is what stops one valid session copying the
      * directory. This is the only endpoint that hands out members'
-     * mobile numbers, and auditing records that it happened rather than
+     * phone numbers, and auditing records that it happened rather than
      * bounding how often it may.
      *
      * Driven through the real RateLimiter and its transient store, so
@@ -426,6 +508,9 @@ final class NearestMembersControllerTest extends ReachTestCase
         string $area,
         bool $responder = false,
         ResponderCertification $certification = ResponderCertification::None,
+        string $mobile = '',
+        string $landline = '',
+        PreferredContact $preferredContact = PreferredContact::Mobile,
     ): Member {
         return new MemberStub(
             id: $id,
@@ -435,6 +520,9 @@ final class NearestMembersControllerTest extends ReachTestCase
             area: $area,
             telephoneResponder: $responder,
             responderCertification: $certification,
+            mobileNumber: $mobile,
+            landlineNumber: $landline,
+            preferredContact: $preferredContact,
         );
     }
 }

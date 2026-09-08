@@ -85,7 +85,7 @@ final class NearestMembersController
     /**
      * Searches one signed-in viewer may run per window, and the window.
      *
-     * This is the only endpoint that hands out members' mobile numbers,
+     * This is the only endpoint that hands out members' phone numbers,
      * up to {@see MAX_LIMIT} of them at a time and out to
      * {@see MAX_DISTANCE_KM}. Without a ceiling, a single valid session
      * can walk a list of place names and copy the intergroup's entire
@@ -116,13 +116,31 @@ final class NearestMembersController
      * selection criteria the caller already supplied, not personal
      * data we expose to them, so logging them under GDPR audit would
      * misrepresent what the visitor actually saw. Personal email is
-     * also not exposed by Reach — the only contact method surfaced
-     * to a viewer is the mobile number — so it isn't audited here
+     * also not exposed by Reach — the contact methods surfaced to a
+     * viewer are the two phone numbers — so it isn't audited here
      * either.
+     *
+     * `preferred_contact` is not audited on its own: it is a property
+     * of the numbers already logged (which of them to ring), not a
+     * further piece of personal data, and a row saying a viewer saw
+     * "Mobile" without the number would tell a regulator nothing.
      */
     private const AUDITED_FIELDS = [
         'mobile_number',
     ];
+
+    /**
+     * Audited in addition to {@see AUDITED_FIELDS}, but only for the
+     * members who actually have a landline.
+     *
+     * Unlike the mobile — which every member is expected to carry, and
+     * which is logged whether or not the stored value happens to be
+     * blank — a landline is the exception. Logging it for every member
+     * would double the audit volume of a search while recording an
+     * exposure that never happened, and "who saw this number" is the
+     * question these rows exist to answer.
+     */
+    private const AUDITED_LANDLINE_FIELD = 'landline_number';
 
     public function __construct(
         private readonly NearestMembersResolver $resolver,
@@ -328,23 +346,31 @@ final class NearestMembersController
                 $m = $scored->member;
                 $id = $m->getId();
                 return [
-                    'id'              => $id,
-                    'anonymous_name'  => $m->getAnonymousName(),
+                    'id'                => $id,
+                    'anonymous_name'    => $m->getAnonymousName(),
                     // For a pipe-separated member (e.g. "Kingswood|Hanham"),
                     // surface only the entry that drove the match — that's
                     // the area the reported distance refers to, and it
                     // avoids leaking the separator-as-data into the UI.
                     // Single-area members fall back to the raw field, so
                     // their behaviour is unchanged.
-                    'area'            => $scored->matchedArea ?? $m->getArea(),
-                    'accepts'         => $m->getAccepts(),
-                    'preferred'       => $scored->preferred,
-                    'mobile_number'   => $m->getMobileNumber(),
-                    'distance_km'     => round($scored->distanceKm, 1),
-                    'responsiveness'  => $badges[$id] ?? null,
+                    'area'              => $scored->matchedArea ?? $m->getArea(),
+                    'accepts'           => $m->getAccepts(),
+                    'preferred'         => $scored->preferred,
+                    'mobile_number'     => $m->getMobileNumber(),
+                    'landline_number'   => $m->getLandlineNumber(),
+                    // Which of the two numbers to ring, as the enum's
+                    // own value ("Mobile" / "Landline"). A member with
+                    // no landline is always "Mobile" — the invariant
+                    // lives in PreferredContact, not here — so the find
+                    // page can order the call buttons off this field
+                    // without re-deciding the empty case.
+                    'preferred_contact' => $m->getPreferredContact()->value,
+                    'distance_km'       => round($scored->distanceKm, 1),
+                    'responsiveness'    => $badges[$id] ?? null,
                     // Bind a token so the find-page can log an outcome
                     // for *this* member without re-fetching the list.
-                    'attempt_token'   => $viewerEmail !== ''
+                    'attempt_token'     => $viewerEmail !== ''
                         ? $this->attemptTokens->mint($viewerEmail, $id, $now)
                         : null,
                 ];
@@ -366,11 +392,16 @@ final class NearestMembersController
         $detail = $this->callerDetail();
 
         foreach ($members as $scored) {
+            $fields = self::AUDITED_FIELDS;
+            if (trim($scored->member->getLandlineNumber()) !== '') {
+                $fields[] = self::AUDITED_LANDLINE_FIELD;
+            }
+
             $this->auditLogger->logBatch(
                 AuditLogger::ACTION_VIEW,
                 AuditLogger::ENTITY_MEMBER,
                 $scored->member->getId(),
-                self::AUDITED_FIELDS,
+                $fields,
                 $detail
             );
         }

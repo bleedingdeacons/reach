@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Fixtures;
 
+use Unity\Members\PreferredContact;
 use Unity\Members\ResponderCertification;
 use Unity\Testing\Doubles\MemberStub as UnityMemberStub;
 
@@ -46,6 +47,15 @@ final class MemberStub extends UnityMemberStub
          * wants that case says so by passing 0.
          */
         int $homeGroup = 88,
+        /**
+         * Both numbers blank by default. Reach is the personal-data
+         * surface of a public finder, so a fixture carries a number
+         * only when the test is about how numbers are rendered,
+         * exposed or audited — and then an obviously fake one.
+         */
+        string $mobileNumber = '',
+        string $landlineNumber = '',
+        PreferredContact $preferredContact = PreferredContact::Mobile,
     ) {
         parent::__construct(
             id: $id,
@@ -54,6 +64,9 @@ final class MemberStub extends UnityMemberStub
             showMemberProfile: true,
             homeGroup: $homeGroup,
             personalEmail: $personalEmail,
+            mobileNumber: $mobileNumber,
+            landlineNumber: $landlineNumber,
+            preferredContact: $preferredContact,
             twelfthStepper: $twelfthStepper,
             telephoneResponder: $telephoneResponder,
             responderCertification: $responderCertification,
