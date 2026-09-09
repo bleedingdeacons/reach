@@ -82,10 +82,20 @@
 
     // Wrap fetch with the shared auth/credentials and JSON handling. Resolves to
     // { status, body }. A 401 (session gone) bounces straight to sign-in.
+    //
+    // X-Reach-Token goes on every call, not just the writes. These endpoints
+    // belong to Trusted but authenticate with Reach's session cookie, so the
+    // writes among them need the same anti-CSRF token as Reach's own — see
+    // SessionCsrf. Attaching it here rather than at each call site is what
+    // stops the next write added to this file from silently omitting it. The
+    // read ignores it.
     function api(path, options) {
         options = options || {};
         options.credentials = 'same-origin';
-        options.headers = Object.assign({ 'Accept': 'application/json' }, options.headers || {});
+        options.headers = Object.assign({
+            'Accept': 'application/json',
+            'X-Reach-Token': cfg.sessionToken || ''
+        }, options.headers || {});
         if (options.body && typeof options.body !== 'string') {
             options.headers['Content-Type'] = 'application/json';
             options.body = JSON.stringify(options.body);

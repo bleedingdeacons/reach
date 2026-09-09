@@ -34,6 +34,7 @@ use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
+use Reach\Session\SessionCsrf;
 use Psr\Container\ContainerInterface;
 use Unity\Core\Interfaces\Container;
 
@@ -221,6 +222,33 @@ class Plugin
             // Trusted still re-checks they are a telephone responder.
             return $session->member();
         }, 10, 1);
+
+        // Vouch for a sign-up write the same way Reach's own cookie-
+        // authenticated writes are vouched for.
+        //
+        // The bridge above authenticates those endpoints with the Reach
+        // session cookie, which a browser attaches to a cross-site request
+        // by itself — so without this, POST /signup and DELETE /signup/{rota}
+        // were forgeable, and the only thing in the way was the cookie's
+        // SameSite=Lax. SessionCsrf's docblock is the statement of why that
+        // is not enough on its own.
+        //
+        // Trusted cannot check the token itself without depending on Reach,
+        // so it asks and defaults to refusing. Answering here keeps the check
+        // where the token is minted. Inert when Trusted isn't installed.
+        $csrf = self::$container->get(SessionCsrf::class);
+        add_filter('trusted_signup_verify_request', static function ($verified, $request) use ($session, $csrf) {
+            if ($verified === true) {
+                return true;
+            }
+
+            $current = $session->get();
+            if ($current === null || !$request instanceof \WP_REST_Request) {
+                return false;
+            }
+
+            return $csrf->verify($request, $current);
+        }, 10, 2);
 
         // GDPR erasure: a member's password credential is personal data, so
         // purge it when the member is deleted/trashed. Unity's

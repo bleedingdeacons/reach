@@ -17,6 +17,7 @@ use Reach\Rest\NearestMembersController;
 use Reach\Rest\OAuthController;
 use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
+use Reach\Session\SessionCookie;
 use ReflectionClass;
 use RuntimeException;
 use Scrutiny\Audit\Interfaces\AuditLogger;
@@ -65,7 +66,7 @@ final class ContainerWiringTest extends ReachTestCase
         // registered callbacks back out and invoke them, so each hook of
         // interest is captured as Plugin::init() hangs it.
         $this->captureActions(['rest_api_init', 'admin_menu', 'unity/member_deleted']);
-        $this->captureFilters(['rest_post_dispatch', 'trusted_signup_member']);
+        $this->captureFilters(['rest_post_dispatch', 'trusted_signup_member', 'trusted_signup_verify_request']);
 
         WpState::$cron = [];
         WpState::$options = [];
@@ -120,6 +121,7 @@ final class ContainerWiringTest extends ReachTestCase
         // The no-store cache filter and the two integration filters are hung.
         $this->assertFilterAdded('rest_post_dispatch');
         $this->assertFilterAdded('trusted_signup_member');
+        $this->assertFilterAdded('trusted_signup_verify_request');
         $this->assertActionAdded('unity/member_deleted');
 
         $this->assertSame($container, Plugin::getContainer());
@@ -168,6 +170,90 @@ final class ContainerWiringTest extends ReachTestCase
         // With no session cookie set, the filter can't resolve a member.
         $_COOKIE = [];
         $this->assertNull($filter(null));
+    }
+
+    public function testTrustedSignupVerifyFilterRefusesWithoutASession(): void
+    {
+        // Trusted's write gate defaults to refusing and asks this filter to
+        // vouch for the request. With no session there is nothing to bind a
+        // token to, so it must not vouch.
+        Plugin::init($this->container());
+        $filter = $this->filterCallbacks('trusted_signup_verify_request')[0];
+
+        $_COOKIE = [];
+        $this->assertFalse($filter(false, new WP_REST_Request([], '/trusted/v1/signup')));
+    }
+
+    public function testTrustedSignupVerifyFilterRefusesAnythingThatIsNotARequest(): void
+    {
+        Plugin::init($this->container());
+        $filter = $this->filterCallbacks('trusted_signup_verify_request')[0];
+
+        $this->assertFalse($filter(false, null));
+        $this->assertFalse($filter(false, 'not-a-request'));
+    }
+
+    public function testTrustedSignupVerifyFilterPassesAnAlreadyVerifiedRequestThrough(): void
+    {
+        // Matches the member filter's shape: another sibling having already
+        // answered is not overridden.
+        Plugin::init($this->container());
+        $filter = $this->filterCallbacks('trusted_signup_verify_request')[0];
+
+        $this->assertTrue($filter(true, new WP_REST_Request([], '/trusted/v1/signup')));
+    }
+
+    public function testTrustedSignupVerifyFilterAcceptsTheSessionsOwnToken(): void
+    {
+        // The path that has to work: a signed-in responder's browser presents
+        // the token the shifts page minted for it, and Trusted's write gate
+        // is told yes. Everything above proves the gate closes; this proves
+        // it opens for the person it is meant to let through.
+        $session = $this->sessionFor('member@example.com');
+        $members = new InMemoryMemberRepository([new MemberStub('member@example.com', true, true, 7)]);
+
+        $cookie = new SessionCookie();
+        $_COOKIE[SessionCookie::COOKIE_NAME] = $cookie->sign($session);
+
+        Plugin::init($this->container($members));
+        $filter = $this->filterCallbacks('trusted_signup_verify_request')[0];
+
+        $request = $this->withSessionToken(new WP_REST_Request([], '/trusted/v1/signup'), $session);
+        $this->assertTrue($filter(false, $request));
+    }
+
+    public function testTrustedSignupVerifyFilterRefusesAnotherSessionsToken(): void
+    {
+        // A token is bound to the session it was minted for, so one lifted
+        // from elsewhere is no use even with a valid cookie of your own.
+        $mine  = $this->sessionFor('member@example.com');
+        $other = $this->sessionFor('someone-else@example.com');
+        $members = new InMemoryMemberRepository([new MemberStub('member@example.com', true, true, 7)]);
+
+        $cookie = new SessionCookie();
+        $_COOKIE[SessionCookie::COOKIE_NAME] = $cookie->sign($mine);
+
+        Plugin::init($this->container($members));
+        $filter = $this->filterCallbacks('trusted_signup_verify_request')[0];
+
+        $request = $this->withSessionToken(new WP_REST_Request([], '/trusted/v1/signup'), $other);
+        $this->assertFalse($filter(false, $request));
+    }
+
+    public function testTrustedSignupVerifyFilterRefusesARequestWithNoToken(): void
+    {
+        // The cross-site case exactly: the browser attaches the cookie by
+        // itself, but the attacker cannot read the token to send with it.
+        $session = $this->sessionFor('member@example.com');
+        $members = new InMemoryMemberRepository([new MemberStub('member@example.com', true, true, 7)]);
+
+        $cookie = new SessionCookie();
+        $_COOKIE[SessionCookie::COOKIE_NAME] = $cookie->sign($session);
+
+        Plugin::init($this->container($members));
+        $filter = $this->filterCallbacks('trusted_signup_verify_request')[0];
+
+        $this->assertFalse($filter(false, new WP_REST_Request([], '/trusted/v1/signup')));
     }
 
     public function testMemberDeletedHookPurgesTheMembersPasswordCredential(): void
