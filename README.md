@@ -462,11 +462,23 @@ And it is never urgent, whatever the alert it reports on was.
 | `/reach/v1/alerts` | GET | Alerts this handset should be ringing about |
 | `/reach/v1/alerts/{id}/contact` | GET | Contact details for one alert (audited) |
 | `/reach/v1/alerts/{id}/ack` | POST | This handset has alarmed for one |
+| `/reach/v1/members` | GET | The member directory, as the picker shows it |
+| `/reach/v1/members/{id}/contact` | GET | One member's phone numbers (audited, throttled) |
+| `/reach/v1/committees` | GET | The committee tree, keyed by slug |
 
 The poll has no client-side cursor: what a handset has handled is
 recorded server-side as an acknowledgement, so a handset that is
 reinstalled or restored from a backup neither re-alarms for everything
 nor silently skips live alerts.
+
+The picker lists names and home groups, never email addresses: a
+recipient is chosen by id and resolved to an address server-side, so one
+responder never learns another's in order to message them. Phone numbers
+are the one exception and are fetched a member at a time, because the
+list route returns the whole directory and numbers in it would let a
+single handset copy every number an intergroup holds. Each lookup is
+audited against the member whose numbers were shown and counted against
+a per-responder hourly cap.
 
 ### Configuration and admin
 
