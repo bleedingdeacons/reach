@@ -70,6 +70,12 @@ if (!defined('REACH_PLUGIN_FILE')) {
     define('REACH_PLUGIN_FILE', dirname(__DIR__) . '/reach.php');
 }
 
+// The user-agent builder reports the plugin version, so the tests run the
+// same branch production does rather than the "no version defined" fallback.
+if (!defined('REACH_VERSION')) {
+    define('REACH_VERSION', '9.9.9');
+}
+
 // Reach autoloader.
 spl_autoload_register(function ($class) {
     $prefix = 'Reach\\';

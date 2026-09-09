@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Reach\Core\UserAgent;
+
 /**
  * Verify RS256-signed ID tokens against a provider's JWKS endpoint.
  *
@@ -239,6 +241,7 @@ final class JwtVerifier
     {
         $response = wp_remote_get($url, [
             'timeout' => self::HTTP_TIMEOUT,
+            'user-agent' => UserAgent::plugin(),
             'headers' => ['Accept' => 'application/json'],
         ]);
         if (is_wp_error($response)) {

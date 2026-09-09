@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Core\Settings;
+use Reach\Core\UserAgent;
 
 /**
  * Microsoft sign-in via the Entra v2.0 endpoint, consumers tenant.
@@ -116,6 +117,7 @@ final class MicrosoftProvider implements OAuthProvider
     {
         $response = wp_remote_post(self::TOKEN_URL, [
             'timeout' => 10,
+            'user-agent' => UserAgent::plugin(),
             'headers' => ['Accept' => 'application/json'],
             'body'    => [
                 'client_id'     => $this->settings->getClientId(self::PROVIDER_NAME),
