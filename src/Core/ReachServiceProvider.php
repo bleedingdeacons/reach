@@ -302,6 +302,7 @@ final class ReachServiceProvider
             $c->get(CurrentSession::class),
             $c->get(CallRequestMailer::class),
             $c->get(SessionCsrf::class),
+            $c->get(RateLimiter::class),
         ));
 
         $container->register(DeviceAuthController::class, fn(ContainerInterface $c) => new DeviceAuthController(

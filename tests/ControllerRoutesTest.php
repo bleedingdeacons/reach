@@ -161,15 +161,54 @@ final class ControllerRoutesTest extends ReachTestCase
         /** @var NearestMembersController $controller */
         $controller = $this->container->get(NearestMembersController::class);
 
-        $anon = $controller->getSession();
+        $anon = $controller->getSession(new WP_REST_Request([], '/reach/v1/session'));
         $this->assertInstanceOf(WP_REST_Response::class, $anon);
         $this->assertFalse($anon->get_data()['authenticated']);
 
         $this->seedSession('user@example.com', 'google');
-        $authed = $controller->getSession()->get_data();
+        $authed = $controller->getSession(new WP_REST_Request([], '/reach/v1/session'))->get_data();
         $this->assertTrue($authed['authenticated']);
         $this->assertSame('user@example.com', $authed['email']);
         $this->assertSame('google', $authed['provider']);
+        $this->assertArrayHasKey('token', $authed);
+    }
+
+    public function testGetSessionWithholdsTheTokenFromACrossOriginCaller(): void
+    {
+        /** @var NearestMembersController $controller */
+        $controller = $this->container->get(NearestMembersController::class);
+
+        $this->seedSession('user@example.com', 'google');
+
+        // A sibling subdomain is same-site as far as SameSite=Lax is
+        // concerned, so the session cookie *is* attached — and core's
+        // rest_send_cors_headers() would reflect this Origin back with
+        // Access-Control-Allow-Credentials, letting it read the body. The
+        // token it wants is the one guarding every cookie-authenticated
+        // write in the plugin.
+        $request = new WP_REST_Request([], '/reach/v1/session');
+        $request->set_header('Origin', 'https://blog.example.test');
+
+        $data = $controller->getSession($request)->get_data();
+
+        $this->assertFalse($data['authenticated']);
+        $this->assertArrayNotHasKey('token', $data);
+    }
+
+    public function testGetSessionStillServesThisSitesOwnPages(): void
+    {
+        /** @var NearestMembersController $controller */
+        $controller = $this->container->get(NearestMembersController::class);
+
+        $this->seedSession('user@example.com', 'google');
+
+        $request = new WP_REST_Request([], '/reach/v1/session');
+        $request->set_header('Origin', 'https://example.test');
+
+        $data = $controller->getSession($request)->get_data();
+
+        $this->assertTrue($data['authenticated']);
+        $this->assertArrayHasKey('token', $data);
     }
 
     /**

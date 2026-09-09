@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
+use Reach\Core\RateLimiter;
 use Reach\Tests\ReachTestCase;
 use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\CallRequestMailer;
@@ -84,6 +85,69 @@ final class CallRequestControllerTest extends ReachTestCase
 
         $this->assertInstanceOf(WP_Error::class, $result);
         $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+    }
+
+    // --- throttle -------------------------------------------------------
+
+    public function testCreateIsThrottledPerSession(): void
+    {
+        // This was the one authenticated write in Reach with no throttle.
+        // AlertController::raise() is capped and getNearest() is capped;
+        // create() was not, and it mails the intergroup for every call, so
+        // one signed-in responder — or one client in a retry loop — could
+        // flood the mailbox and burn the site's SMTP quota.
+        $this->seedSession('responder@example.com');
+        $this->spendTheCallRequestBudget('responder@example.com');
+
+        $result = $this->makeController()->create($this->request());
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_rate_limited', $result->get_error_code());
+        $this->assertSame(429, $result->get_error_data()['status'] ?? null);
+    }
+
+    public function testTheThrottleIsPerSessionNotSiteWide(): void
+    {
+        // Keyed on the session's email: the caller is authenticated here, so
+        // the meaningful unit is the person. An IP bucket would throttle a
+        // whole shared connection for one responder's retry loop.
+        $this->spendTheCallRequestBudget('someone-else@example.com');
+
+        $this->seedSession('responder@example.com');
+        $repo = new SpyCallRequestRepository();
+        $settings = new Settings();
+        $settings->setCallRequestEmail('ops@example.com');
+
+        $result = $this->makeController($repo, $settings)->create($this->request());
+
+        $code = $result instanceof WP_Error ? $result->get_error_code() : '';
+        $this->assertNotSame('reach_rate_limited', $code, "One responder's flood must not block another.");
+    }
+
+    public function testAnOrdinaryCallRequestIsNotThrottled(): void
+    {
+        // The cap has to sit above real usage to be worth having.
+        $this->seedSession('responder@example.com');
+        $repo = new SpyCallRequestRepository();
+        $settings = new Settings();
+        $settings->setCallRequestEmail('ops@example.com');
+
+        $result = $this->makeController($repo, $settings)->create($this->request());
+
+        $code = $result instanceof WP_Error ? $result->get_error_code() : '';
+        $this->assertNotSame('reach_rate_limited', $code);
+    }
+
+    /**
+     * Exhaust the per-session budget through the same RateLimiter and bucket
+     * the controller uses, rather than reaching into its internals.
+     */
+    private function spendTheCallRequestBudget(string $email): void
+    {
+        $limiter = new RateLimiter();
+        for ($i = 0; $i < 11; $i++) {
+            $limiter->overLimit('callreq:' . $email, 10, 300);
+        }
     }
 
     public function testCreateRecordsTrackingRowAndMailsCallerDetails(): void
@@ -215,6 +279,7 @@ final class CallRequestControllerTest extends ReachTestCase
             $this->currentSessionWith($this->session, null),
             new CallRequestMailer(new Settings()),
             new SessionCsrf(),
+            new RateLimiter(),
         );
 
         $result = $controller->create($this->request());
@@ -275,6 +340,7 @@ final class CallRequestControllerTest extends ReachTestCase
             $current,
             new CallRequestMailer($settings),
             new SessionCsrf(),
+            new RateLimiter(),
         );
     }
 
