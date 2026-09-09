@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Auth\Base64Url;
+use Reach\Core\UserAgent;
 use Reach\Logger\HasLogger;
 
 /**
@@ -88,6 +89,7 @@ final class FcmClient
 
         $response = wp_remote_post($account->sendEndpoint(), [
             'timeout' => self::TIMEOUT_SECONDS,
+            'user-agent' => UserAgent::plugin(),
             'headers' => [
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type'  => 'application/json; charset=utf-8',
@@ -183,6 +185,7 @@ final class FcmClient
 
         $response = wp_remote_post($account->tokenUri, [
             'timeout' => self::TIMEOUT_SECONDS,
+            'user-agent' => UserAgent::plugin(),
             'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
             'body'    => [
                 'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',

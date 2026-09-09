@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Core\Settings;
+use Reach\Core\UserAgent;
 
 /**
  * Google sign-in via OpenID Connect authorisation-code flow.
@@ -122,6 +123,7 @@ final class GoogleProvider implements OAuthProvider
     {
         $response = wp_remote_post(self::TOKEN_URL, [
             'timeout' => 10,
+            'user-agent' => UserAgent::plugin(),
             'headers' => ['Accept' => 'application/json'],
             'body'    => [
                 'code'          => $code,

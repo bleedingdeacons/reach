@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Distance\Haversine;
+use Reach\Core\UserAgent;
 
 /**
  * Geocoder backed by the free postcodes.io API.
@@ -325,6 +326,7 @@ final class PostcodesIoGeocoder implements Geocoder
     {
         $response = wp_remote_get($url, [
             'timeout' => self::HTTP_TIMEOUT,
+            'user-agent' => UserAgent::plugin(),
             'headers' => ['Accept' => 'application/json'],
         ]);
 

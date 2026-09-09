@@ -11,6 +11,7 @@ if (!defined('ABSPATH')) {
 use Reach\Auth\JwtVerifier;
 use Reach\Auth\VerifiedIdentity;
 use Reach\Core\Settings;
+use Reach\Core\UserAgent;
 
 /**
  * Facebook Login via the OpenID Connect authorisation-code flow with PKCE.
@@ -156,6 +157,7 @@ final class FacebookProvider implements OAuthProvider
     {
         $response = wp_remote_post(self::TOKEN_URL, [
             'timeout' => 10,
+            'user-agent' => UserAgent::plugin(),
             'headers' => [
                 'Accept'       => 'application/json',
                 'Content-Type' => 'application/x-www-form-urlencoded',
