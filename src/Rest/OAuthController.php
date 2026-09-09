@@ -22,6 +22,7 @@ use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
 use Reach\Session\SessionRevocationList;
 use Unity\Members\Interfaces\MemberRepository;
+use Reach\Core\RateLimiter;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -64,6 +65,27 @@ final class OAuthController
 {
     public const NAMESPACE = 'reach/v1';
 
+    /**
+     * Per-IP cap across the whole unauthenticated OAuth surface.
+     *
+     * This controller was the only unauthenticated one in Reach taking no
+     * RateLimiter at all — DeviceAuthController, PasswordAuthController,
+     * NearestMembersController and AlertController all do. Two things were
+     * unbounded as a result. /oauth/start and /oauth/apple/start each write a
+     * StateStore transient with a 10-minute TTL that only a daily cron sweeps,
+     * so wp_options grew without limit in between; and /oauth/apple ran a JWT
+     * header parse and a JWKS lookup for anyone who asked.
+     *
+     * Deliberately generous. {@see RateLimiter} takes the client IP from
+     * REMOTE_ADDR only, which behind a CDN or reverse proxy is the edge's
+     * address rather than the visitor's, so a whole intergroup can share one
+     * bucket. A normal sign-in spends two of these (a start and a callback);
+     * 120 in a quarter of an hour is far past any real usage from one edge
+     * while still bounding a flood hard.
+     */
+    private const OAUTH_IP_MAX = 120;
+    private const OAUTH_IP_WINDOW = 15 * 60;
+
     public function __construct(
         private readonly ProviderRegistry $providers,
         private readonly StateStore $stateStore,
@@ -75,6 +97,7 @@ final class OAuthController
         private readonly CurrentSession $currentSession,
         private readonly SessionRevocationList $revocations,
         private readonly SessionCsrf $csrf,
+        private readonly RateLimiter $rateLimiter,
     ) {
     }
 
@@ -153,6 +176,10 @@ final class OAuthController
 
     public function start(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if ($this->overOAuthLimit()) {
+            return $this->tooManyAttempts();
+        }
+
         $providerName = (string) $request->get_param('provider');
         $provider = $this->providers->get($providerName);
         if ($provider === null || !$provider->isServerSide()) {
@@ -176,6 +203,10 @@ final class OAuthController
 
     public function callback(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if ($this->overOAuthLimit()) {
+            return $this->tooManyAttempts();
+        }
+
         $state = (string) $request->get_param('state');
         $code = (string) $request->get_param('code');
 
@@ -282,6 +313,10 @@ final class OAuthController
 
     public function apple(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if ($this->overOAuthLimit()) {
+            return $this->tooManyAttempts();
+        }
+
         $idToken = (string) $request->get_param('id_token');
         $state = (string) $request->get_param('state');
 
@@ -397,8 +432,12 @@ final class OAuthController
      * AppleID.auth.signIn() so the resulting ID token can be tied
      * back to this sign-in attempt.
      */
-    public function appleStart(WP_REST_Request $request): WP_REST_Response
+    public function appleStart(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        if ($this->overOAuthLimit()) {
+            return $this->tooManyAttempts();
+        }
+
         $tokens = $this->stateStore->issue('apple', $this->homePageUrl());
         return new WP_REST_Response(['state' => $tokens['state'], 'nonce' => $tokens['nonce']], 200);
     }
@@ -448,6 +487,35 @@ final class OAuthController
      * cookie-authenticated write endpoints so the client can handle one
      * shape; see {@see SessionCsrf}.
      */
+    /**
+     * Whether this client has spent its share of the OAuth surface.
+     *
+     * One bucket across all four unauthenticated routes rather than one
+     * each: they are steps of the same flow, and an attacker free to spend a
+     * fresh allowance on each would simply pick the cheapest.
+     *
+     * Sign-out is deliberately not throttled — it is cookie-authenticated
+     * and CSRF-checked, and refusing to let someone sign out is a poor way
+     * to defend anything.
+     */
+    private function overOAuthLimit(): bool
+    {
+        return $this->rateLimiter->overLimit(
+            'oauth:' . $this->rateLimiter->clientIp(),
+            self::OAUTH_IP_MAX,
+            self::OAUTH_IP_WINDOW,
+        );
+    }
+
+    private function tooManyAttempts(): WP_Error
+    {
+        return new WP_Error(
+            'reach_rate_limited',
+            'Too many sign-in attempts. Please wait a little while and try again.',
+            ['status' => 429],
+        );
+    }
+
     private function csrfError(): WP_Error
     {
         return new WP_Error(

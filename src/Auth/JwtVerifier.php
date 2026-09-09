@@ -55,6 +55,26 @@ final class JwtVerifier
 
     private const JWKS_CACHE_PREFIX = 'reach_jwks_';
     private const JWKS_CACHE_TTL = HOUR_IN_SECONDS;
+
+    /**
+     * Floor between two cache-busting refetches of the same key set.
+     *
+     * A miss on `kid` is attacker-triggerable: /oauth/apple takes any
+     * id_token, and reading its header costs nothing, so a token carrying a
+     * random kid used to drop Apple's key set from cache and force an
+     * outbound fetch on every single request. That holds the cache
+     * permanently cold from outside — putting a 5-second-timeout HTTPS call
+     * on the critical path of every genuine Apple sign-in, and making the
+     * site an unauthenticated request amplifier pointed at the provider.
+     *
+     * A minute bounds that to one refetch per key set per minute however
+     * many bogus kids arrive. The cost is that a real key rotation takes up
+     * to a minute longer to be picked up, during which sign-ins with the new
+     * key fail — the same failure they had before the rotation was noticed
+     * at all, and far cheaper than the alternative.
+     */
+    private const JWKS_REFRESH_FLOOR = MINUTE_IN_SECONDS;
+    private const JWKS_REFRESH_PREFIX = 'reach_jwks_refreshed_';
     private const HTTP_TIMEOUT = 5;
 
     /** Tolerance for clock skew when checking `iat`/`exp`. */
@@ -170,7 +190,7 @@ final class JwtVerifier
     private function findKey(string $jwksUrl, string $kid, bool $forceRefresh = false): ?array
     {
         $cacheKey = self::JWKS_CACHE_PREFIX . md5($jwksUrl);
-        if ($forceRefresh) {
+        if ($forceRefresh && $this->mayForceRefresh($jwksUrl)) {
             delete_transient($cacheKey);
         }
 
@@ -189,6 +209,27 @@ final class JwtVerifier
             }
         }
         return null;
+    }
+
+    /**
+     * Whether a cache-busting refetch of this key set is allowed right now.
+     *
+     * Claims the slot as it answers, so the first unknown kid in a window
+     * gets the refetch and the rest are served from cache until the floor
+     * expires. See {@see JWKS_REFRESH_FLOOR} for why that trade is the right
+     * way round.
+     */
+    private function mayForceRefresh(string $jwksUrl): bool
+    {
+        $floorKey = self::JWKS_REFRESH_PREFIX . md5($jwksUrl);
+
+        if (get_transient($floorKey) !== false) {
+            return false;
+        }
+
+        set_transient($floorKey, time(), self::JWKS_REFRESH_FLOOR);
+
+        return true;
     }
 
     /**
