@@ -234,6 +234,7 @@ final class NearestMembersController
                 'methods'             => WP_REST_Server::READABLE,
                 'callback'            => [$this, 'getSession'],
                 'permission_callback' => '__return_true',
+                'args'                => [],
             ]
         );
     }
@@ -298,22 +299,35 @@ final class NearestMembersController
         return rest_ensure_response($this->projectResponse($result));
     }
 
-    public function getSession(): WP_REST_Response
+    public function getSession(WP_REST_Request $request): WP_REST_Response
     {
         $session = $this->session->get();
         if ($session === null) {
             return new WP_REST_Response(['authenticated' => false], 200);
         }
+
+        // This endpoint hands out the token every cookie-authenticated write
+        // must present, so who may read it is the whole basis of the
+        // defence. The old comment here reasoned that "a cross-site caller
+        // cannot read the response" — true of a genuinely cross-*site*
+        // caller, whose request the SameSite=Lax cookie never reaches, and
+        // untrue of a sibling subdomain, which is same-site for the cookie
+        // and gets Access-Control-Allow-Credentials from core's CORS
+        // headers. See SameOriginOnly.
+        //
+        // Answered as an unauthenticated session rather than an error: a
+        // caller who should not have the token learns nothing from this
+        // beyond what it would learn by not being signed in.
+        if (!SameOriginOnly::allows($request)) {
+            return new WP_REST_Response(['authenticated' => false], 200);
+        }
+
         return new WP_REST_Response([
             'authenticated' => true,
             'email'         => $session->email,
             'provider'      => $session->provider,
             'expires_at'    => $session->expiresAt,
-            // The token this session's writes must present. Safe to
-            // return here because the endpoint is same-origin and
-            // cookie-authenticated: a cross-site caller cannot read the
-            // response, which is the whole basis of the defence. See
-            // SessionCsrf.
+            // The token this session's writes must present.
             'token'         => $this->csrf->mint($session),
         ], 200);
     }

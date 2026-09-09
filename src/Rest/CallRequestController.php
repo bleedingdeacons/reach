@@ -12,6 +12,7 @@ use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\CallRequestMailer;
 use Reach\CallRequests\CallRequestRepository;
 use Reach\Session\CurrentSession;
+use Reach\Core\RateLimiter;
 use Reach\Session\SessionCsrf;
 use WP_Error;
 use WP_REST_Request;
@@ -76,11 +77,34 @@ final class CallRequestController
     private const PHONE_MAX_BYTES = 50;
     private const AREA_MAX_BYTES = 200;
 
+    /**
+     * Per-session cap on call requests.
+     *
+     * This was the one authenticated write in Reach with no throttle.
+     * AlertController::raise() is capped by SEND_MAX/SEND_WINDOW and
+     * getNearest() by SEARCH_MAX; create() had no equivalent, and it sends
+     * an email to the intergroup for every call. One signed-in responder —
+     * or one client stuck in a retry loop, which is the likelier of the two
+     * — could flood the configured mailbox and burn the site's SMTP quota.
+     *
+     * The controller's own note that this endpoint mails text "someone will
+     * act on" is the reason a volume cap belongs on it: the cost of a
+     * spurious row is a row, the cost of a spurious message is somebody's
+     * attention.
+     *
+     * Ten in five minutes matches the alert throttle, and for the same
+     * reasoning — far above what anyone types by hand, far below what a
+     * retry loop manages.
+     */
+    private const CREATE_MAX = 10;
+    private const CREATE_WINDOW = 300;
+
     public function __construct(
         private readonly CallRequestRepository $repository,
         private readonly CurrentSession $session,
         private readonly CallRequestMailer $mailer,
         private readonly SessionCsrf $csrf,
+        private readonly RateLimiter $rateLimiter,
     ) {
     }
 
@@ -168,6 +192,14 @@ final class CallRequestController
                 'reach_invalid_session_token',
                 'That request could not be verified. Please reload the page and try again.',
                 ['status' => 403],
+            );
+        }
+
+        if ($this->overCreateLimit($session->email)) {
+            return new WP_Error(
+                'reach_rate_limited',
+                'Too many call requests in a short time. Please wait a little while and try again.',
+                ['status' => 429],
             );
         }
 
@@ -293,5 +325,21 @@ final class CallRequestController
         }
 
         return $email;
+    }
+    /**
+     * Whether this session has raised too many call requests too quickly.
+     *
+     * Keyed on the session's email rather than the IP: the caller is
+     * authenticated here, so the meaningful unit is the person, and an IP
+     * bucket would throttle a whole shared connection for one responder's
+     * retry loop.
+     */
+    private function overCreateLimit(string $email): bool
+    {
+        return $this->rateLimiter->overLimit(
+            'callreq:' . $email,
+            self::CREATE_MAX,
+            self::CREATE_WINDOW,
+        );
     }
 }

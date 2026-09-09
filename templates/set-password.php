@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Auth\PasswordPolicy;
+use Reach\Auth\ResetTokenCookie;
 
 /**
  * Reach "Choose a password" page — the target of the emailed reset link.
@@ -20,7 +21,18 @@ use Reach\Auth\PasswordPolicy;
  * Standalone shell, same conventions as signin.php.
  */
 
-$token    = isset($_GET['token']) ? sanitize_text_field(wp_unslash((string) $_GET['token'])) : '';
+// The token arrives in the query string from the emailed link, which puts
+// it in the access log and the browser history. Move it into a short-lived
+// HttpOnly cookie and bounce to the bare URL, the way core does for its own
+// reset links — see ResetTokenCookie.
+$resetToken = new ResetTokenCookie();
+
+if ($resetToken->captureFromQuery() && !headers_sent()) {
+    wp_safe_redirect($resetToken->bareUrl());
+    exit;
+}
+
+$token    = $resetToken->read();
 $hasToken = $token !== '';
 
 $setPasswordUrl = esc_url(rest_url('reach/v1/auth/set-password'));
