@@ -23,6 +23,7 @@ use Reach\Tests\Fixtures\InMemoryAlertRepository;
 use Reach\Tests\Fixtures\InMemoryDeviceRepository;
 use Reach\Tests\Fixtures\MemberStub;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
+use Unity\Members\PreferredContact;
 use Unity\Members\ResponderCertification;
 use Unity\Testing\Doubles\GroupStub;
 use Unity\Testing\Doubles\InMemoryCommitteeRepository;
@@ -555,7 +556,211 @@ final class HandComposeTest extends ReachTestCase
         $this->assertSame('reach_device_not_authenticated', $response->get_error_code());
     }
 
+    public function testAHandsetCanFetchOneMembersNumbers(): void
+    {
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '07700 900123', landline: '0117 496 0123');
+
+        $response = $this->directory()->contact(
+            $this->authed($this->tokenFor('jo@example.test'), ['id' => 2]),
+        );
+
+        $this->assertInstanceOf(WP_REST_Response::class, $response);
+        $this->assertSame(
+            [
+                'id'                => 2,
+                'mobile_number'     => '07700 900123',
+                'landline_number'   => '0117 496 0123',
+                'preferred_contact' => 'Landline',
+            ],
+            $response->get_data(),
+        );
+    }
+
+    public function testAMemberWithNothingOnFileIsAnEmptyAnswerNotAMissingOne(): void
+    {
+        // They exist, the handset asked a fair question, and the answer
+        // is that there is nothing to dial. A 404 here would read as
+        // "no such member" and send somebody looking for a record that
+        // is present and simply blank.
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '', landline: '');
+
+        $response = $this->directory()->contact(
+            $this->authed($this->tokenFor('jo@example.test'), ['id' => 2]),
+        );
+
+        $this->assertInstanceOf(WP_REST_Response::class, $response);
+        $this->assertSame('', $response->get_data()['mobile_number']);
+        $this->assertSame('', $response->get_data()['landline_number']);
+    }
+
+    public function testTheDirectoryListStillCarriesNoNumbers(): void
+    {
+        // The whole point of putting the numbers behind their own route.
+        // If they ever leak into the list payload, one handset can copy
+        // the intergroup's directory in a couple of requests — which is
+        // the thing this design exists to prevent, so it is asserted
+        // rather than left to a reviewer to notice.
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '07700 900123', landline: '0117 496 0123');
+
+        $response = $this->directory()->members($this->authed($this->tokenFor('jo@example.test')));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $response);
+
+        $encoded = (string) json_encode($response->get_data());
+        $this->assertStringNotContainsString('07700 900123', $encoded);
+        $this->assertStringNotContainsString('0117 496 0123', $encoded);
+        $this->assertStringNotContainsString('mobile_number', $encoded);
+        $this->assertStringNotContainsString('landline_number', $encoded);
+    }
+
+    public function testFetchingNumbersIsAuditedAgainstTheMemberAndNamesTheAsker(): void
+    {
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '07700 900123', landline: '0117 496 0123');
+        $this->audit->entries = [];
+
+        $this->directory()->contact(
+            $this->authed($this->tokenFor('jo@example.test'), ['id' => 2]),
+        );
+
+        $fields = [];
+        foreach ($this->audit->entries as $entry) {
+            // Subject is the member whose numbers were handed over, not
+            // the responder who asked — "who saw this number" only makes
+            // sense as a question about the person it belongs to.
+            $this->assertSame(2, $entry['entityId']);
+            $this->assertSame('caller:Jo B.#1', $entry['detail']);
+            $fields[] = $entry['fieldName'];
+        }
+
+        $this->assertSame(['mobile_number', 'landline_number'], $fields);
+    }
+
+    public function testTheLandlineIsAuditedOnlyForTheMembersWhoHaveOne(): void
+    {
+        // Logging it for everyone would double a lookup's audit volume
+        // while recording an exposure that never happened.
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '07700 900123', landline: '');
+        $this->audit->entries = [];
+
+        $this->directory()->contact(
+            $this->authed($this->tokenFor('jo@example.test'), ['id' => 2]),
+        );
+
+        $this->assertSame(
+            ['mobile_number'],
+            array_column($this->audit->entries, 'fieldName'),
+        );
+    }
+
+    public function testABlankLookupIsStillAudited(): void
+    {
+        // It is the sweeping these rows exist to make visible, not the
+        // yield. A member with no numbers still cost the asker one of
+        // their sixty, and still leaves a trace of having been asked
+        // about.
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '', landline: '');
+        $this->audit->entries = [];
+
+        $this->directory()->contact(
+            $this->authed($this->tokenFor('jo@example.test'), ['id' => 2]),
+        );
+
+        $this->assertSame(
+            ['mobile_number'],
+            array_column($this->audit->entries, 'fieldName'),
+        );
+    }
+
+    public function testSweepingTheDirectoryForNumbersIsThrottled(): void
+    {
+        $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '07700 900123', landline: '');
+
+        $directory = $this->directory();
+        $token = $this->tokenFor('jo@example.test');
+
+        for ($i = 0; $i < 60; $i++) {
+            $allowed = $directory->contact($this->authed($token, ['id' => 2]));
+            $this->assertInstanceOf(WP_REST_Response::class, $allowed);
+        }
+
+        $refused = $directory->contact($this->authed($token, ['id' => 2]));
+
+        $this->assertInstanceOf(WP_Error::class, $refused);
+        $this->assertSame('reach_rate_limited', $refused->get_error_code());
+        $this->assertSame(429, $refused->get_error_data()['status'] ?? null);
+    }
+
+    public function testTheThrottleFollowsTheResponderNotTheHandset(): void
+    {
+        // A responder with a phone and a tablet does not get twice the
+        // allowance for copying a directory.
+        $this->enrol('jo@example.test', 1);
+        $second = $this->enrol('jo@example.test', 1);
+        $this->givePatNumbers(mobile: '07700 900123', landline: '');
+
+        $directory = $this->directory();
+        $first = $this->tokenFor('jo@example.test');
+
+        for ($i = 0; $i < 60; $i++) {
+            $directory->contact($this->authed($first, ['id' => 2]));
+        }
+
+        $onTheTablet = $directory->contact($this->authed($second, ['id' => 2]));
+
+        $this->assertInstanceOf(WP_Error::class, $onTheTablet);
+        $this->assertSame('reach_rate_limited', $onTheTablet->get_error_code());
+    }
+
+    public function testContactRefusesAnUnauthenticatedHandset(): void
+    {
+        $response = $this->directory()->contact(new WP_REST_Request(['id' => 2]));
+
+        $this->assertInstanceOf(WP_Error::class, $response);
+        $this->assertSame('reach_device_not_authenticated', $response->get_error_code());
+    }
+
+    public function testContactRefusesAMemberWhoDoesNotExist(): void
+    {
+        $this->enrol('jo@example.test', 1);
+
+        $response = $this->directory()->contact(
+            $this->authed($this->tokenFor('jo@example.test'), ['id' => 9999]),
+        );
+
+        $this->assertInstanceOf(WP_Error::class, $response);
+        $this->assertSame('reach_unknown_member', $response->get_error_code());
+        $this->assertSame(404, $response->get_error_data()['status'] ?? null);
+    }
+
     // --- helpers ----------------------------------------------------------
+
+    /**
+     * Put Pat R. in the directory as member 2, carrying the numbers the
+     * calling test wants on them. Obviously fake ones, from Ofcom's
+     * reserved drama ranges, so a fixture that escapes into a log is
+     * not somebody's phone.
+     */
+    private function givePatNumbers(string $mobile, string $landline): void
+    {
+        $this->members[] = new MemberStub(
+            personalEmail: 'pat@example.test',
+            twelfthStepper: false,
+            telephoneResponder: true,
+            id: 2,
+            anonymousName: 'Pat R.',
+            responderCertification: ResponderCertification::Certified,
+            mobileNumber: $mobile,
+            landlineNumber: $landline,
+            preferredContact: $landline !== '' ? PreferredContact::Landline : PreferredContact::Mobile,
+        );
+    }
 
     private function controller(): AlertController
     {
@@ -587,6 +792,8 @@ final class HandComposeTest extends ReachTestCase
             $members,
             new InMemoryGroupRepository([new GroupStub(88, 'Tuesday Bristol')]),
             new RecipientResolver($this->devices, $members, $this->committees),
+            $this->audit,
+            new RateLimiter(),
         );
     }
 

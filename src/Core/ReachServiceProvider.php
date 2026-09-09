@@ -337,6 +337,8 @@ final class ReachServiceProvider
             $c->get(MemberRepository::class),
             $c->get(GroupRepository::class),
             $c->get(RecipientResolver::class),
+            $c->get(AuditLogger::class),
+            $c->get(RateLimiter::class),
         ));
 
         // Frontend + admin.

@@ -9,8 +9,11 @@ if (!defined('ABSPATH')) {
 }
 
 use Reach\Alerts\RecipientResolver;
+use Reach\Core\RateLimiter;
 use Reach\Devices\CurrentDevice;
+use Reach\Devices\Device;
 use Reach\Logger\HasLogger;
+use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Groups\Interfaces\GroupRepository;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberRepository;
@@ -25,10 +28,11 @@ use function register_rest_route;
 /**
  * REST controller: who a handset may address a message to.
  *
- *   GET /reach/v1/members     → the member directory, as a picker sees it
- *   GET /reach/v1/committees  → the committee tree, likewise
+ *   GET /reach/v1/members              → the member directory, as a picker sees it
+ *   GET /reach/v1/committees           → the committee tree, likewise
+ *   GET /reach/v1/members/<id>/contact → one member's phone numbers
  *
- * <b>Names and home groups. No addresses, ever.</b> A member is chosen by
+ * <b>Names and home groups. No email addresses, ever.</b> A member is chosen by
  * id and resolved to an address server-side by
  * {@see RecipientResolver::forMemberId()}, so one responder never learns
  * another's email in order to message them. That is not incidental
@@ -36,6 +40,17 @@ use function register_rest_route;
  * all. The anonymous name and the home group are the form this suite
  * shows people; Integrity returns the same anonymous name without any
  * clear permission, and neither field is audited for the same reason.
+ *
+ * <b>Phone numbers are the exception, and only one member at a time.</b>
+ * {@see contact()} hands a handset the numbers for a single member it
+ * names, so a responder can ring the person they have just picked. They
+ * are deliberately not part of the list payload: that route returns the
+ * whole directory two hundred rows at a time, and numbers in it would
+ * let one handset copy every number an intergroup holds in a couple of
+ * requests. Per member the same sweep costs a request each, against a
+ * throttle ({@see CONTACT_MAX}) and leaving an audit row per name taken
+ * ({@see auditExposure()}). The email address stays server-side either
+ * way — the guarantee above is about addresses and is untouched.
  *
  * <b>Everybody is listed, and the unreachable are labelled.</b> Hiding
  * members with no handset would leave a sender wondering where somebody
@@ -73,11 +88,53 @@ final class DirectoryController
     private const PER_PAGE = 50;
     private const PER_PAGE_MAX = 200;
 
+    /**
+     * Contact lookups one responder may make per window, and the window.
+     *
+     * The list route hands out names; this one hands out numbers, and
+     * that difference is what the cap answers for. A responder working
+     * a message or returning a call looks somebody up once, sometimes a
+     * handful of times. Sixty an hour leaves that untouched while
+     * turning a directory sweep into something that takes most of a day
+     * and leaves an audit row behind for every name taken.
+     *
+     * The same ceiling the find page's search carries, deliberately:
+     * that endpoint governs this very exposure from the browser side,
+     * and a number is no less personal for having been fetched by a
+     * handset. In data terms this is the stricter of the two — a search
+     * returns up to fifty members for one hit of its counter, this
+     * returns one.
+     *
+     * Keyed on the responder, not the handset. The alert throttle keys
+     * on the device because what it guards against is one handset stuck
+     * in a retry loop; what this guards against is a person copying a
+     * directory, and a person with a phone and a tablet should not get
+     * twice the allowance for it.
+     */
+    private const CONTACT_MAX = 60;
+    private const CONTACT_WINDOW = 60 * 60;
+
+    /**
+     * Fields counted as a personal-data view when a member's numbers are
+     * handed to a handset, and the one that is only counted for the
+     * members who have it.
+     *
+     * Same names and the same split as
+     * {@see NearestMembersController::AUDITED_FIELDS} — this is the same
+     * data, reached by a different door, so a member's exposure history
+     * should read the same either way. The reasoning for logging the
+     * landline only when there is one to log lives there.
+     */
+    private const AUDITED_FIELDS = ['mobile_number'];
+    private const AUDITED_LANDLINE_FIELD = 'landline_number';
+
     public function __construct(
         private readonly CurrentDevice $currentDevice,
         private readonly MemberRepository $members,
         private readonly GroupRepository $groups,
         private readonly RecipientResolver $recipients,
+        private readonly AuditLogger $auditLogger,
+        private readonly RateLimiter $rateLimiter,
     ) {
     }
 
@@ -109,6 +166,23 @@ final class DirectoryController
                     'per_page' => [
                         'type'              => 'integer',
                         'required'          => false,
+                        'sanitize_callback' => 'absint',
+                    ],
+                ],
+            ]
+        );
+
+        register_rest_route(
+            self::NAMESPACE,
+            '/members/(?P<id>\d+)/contact',
+            [
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => [$this, 'contact'],
+                'permission_callback' => '__return_true',
+                'args'                => [
+                    'id' => [
+                        'type'              => 'integer',
+                        'required'          => true,
                         'sanitize_callback' => 'absint',
                     ],
                 ],
@@ -163,6 +237,135 @@ final class DirectoryController
             'page'    => $page,
             'total'   => $this->members->count($search !== '' ? ['s' => $search] : []),
         ], 200);
+    }
+
+    /**
+     * One member's phone numbers, so the handset can ring them.
+     *
+     * The picker names people; this answers "what do I dial for that
+     * one". It takes a member id and returns that member's numbers
+     * alone — there is no bulk form of this route, and the reasoning is
+     * in the class docblock.
+     *
+     * <b>Everyone in the picker can be revealed.</b> No further gate is
+     * applied because there is no coherent one to apply: the list shows
+     * the whole directory, this route follows the list, and the
+     * 12th-stepper flag that bounds the find page would be the wrong
+     * test here — an intergroup officer a responder needs to ring is
+     * often not a 12th-stepper at all. What bounds this route is the
+     * throttle and the audit row, not a narrower population.
+     *
+     * A member with no numbers on file is a 200 with two empty strings,
+     * not a 404: they exist, the handset asked a fair question, and the
+     * answer is that there is nothing to dial. The lookup is still
+     * audited — an exposure of nothing is the honest record of what
+     * happened, and it is the sweeping that these rows exist to make
+     * visible, not the yield.
+     */
+    public function contact(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
+        if (($insecure = $this->insecureTransport()) !== null) {
+            return $insecure;
+        }
+
+        $device = $this->currentDevice->fromRequest($request, time());
+        if ($device === null) {
+            return $this->notAuthenticated();
+        }
+
+        if ($this->overContactLimit($device)) {
+            return new WP_Error(
+                'reach_rate_limited',
+                'Too many contact lookups in a short time. Please wait a little while and try again.',
+                ['status' => 429],
+            );
+        }
+
+        $memberId = (int) $request->get_param('id');
+        $member = $memberId > 0 ? $this->members->findById($memberId) : null;
+        if ($member === null) {
+            return new WP_Error('reach_unknown_member', 'No such member.', ['status' => 404]);
+        }
+
+        $this->auditExposure($member, $device);
+
+        return new WP_REST_Response([
+            'id'              => $member->getId(),
+            'mobile_number'   => trim($member->getMobileNumber()),
+            'landline_number' => trim($member->getLandlineNumber()),
+            // Which number to ring, as the enum's own value, exactly as
+            // /nearest-members reports it — one contract for this field
+            // across the API, so a handset needs one model for both.
+            // It is only meaningful when both numbers are present: ACF
+            // keeps the last saved choice for a field its conditional
+            // logic has hidden, so a member whose landline was deleted
+            // can still carry a stored preference for it. The caller
+            // checks the number is there before honouring the tag, as
+            // find.js does.
+            'preferred_contact' => $member->getPreferredContact()->value,
+        ], 200);
+    }
+
+    /** Whether this responder has looked up too many numbers too quickly. */
+    private function overContactLimit(Device $device): bool
+    {
+        return $this->rateLimiter->overLimit(
+            'directory-contact:' . $device->memberEmail,
+            self::CONTACT_MAX,
+            self::CONTACT_WINDOW,
+        );
+    }
+
+    /**
+     * Record that this handset was shown this member's numbers.
+     *
+     * Subject is the member whose numbers were handed over, not the
+     * responder who asked — "who saw this number" is the question these
+     * rows answer, so the row has to hang off the person the number
+     * belongs to. The asker is named in the detail instead, in the
+     * `caller:<name>#<id>` form
+     * {@see NearestMembersController::callerDetail()} writes and
+     * Scrutiny's admin renders as a linked "Caller: <name>".
+     */
+    private function auditExposure(Member $member, Device $device): void
+    {
+        $fields = self::AUDITED_FIELDS;
+        if (trim($member->getLandlineNumber()) !== '') {
+            $fields[] = self::AUDITED_LANDLINE_FIELD;
+        }
+
+        $this->auditLogger->logBatch(
+            AuditLogger::ACTION_VIEW,
+            AuditLogger::ENTITY_MEMBER,
+            $member->getId(),
+            $fields,
+            $this->callerDetail($device),
+        );
+    }
+
+    /**
+     * The audit-detail string naming the responder behind this handset.
+     *
+     * Never the email address, and never the device label: the
+     * anonymous name is the form this suite writes people down in, and
+     * Scrutiny's contract forbids raw PII in `detail`. A handset whose
+     * member no longer resolves — revoked between the gate check and
+     * here — is logged as unknown rather than not logged, because the
+     * lookup happened either way.
+     */
+    private function callerDetail(Device $device): string
+    {
+        $caller = 'unknown';
+
+        $member = $this->currentDevice->memberFor($device);
+        if ($member !== null) {
+            $name = trim($member->getAnonymousName());
+            if ($name !== '') {
+                $caller = sprintf('%s#%d', $name, $member->getId());
+            }
+        }
+
+        return sprintf('caller:%s', $caller);
     }
 
     /**
