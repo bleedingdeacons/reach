@@ -266,6 +266,7 @@ final class ReachServiceProvider
             $c->get(CurrentSession::class),
             $c->get(SessionRevocationList::class),
             $c->get(SessionCsrf::class),
+            $c->get(RateLimiter::class),
         ));
 
         $container->register(RateLimiter::class, fn() => new RateLimiter());

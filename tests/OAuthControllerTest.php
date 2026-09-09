@@ -6,6 +6,7 @@ namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Tests\ReachTestCase;
+use Reach\Core\RateLimiter;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\Providers\OAuthProvider;
@@ -317,6 +318,129 @@ final class OAuthControllerTest extends ReachTestCase
         $this->assertFalse($revocations->isRevoked($session->id));
     }
 
+    // --- rate limiting ----------------------------------------------------
+
+    /**
+     * This controller was the only unauthenticated one in Reach with no
+     * RateLimiter at all. Each /oauth/start writes a StateStore transient
+     * that only a daily cron sweeps, and /oauth/apple runs a JWT header parse
+     * and JWKS lookup for anyone who asks.
+     */
+    public function testStartIsRateLimitedPerIp(): void
+    {
+        $registry = new ProviderRegistry();
+        $registry->register($this->provider('google', serverSide: true));
+        $controller = $this->controller($registry);
+
+        $this->spendTheOAuthBudget();
+
+        $result = $controller->start(new WP_REST_Request(['provider' => 'google']));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_rate_limited', $result->get_error_code());
+        $this->assertSame(429, $result->get_error_data()['status'] ?? null);
+    }
+
+    public function testAppleStartIsRateLimitedPerIp(): void
+    {
+        $controller = $this->controller(new ProviderRegistry());
+
+        $this->spendTheOAuthBudget();
+
+        $result = $controller->appleStart(new WP_REST_Request([]));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_rate_limited', $result->get_error_code());
+    }
+
+    public function testCallbackIsRateLimitedPerIp(): void
+    {
+        $controller = $this->controller(new ProviderRegistry());
+
+        $this->spendTheOAuthBudget();
+
+        $result = $controller->callback(new WP_REST_Request(['state' => 'x', 'code' => 'y']));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_rate_limited', $result->get_error_code());
+    }
+
+    public function testAppleIsRateLimitedPerIp(): void
+    {
+        $controller = $this->controller(new ProviderRegistry());
+
+        $this->spendTheOAuthBudget();
+
+        $result = $controller->apple(new WP_REST_Request(['id_token' => 'x', 'state' => 'y']));
+
+        $this->assertInstanceOf(WP_Error::class, $result);
+        $this->assertSame('reach_rate_limited', $result->get_error_code());
+    }
+
+    public function testTheFourRoutesShareOneBudget(): void
+    {
+        // Steps of one flow, so one bucket: an attacker free to spend a fresh
+        // allowance on each route would simply pick the cheapest.
+        $registry = new ProviderRegistry();
+        $registry->register($this->provider('google', serverSide: true));
+        $controller = $this->controller($registry);
+
+        $this->spendTheOAuthBudget();
+
+        foreach (
+            [
+                'start'      => $controller->start(new WP_REST_Request(['provider' => 'google'])),
+                'appleStart' => $controller->appleStart(new WP_REST_Request([])),
+                'callback'   => $controller->callback(new WP_REST_Request(['state' => 'x', 'code' => 'y'])),
+                'apple'      => $controller->apple(new WP_REST_Request(['id_token' => 'x', 'state' => 'y'])),
+            ] as $route => $result
+        ) {
+            $this->assertInstanceOf(WP_Error::class, $result, $route . ' should be refused');
+            $this->assertSame('reach_rate_limited', $result->get_error_code(), $route . ' should be refused');
+        }
+    }
+
+    public function testSignOutIsNotRateLimited(): void
+    {
+        // Refusing to let somebody sign out is a poor way to defend anything,
+        // and it is cookie-authenticated and CSRF-checked already.
+        $controller = $this->controller(new ProviderRegistry());
+
+        $this->spendTheOAuthBudget();
+
+        $result = $controller->signout(new WP_REST_Request([]));
+
+        $code = $result instanceof WP_Error ? $result->get_error_code() : '';
+        $this->assertNotSame('reach_rate_limited', $code);
+    }
+
+    public function testAWorkingSignInIsNotRefused(): void
+    {
+        // The limit has to be far enough above real usage that a shared CDN
+        // edge is not throttled. Nothing has been spent here.
+        $registry = new ProviderRegistry();
+        $registry->register($this->provider('google', serverSide: true));
+
+        $result = $this->controller($registry)->start(new WP_REST_Request(['provider' => 'google']));
+
+        $this->assertInstanceOf(WP_REST_Response::class, $result);
+    }
+
+    /**
+     * Exhaust the per-IP OAuth budget through the same RateLimiter and bucket
+     * the controller uses, rather than by reaching into its internals.
+     */
+    private function spendTheOAuthBudget(): void
+    {
+        $limiter = new RateLimiter();
+        $key = 'oauth:' . $limiter->clientIp();
+
+        // One past the cap, so the next call from the controller is over it.
+        for ($i = 0; $i < 121; $i++) {
+            $limiter->overLimit($key, 120, 15 * 60);
+        }
+    }
+
     // --- helpers ----------------------------------------------------------
 
     private function controller(ProviderRegistry $registry, ?InMemoryMemberRepository $members = null): OAuthController
@@ -344,6 +468,7 @@ final class OAuthControllerTest extends ReachTestCase
             new CurrentSession(new SessionCookie(), $repository, new SessionRevocationList()),
             new SessionRevocationList(),
             new SessionCsrf(),
+            new RateLimiter(),
         );
     }
 
@@ -366,6 +491,7 @@ final class OAuthControllerTest extends ReachTestCase
             new CurrentSession(new SessionCookie(), $members, $revocations),
             $revocations,
             new SessionCsrf(),
+            new RateLimiter(),
         );
     }
 

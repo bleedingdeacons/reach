@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
+use Reach\Core\RateLimiter;
 use Reach\Tests\ReachTestCase;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
@@ -272,6 +273,7 @@ final class OAuthControllerGateTest extends ReachTestCase
             new CurrentSession(new SessionCookie(), $repository, new SessionRevocationList()),
             new SessionRevocationList(),
             new SessionCsrf(),
+            new RateLimiter(),
         );
     }
 
