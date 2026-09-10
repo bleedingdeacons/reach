@@ -151,6 +151,13 @@ final class FcmTransportTest extends ReachTestCase
      */
     private function deliver(Alert $alert, Device $device, ?Settings $settings = null): array
     {
+        // Both platforms are sealed now, so a delivery that succeeds needs
+        // a key. Seeded here rather than in each of the twenty tests that
+        // only care about the message shape. The tests about refusal build
+        // their transport directly and never come through this helper,
+        // which is what keeps them meaning what they say.
+        $this->keyFor($device);
+
         $transport = new FcmTransport($this->client(), $settings ?? $this->configuredSettings(), $this->devices);
         $this->assertTrue($transport->deliver($alert, $device));
         $this->assertCount(1, $this->sent);
@@ -159,6 +166,30 @@ final class FcmTransportTest extends ReachTestCase
     }
 
     // ── payload encryption ────────────────────────────────────────────
+
+    /**
+     * This device's payload key, minting one if the test has not.
+     */
+    private function keyFor(Device $device): string
+    {
+        return $this->devices->payloadKeys[$device->id] ??= base64_encode(random_bytes(32));
+    }
+
+    /**
+     * Deliver, then open the blob the way the handset does.
+     *
+     * Most of what these tests assert about is now inside the envelope on
+     * both platforms, so reading it back out is the ordinary case rather
+     * than a special one.
+     *
+     * @return array<string, string>
+     */
+    private function opened(Alert $alert, Device $device): array
+    {
+        $key = $this->keyFor($device);
+
+        return $this->open($this->sealedFor($this->deliver($alert, $device)), $key);
+    }
 
     /**
      * The sealed blob, having first checked it is travelling alone.
@@ -343,18 +374,38 @@ final class FcmTransportTest extends ReachTestCase
         $this->assertSame('spoofed', $this->open($sealed, $key)['ciphertext']);
     }
 
-    public function testAnIosHandsetIsNotEncrypted(): void
+    public function testAnIosHandsetIsEncryptedToo(): void
     {
-        // Its lock screen is rendered by the system from the aps
-        // dictionary, so ciphertext would put base64 on the lock screen
-        // rather than hide anything. Waiting on a service extension.
+        // It used to be exempt: an iOS lock screen is drawn by the system
+        // from `aps` before any of Hand runs, so ciphertext alone would
+        // have hidden nothing. Hand's notification service extension is
+        // what changed that — mutable-content launches it, and it opens
+        // the blob and rewrites the words before the lock screen renders.
         $device = $this->device('ios');
-        $this->devices->payloadKeys[$device->id] = base64_encode(random_bytes(32));
+        $key = $this->keyFor($device);
 
         $message = $this->deliver($this->alert(title: 'Callback wanted'), $device);
 
-        $this->assertArrayNotHasKey('ciphertext', $message['data']);
-        $this->assertSame('Callback wanted', $message['data']['title']);
+        $sealed = $this->sealedFor($message);
+        $this->assertSame('Callback wanted', $this->open($sealed, $key)['title']);
+
+        // And nothing readable stayed behind in the part the system draws.
+        $aps = $message['apns']['payload']['aps'];
+        $this->assertSame('Reach alert', $aps['alert']['title']);
+        $this->assertSame('Open Hand for the details.', $aps['alert']['body']);
+        $this->assertSame(1, $aps['mutable-content'], 'without this the extension never runs');
+    }
+
+    public function testAnIosHandsetWithNoKeyIsNotSentTo(): void
+    {
+        // The same refusal Android has always had, which iOS was outside
+        // for as long as it was sent plaintext. A silent downgrade would
+        // mean caller-adjacent text going through Google in the clear for
+        // as long as nobody noticed, and nobody would.
+        $transport = new FcmTransport($this->client(), $this->configuredSettings(), $this->devices);
+
+        $this->assertFalse($transport->deliver($this->alert(), $this->device('ios')));
+        $this->assertSame([], $this->sent, 'nothing may go to a handset that cannot be encrypted for');
     }
 
     public function testAnAndroidHandsetWithNoKeyIsNotSentTo(): void
@@ -598,17 +649,30 @@ final class FcmTransportTest extends ReachTestCase
     {
         // FCM's data block is a string→string map and silently rejects
         // anything else — the worst failure mode available here.
-        $message = $this->deliver($this->alert(payload: ['area' => 'BS5']), $this->device('ios'));
+        $device = $this->device('ios');
+        $key = $this->keyFor($device);
 
-        foreach ($message['data'] as $key => $value) {
-            $this->assertIsString($key);
-            $this->assertIsString($value, "data.{$key} must be a string");
+        // One delivery, read two ways — deliver() asserts a single message
+        // went, so a second call here would fail on that rather than on
+        // anything this test is about.
+        $message = $this->deliver($this->alert(payload: ['area' => 'BS5']), $device);
+
+        foreach ($message['data'] as $name => $value) {
+            $this->assertIsString($name);
+            $this->assertIsString($value, "data.{$name} must be a string");
+        }
+
+        // And inside the envelope, where the same rule applies for the
+        // same reason: it is rebuilt into a data map on the handset.
+        foreach ($this->open($this->sealedFor($message), $key) as $name => $value) {
+            $this->assertIsString($name);
+            $this->assertIsString($value, "sealed.{$name} must be a string");
         }
     }
 
     public function testTheDataBlockDescribesTheAlertAndTheChannel(): void
     {
-        $data = $this->deliver($this->alert(), $this->device('ios'))['data'];
+        $data = $this->opened($this->alert(), $this->device('ios'));
 
         $this->assertSame('12', $data['alert_id']);
         $this->assertSame('call_request', $data['kind']);
@@ -631,7 +695,7 @@ final class FcmTransportTest extends ReachTestCase
      */
     public function testTheChannelFollowsTheLevel(string $level, string $channel): void
     {
-        $data = $this->deliver($this->alert($level), $this->device('ios'))['data'];
+        $data = $this->opened($this->alert($level), $this->device('ios'));
 
         $this->assertSame($channel, $data['channel']);
     }
@@ -657,7 +721,7 @@ final class FcmTransportTest extends ReachTestCase
         string $level,
         string $priority
     ): void {
-        $data = $this->deliver($this->alert($level), $this->device('ios'))['data'];
+        $data = $this->opened($this->alert($level), $this->device('ios'));
 
         $this->assertSame($priority, $data['priority']);
     }
@@ -687,10 +751,10 @@ final class FcmTransportTest extends ReachTestCase
     {
         // The payload is merged first precisely so the alert's own fields
         // win a name collision.
-        $data = $this->deliver(
+        $data = $this->opened(
             $this->alert(payload: ['kind' => 'spoofed', 'channel' => 'other', 'area' => 'BS5']),
             $this->device('ios'),
-        )['data'];
+        );
 
         $this->assertSame('call_request', $data['kind']);
         $this->assertSame(FcmTransport::ANDROID_CHANNEL_WARNING, $data['channel']);
@@ -715,21 +779,36 @@ final class FcmTransportTest extends ReachTestCase
 
         $this->assertSame('reach_alert.wav', $aps['sound']['name']);
         $this->assertSame(1, $aps['sound']['volume']);
-        $this->assertSame('Callback wanted', $aps['alert']['title']);
-        $this->assertSame('Male 12th-stepper wanted in BS5', $aps['alert']['body']);
+        // Not the alert's own words: those are sealed, and the extension
+        // writes them in before the lock screen is drawn. What is here is
+        // what a responder sees if that never happens.
+        $this->assertSame('Reach alert', $aps['alert']['title']);
+        $this->assertSame('Open Hand for the details.', $aps['alert']['body']);
         // Wakes a merely-backgrounded app so it can start the looping
         // alarm the 30-second payload sound cannot provide alone.
         $this->assertSame(1, $aps['content-available']);
+        // Launches the extension that opens the payload.
+        $this->assertSame(1, $aps['mutable-content']);
         $this->assertSame('REACH_ALERT', $aps['category']);
     }
 
-    public function testTheAlertDataIsRepeatedOutsideTheApsDictionary(): void
+    public function testTheSealedBlobTravelsInTheApnsPayloadAndNothingElseDoes(): void
     {
-        // iOS hands the app everything except `aps` when it is opened
-        // from a notification, so the structured data has to appear twice.
+        // iOS hands the app everything except `aps` when it is opened from
+        // a notification, so the payload has to appear beside the aps
+        // dictionary as well as in the data block — and the extension
+        // reads it from exactly there.
+        //
+        // This assertion used to say the opposite: that a full plaintext
+        // copy of the alert was repeated under a `reach` key. That copy
+        // was the last readable path, and removing it is the point of the
+        // change this test now guards.
         $message = $this->deliver($this->alert(), $this->device('ios'));
+        $payload = $message['apns']['payload'];
 
-        $this->assertSame($message['data'], $message['apns']['payload']['reach']);
+        $this->assertSame(['aps', 'ciphertext'], array_keys($payload));
+        $this->assertSame($message['data']['ciphertext'], $payload['ciphertext']);
+        $this->assertArrayNotHasKey('reach', $payload, 'the plaintext copy must not come back');
     }
 
     public function testCriticalIsOffByDefaultEvenForAnUrgentAlert(): void

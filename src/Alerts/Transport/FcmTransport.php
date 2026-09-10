@@ -51,6 +51,14 @@ use Reach\Devices\DeviceRepository;
  * played by the system: hence a full `aps` dictionary with an explicit
  * sound file, capped at the 30 seconds iOS allows.
  *
+ * <i>iOS — and the words cannot be in it.</i> The system draws the lock
+ * screen from `aps` before any of Hand runs, so the alert's own text
+ * would be readable by anyone handling the push and by anyone stood near
+ * the phone. `mutable-content: 1` launches Hand's notification service
+ * extension first, which opens the sealed blob and rewrites the title and
+ * body in place. So `aps` carries a placeholder, the real words travel
+ * encrypted beside it, and the lock screen still shows the alert.
+ *
  * <i>Critical alerts.</i> `"critical": 1` is what overrides the ringer
  * switch and Do Not Disturb — exactly what a helpline handset wants,
  * and exactly why Apple gates it behind an entitlement granted only on
@@ -109,6 +117,19 @@ final class FcmTransport implements AlertTransport
      */
     private const ANDROID_SOUND = 'reach_alert';
     private const IOS_SOUND = 'reach_alert.wav';
+
+    /**
+     * What an iOS lock screen shows before the notification service
+     * extension has opened the payload — and what it goes on showing if
+     * the extension never runs.
+     *
+     * Says enough to get someone to pick the phone up and nothing that
+     * would matter if the phone is on a table in a room full of people.
+     * That is the same judgement the alert convention makes everywhere
+     * else: an alert names nobody.
+     */
+    private const IOS_PLACEHOLDER_TITLE = 'Reach alert';
+    private const IOS_PLACEHOLDER_BODY = 'Open Hand for the details.';
 
     /**
      * The single data key an encrypted push carries.
@@ -210,13 +231,16 @@ final class FcmTransport implements AlertTransport
                     'apns-push-type'  => 'alert',
                     'apns-expiration' => (string) $alert->expiresAt,
                 ],
-                'payload' => [
-                    'aps' => $this->aps($alert),
-                    // Repeated outside `aps` because iOS hands the app
-                    // everything *except* the aps dictionary when it is
-                    // opened from a notification.
-                    'reach' => $this->data($alert),
-                ],
+                // The sealed blob is placed in the APNs payload
+                // explicitly rather than left to FCM's merging of the
+                // top-level `data` block. Both routes land it in the
+                // same userInfo dictionary the extension reads, and
+                // saying it here means the shape does not depend on a
+                // behaviour of FCM's that is documented but not ours.
+                //
+                // `+` keeps the left operand on a collision, so `aps`
+                // cannot be displaced by a data key called `aps`.
+                'payload' => ['aps' => $this->aps($alert)] + $data,
             ],
         ];
     }
@@ -224,8 +248,8 @@ final class FcmTransport implements AlertTransport
     /**
      * The data block for one handset.
      *
-     * <b>On Android this is one field.</b> `ciphertext`, and nothing
-     * beside it. Everything the handset needs — the alert id it will
+     * <b>One field.</b> `ciphertext`, and nothing beside it, on both
+     * platforms. Everything the handset needs — the alert id it will
      * acknowledge against, the kind so a removal notice never reaches
      * the alarm, the priority, the channel and sound it builds the
      * notification from, and whatever the raising plugin attached — is
@@ -237,23 +261,21 @@ final class FcmTransport implements AlertTransport
      * stripping rather than by reading meaning. Encrypting the lot
      * removes the question instead of policing it.
      *
-     * <b>iOS is still plaintext.</b> An iOS lock screen is rendered by
-     * the system from the `aps` dictionary before the app sees anything,
-     * so ciphertext there would put base64 on the lock screen rather
-     * than hide anything. The way round it is a Notification Service
-     * Extension in Hand, which is wanted and not yet built: it needs its
-     * own project, an App Group entitlement the app does not have, the
-     * payload key moved to a shared keychain, and Apple provisioning —
-     * none of it doable without a Mac and a developer account to hand.
+     * <b>iOS used to be exempt, and is not any more.</b> An iOS lock
+     * screen is rendered by the system from the `aps` dictionary before
+     * the app sees anything, so ciphertext alone would once have put
+     * base64 in front of whoever was stood near the phone. Hand now
+     * ships a Notification Service Extension, which `mutable-content: 1`
+     * launches: it opens the blob and rewrites the title and body before
+     * the lock screen is drawn. What travels in `aps` is a placeholder
+     * naming nobody — see {@see IOS_PLACEHOLDER_TITLE}.
      *
-     * So iOS is waiting on hardware rather than on a decision. When the
-     * extension ships, this branch collapses and the transport encrypts
-     * for both platforms. Until then, what keeps iOS survivable is the
-     * convention above — which on iOS is currently the only protection
-     * rather than the second layer, and is the reason to finish this.
+     * That closed the last plaintext path. It also means an iOS handset
+     * is refused on the same terms as an Android one, below, where
+     * before it would have been sent to regardless.
      *
-     * <b>An Android handset that cannot be encrypted for is not sent
-     * to.</b> Null rather than a plaintext fallback, and the refusal is
+     * <b>A handset that cannot be encrypted for is not sent to.</b>
+     * Null rather than a plaintext fallback, and the refusal is
      * logged as an error so it surfaces on the Sentinel dashboard rather
      * than only in a file nobody opens.
      *
@@ -264,17 +286,15 @@ final class FcmTransport implements AlertTransport
      * and nobody would, because everything keeps working. A refusal is
      * loud, appears on the dashboard, and is fixed by the responder
      * signing in again — which is a minute's work and the same recovery
-     * as a lost token. Hand refuses from its own side too: a push with
-     * no `ciphertext` is ignored outright.
+     * as a lost token. Hand refuses from its own side too: on Android a
+     * push with no `ciphertext` is ignored outright, and on iOS the
+     * extension says on the lock screen that the handset should sign in
+     * again rather than showing nothing.
      *
      * @return array<string, string>|null
      */
     private function dataFor(Alert $alert, Device $device): ?array
     {
-        if ($device->platform !== 'android') {
-            return $this->data($alert);
-        }
-
         $key = $this->devices->payloadKeyFor($device->id);
         if ($key === '') {
             self::logError('Handset has no payload key; alert not sent', [
@@ -410,9 +430,17 @@ final class FcmTransport implements AlertTransport
         $quiet = $alert->level === Alert::LEVEL_BLUE;
 
         return [
+            // <b>Deliberately not the alert's own words.</b> Everything
+            // readable is inside the sealed blob; Hand's notification
+            // service extension opens it and rewrites these two before
+            // the lock screen renders. What travels here is what a
+            // responder sees only if that never happens — an extension
+            // that could not run, or a handset on a build without one —
+            // so it has to be safe to show to whoever is stood near the
+            // phone, and still worth waking up for.
             'alert' => [
-                'title' => $alert->title,
-                'body'  => $alert->body,
+                'title' => self::IOS_PLACEHOLDER_TITLE,
+                'body'  => self::IOS_PLACEHOLDER_BODY,
             ],
             'sound' => $quiet ? 'default' : [
                 'critical' => $critical ? 1 : 0,
@@ -432,6 +460,12 @@ final class FcmTransport implements AlertTransport
             // terminated, so it can start the looping alarm that the
             // 30-second payload sound cannot provide on its own.
             'content-available' => 1,
+            // Launches Hand's notification service extension, which is
+            // the only thing that can turn the sealed blob back into
+            // words before iOS draws the lock screen. Without this key
+            // the extension never runs and the responder gets
+            // IOS_PLACEHOLDER_TITLE instead of the alert.
+            'mutable-content' => 1,
             'category' => 'REACH_ALERT',
         ];
     }
