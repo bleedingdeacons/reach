@@ -375,7 +375,7 @@ push delays an alert rather than losing it.
 | Head | Alert while the app is closed |
 | --- | --- |
 | Android | Yes. Data-only FCM message at high priority; Hand builds a full-screen-intent notification on an alarm-category channel, so the handset rings like a call. |
-| iOS | Yes, capped at 30s — a terminated app runs no code, so the APNs payload carries the sound and the system plays it. Bypassing the ringer switch and Do Not Disturb needs Apple's Critical Alerts entitlement (see Settings). |
+| iOS | Yes, capped at 30s — a terminated app runs no code, so the APNs payload carries the sound and the system plays it. The words are sealed like Android's: `mutable-content` launches Hand's notification service extension, which opens the payload and rewrites the lock screen before it is drawn. Bypassing the ringer switch and Do Not Disturb needs Apple's Critical Alerts entitlement (see Settings). |
 | Windows / macOS | No FCM coverage. Hand runs as a login-start tray app and polls, so "closed" means not on screen rather than not running. |
 
 Android is sent a **data-only** message deliberately. A message carrying
@@ -383,6 +383,22 @@ a `notification` block is handled by the system tray when the app is
 backgrounded and `onMessageReceived` never runs — so Hand would never
 get the chance to raise a full-screen intent, and a duty handset would
 get one polite ding instead of ringing.
+
+**The push payload is encrypted on both platforms**, to a per-handset key
+issued at enrolment. One field travels, `ciphertext`, and nothing beside
+it: the alert id, kind, level, title, body and everything a raising
+plugin attached are all inside it. A handset that has no usable key is
+**not sent to** — refused loudly, and logged as an error so it appears on
+the Sentinel dashboard — rather than quietly downgraded to readable text
+that nobody would notice for as long as everything kept working.
+
+iOS was outside that until Hand shipped a notification service extension.
+The system draws an iOS lock screen from the `aps` dictionary before any
+of the app runs, so ciphertext alone would once have shown base64 to
+whoever was stood near the phone. Now `aps` carries a placeholder that
+names nobody, `mutable-content: 1` launches the extension, and the
+extension swaps in the real words. If it ever fails to run, the
+placeholder is what shows.
 
 ### When somebody answers
 
