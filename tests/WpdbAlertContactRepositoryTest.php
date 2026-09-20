@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Alerts\WpdbAlertContactRepository;
 use Reach\Tests\ReachTestCase;
 
@@ -117,9 +118,7 @@ final class WpdbAlertContactRepositoryTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider absentColumns
-     */
+    #[DataProvider('absentColumns')]
     public function testFindReturnsEmptyWhenNothingIsStored(mixed $stored): void
     {
         $db = new WpdbStub();

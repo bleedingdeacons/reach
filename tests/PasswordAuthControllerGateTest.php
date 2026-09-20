@@ -13,7 +13,6 @@ use Reach\Auth\PasswordResetMailer;
 use Reach\Core\RateLimiter;
 use Reach\Rest\PasswordAuthController;
 use Reach\Session\SessionCookie;
-use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\ResponderCertification;
 use WP_Error;

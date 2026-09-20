@@ -604,7 +604,7 @@ final class AlertControllerTest extends ReachTestCase
     }
 
     /** @param array<string, mixed> $args */
-    private function raise(array $args): \Reach\Alerts\Alert
+    private function raise(array $args): Alert
     {
         return $this->alerts->create($this->request($args), time());
     }

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
-use Brain\Monkey\Functions;
 use Reach\Admin\SettingsPage;
 use Reach\Core\Settings;
 use Reach\Tests\ReachTestCase;
@@ -34,9 +36,8 @@ use Scrutiny\Privacy\PersonalDataPolicy;
  * real AES-256-GCM round trip, not a recorded call: a new value replaces, a
  * blank one keeps what is stored, and only the explicit remove checkbox
  * clears. The form itself must never send a secret back to the browser.
- *
- * @covers \Reach\Admin\SettingsPage
  */
+#[CoversClass(\Reach\Admin\SettingsPage::class)]
 final class SettingsPageTest extends ReachTestCase
 {
     private Settings $settings;
@@ -53,7 +54,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->page = new SettingsPage($this->settings);
 
         // Not part of the shared WordPress stub set — it lives in wp-admin.
-        Functions\when('submit_button')->alias(static function (): void {
+        when('submit_button')->alias(static function (): void {
             echo '<button type="submit" class="button button-primary">Save Changes</button>';
         });
     }
@@ -67,8 +68,7 @@ final class SettingsPageTest extends ReachTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function register_hooks_the_menu_the_init_and_the_save_handler(): void
     {
         $this->page->register();
@@ -82,9 +82,8 @@ final class SettingsPageTest extends ReachTestCase
      * Stricter than the menu it hangs off: a user who can see Reach's
      * personal-data screens but cannot manage options simply never sees this
      * item, which is WordPress doing the hiding for us.
-     *
-     * @test
      */
+    #[Test]
     public function add_menu_attaches_under_reach_behind_manage_options(): void
     {
         $this->page->addMenu();
@@ -103,13 +102,12 @@ final class SettingsPageTest extends ReachTestCase
      * express, so the save goes through admin-post.php instead. Asserting the
      * emptiness is what stops someone quietly reintroducing register_setting()
      * and with it a code path that overwrites a stored secret with a blank.
-     *
-     * @test
      */
+    #[Test]
     public function register_settings_registers_nothing_with_the_settings_api(): void
     {
         $registered = [];
-        Functions\when('register_setting')->alias(
+        when('register_setting')->alias(
             static function (string $group, string $name, mixed $args = []) use (&$registered): void {
                 $registered[] = $name;
             }
@@ -121,8 +119,7 @@ final class SettingsPageTest extends ReachTestCase
     }
 
     // ── capability guards ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_screen_renders_nothing_without_manage_options(): void
     {
         WpState::$deniedCaps = ['manage_options'];
@@ -137,9 +134,8 @@ final class SettingsPageTest extends ReachTestCase
     /**
      * The personal-data capability is not a substitute here: it opens the
      * three operational screens, not the credentials.
-     *
-     * @test
      */
+    #[Test]
     public function saving_without_manage_options_dies(): void
     {
         WpState::$deniedCaps = ['manage_options'];
@@ -151,7 +147,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->page->handleSave();
     }
 
-    /** @test */
+    #[Test]
     public function nothing_is_written_when_the_save_is_refused(): void
     {
         WpState::$deniedCaps = ['manage_options'];
@@ -167,8 +163,7 @@ final class SettingsPageTest extends ReachTestCase
     }
 
     // ── the rendered form ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_form_posts_to_admin_post_with_a_nonce(): void
     {
         $html = $this->render();
@@ -179,7 +174,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringContainsString('Save Changes', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_saved_notice_shows_only_after_a_save(): void
     {
         $this->assertStringNotContainsString('Settings saved.', $this->render());
@@ -189,7 +184,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringContainsString('Settings saved.', $this->render());
     }
 
-    /** @test */
+    #[Test]
     public function the_find_page_settings_are_rendered_with_their_stored_values(): void
     {
         $this->settings->setPlaceBias('BS5');
@@ -204,7 +199,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringContainsString('value="callbacks@example.test"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_call_request_field_offers_the_site_admin_address_as_its_placeholder(): void
     {
         WpState::$options['admin_email'] = 'admin@example.test';
@@ -217,7 +212,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringContainsString('value="admin@example.test"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_redirect_uris_an_admin_has_to_register_are_shown(): void
     {
         $html = $this->render();
@@ -226,7 +221,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringContainsString('/reach/signin', $html);
     }
 
-    /** @test */
+    #[Test]
     public function every_provider_gets_a_client_id_field(): void
     {
         $html = $this->render();
@@ -242,9 +237,8 @@ final class SettingsPageTest extends ReachTestCase
     /**
      * Apple's client-side flow has no client secret, so offering a field for
      * one would invite an admin to paste a credential nothing reads.
-     *
-     * @test
      */
+    #[Test]
     public function apple_gets_no_client_secret_field(): void
     {
         $html = $this->render();
@@ -255,7 +249,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringNotContainsString('name="client_secret_apple"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_stored_client_id_is_rendered_but_a_stored_secret_never_is(): void
     {
         $this->settings->setClientId('google', 'google-client-id');
@@ -271,7 +265,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertStringContainsString('name="remove_secret_google"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_provider_with_no_stored_secret_offers_no_remove_checkbox(): void
     {
         $html = $this->render();
@@ -281,8 +275,7 @@ final class SettingsPageTest extends ReachTestCase
     }
 
     // ── saving (reflection: the live caller exits) ────────────────────
-
-    /** @test */
+    #[Test]
     public function the_find_page_settings_are_saved(): void
     {
         $_POST = [
@@ -300,7 +293,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('callbacks@example.test', $this->settings->getCallRequestEmail());
     }
 
-    /** @test */
+    #[Test]
     public function an_absent_field_clears_the_value_it_names(): void
     {
         $this->settings->setPlaceBias('BS5');
@@ -318,9 +311,8 @@ final class SettingsPageTest extends ReachTestCase
      * The shape checks are Settings' job, not the page's — the page only
      * unslashes and string-guards — but the pairing is worth pinning: junk in
      * either field disables the window rather than half-configuring it.
-     *
-     * @test
      */
+    #[Test]
     public function an_unparseable_out_of_hours_bound_is_stored_blank(): void
     {
         $_POST = ['out_of_hours_start' => 'half past nine', 'out_of_hours_end' => '08:00'];
@@ -331,7 +323,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('08:00', $this->settings->getOutOfHoursEnd());
     }
 
-    /** @test */
+    #[Test]
     public function an_invalid_call_request_address_falls_back_to_the_site_admin(): void
     {
         WpState::$options['admin_email'] = 'admin@example.test';
@@ -342,7 +334,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('admin@example.test', $this->settings->getCallRequestEmail());
     }
 
-    /** @test */
+    #[Test]
     public function every_provider_client_id_is_saved(): void
     {
         $_POST = [
@@ -360,7 +352,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('facebook-id', $this->settings->getClientId('facebook'));
     }
 
-    /** @test */
+    #[Test]
     public function a_submitted_secret_is_stored_encrypted_and_reads_back(): void
     {
         $_POST = ['client_secret_google' => '  a-new-secret  '];
@@ -382,9 +374,8 @@ final class SettingsPageTest extends ReachTestCase
      * The rule the whole manual handler exists for: an empty secret field is
      * "leave it alone", because the form never shows the stored value and so
      * an admin editing anything else submits it blank every time.
-     *
-     * @test
      */
+    #[Test]
     public function an_empty_secret_field_leaves_the_stored_secret_alone(): void
     {
         $this->settings->setClientSecret('google', 'existing-secret');
@@ -396,7 +387,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('google-id', $this->settings->getClientId('google'));
     }
 
-    /** @test */
+    #[Test]
     public function an_absent_secret_field_leaves_the_stored_secret_alone(): void
     {
         $this->settings->setClientSecret('google', 'existing-secret');
@@ -406,7 +397,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
     }
 
-    /** @test */
+    #[Test]
     public function the_remove_checkbox_clears_the_stored_secret(): void
     {
         $this->settings->setClientSecret('google', 'existing-secret');
@@ -421,9 +412,8 @@ final class SettingsPageTest extends ReachTestCase
      * Remove wins over a value typed into the field in the same submit —
      * ticking the box and typing a new secret is contradictory, and clearing
      * is the safer reading.
-     *
-     * @test
      */
+    #[Test]
     public function the_remove_checkbox_beats_a_secret_typed_alongside_it(): void
     {
         $this->settings->setClientSecret('google', 'existing-secret');
@@ -434,7 +424,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('', $this->settings->getClientSecret('google'));
     }
 
-    /** @test */
+    #[Test]
     public function an_unticked_remove_checkbox_does_not_clear_anything(): void
     {
         $this->settings->setClientSecret('google', 'existing-secret');
@@ -445,7 +435,7 @@ final class SettingsPageTest extends ReachTestCase
         $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
     }
 
-    /** @test */
+    #[Test]
     public function a_secret_posted_for_apple_is_ignored(): void
     {
         $_POST = ['client_secret_apple' => 'apple-has-no-secret', 'remove_secret_apple' => '1'];
@@ -460,7 +450,7 @@ final class SettingsPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function saving_one_provider_does_not_disturb_another(): void
     {
         $this->settings->setClientSecret('google', 'google-secret');

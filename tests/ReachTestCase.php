@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use function Brain\Monkey\Functions\when;
+use function Brain\Monkey\Actions\expectAdded;
 use BleedingDeacons\WpMocks\TestCase;
-use Brain\Monkey\Actions;
 use Brain\Monkey\Filters;
-use Brain\Monkey\Functions;
 use Reach\Session\CurrentSession;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
@@ -89,7 +89,7 @@ abstract class ReachTestCase extends TestCase
         // Safe to register here, unlike most setUp stubs: nothing overrides
         // wp_salt() per test — they mutate $this->salts instead — so the
         // one-stub-per-function-per-test rule is not in play.
-        Functions\when('wp_salt')->alias(
+        when('wp_salt')->alias(
             fn (string $scheme = 'auth'): string => $this->salts[$scheme] ?? 'fallback-salt'
         );
     }
@@ -104,7 +104,7 @@ abstract class ReachTestCase extends TestCase
      */
     protected function captureAction(string $hook): void
     {
-        Actions\expectAdded($hook)->zeroOrMoreTimes()->whenHappen(
+        expectAdded($hook)->zeroOrMoreTimes()->whenHappen(
             function (callable $callback, int $priority = 10, int $acceptedArgs = 1) use ($hook): void {
                 $this->addedActions[$hook][] = $callback;
             }
@@ -154,7 +154,7 @@ abstract class ReachTestCase extends TestCase
     protected function stubHttp(callable $responder): void
     {
         foreach (['wp_remote_get', 'wp_remote_post', 'wp_remote_request'] as $function) {
-            Functions\when($function)->alias($responder);
+            when($function)->alias($responder);
         }
     }
 

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\DataProvider;
+use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
-use Brain\Monkey\Functions;
 use LogicException;
 use Reach\Admin\DevicesPage;
 use Reach\Alerts\Alert;
@@ -26,7 +29,6 @@ use Reach\Tests\ReachTestCase;
 use ReflectionMethod;
 use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\Member;
-use Unity\Members\ResponderCertification;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use WP_User;
 
@@ -45,9 +47,8 @@ use WP_User;
  * The screen shows which responder each handset belongs to, so it is
  * gated on {@see PersonalDataPolicy::VIEW_CAPABILITY} like the rest of
  * Reach's admin.
- *
- * @covers \Reach\Admin\DevicesPage
  */
+#[CoversClass(\Reach\Admin\DevicesPage::class)]
 final class DevicesPageTest extends ReachTestCase
 {
     protected function setUp(): void
@@ -67,8 +68,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function register_hooks_the_menu_and_every_post_handler(): void
     {
         $this->page()->register();
@@ -96,7 +96,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function add_menu_attaches_under_the_reach_menu_behind_the_personal_data_capability(): void
     {
         $this->page()->addMenu();
@@ -109,8 +109,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── capability guards ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_list_renders_nothing_without_the_personal_data_capability(): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
@@ -118,7 +117,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame('', $this->renderList($this->page(devices: $this->devicesWith($this->device()))));
     }
 
-    /** @test */
+    #[Test]
     public function revoking_without_the_manage_capability_dies(): void
     {
         WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
@@ -138,8 +137,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── list rendering ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_empty_list_says_so_for_both_tables(): void
     {
         $html = $this->renderList($this->page());
@@ -149,7 +147,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('0 items', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_live_handset_shows_its_responder_platform_and_a_revoke_button(): void
     {
         $page = $this->page(
@@ -167,7 +165,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Revoke</button>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_responder_name_links_to_their_member_record(): void
     {
         // The screen answers "whose handset is this"; the next question
@@ -184,13 +182,13 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('>Jo M.</a>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_responder_the_admin_cannot_edit_is_named_without_a_link(): void
     {
         // get_edit_post_link() answers null when the current user cannot
         // edit the member. The name still has to appear — as plain text
         // rather than a link that only leads to a permissions error.
-        Functions\when('get_edit_post_link')->justReturn(null);
+        when('get_edit_post_link')->justReturn(null);
 
         $page = $this->page(
             devices: $this->devicesWith($this->device(memberEmail: 'jo@example.test')),
@@ -203,7 +201,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('>Jo M.</a>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_whose_responder_unity_does_not_know_is_not_linked(): void
     {
         // There is no record to link to. The address is the diagnostic:
@@ -219,7 +217,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('>unknown@example.test</a>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_that_cannot_read_its_alerts_is_flagged_rather_than_shown_live(): void
     {
         // Worse than revoked, and looks better: this handset is still on
@@ -236,7 +234,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('>Live<', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_that_shows_alert_text_when_locked_is_flagged_but_still_live(): void
     {
         // Alongside Live, not instead of it. This handset works; the note
@@ -254,7 +252,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('>Live<', $html, 'it is still a working handset');
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_that_has_never_reported_its_lock_screen_is_not_reassured_about(): void
     {
         // Unknown is not "safe" — it is the absence of a claim either way,
@@ -267,7 +265,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Alerts hidden when locked', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_that_hides_alert_text_when_locked_is_not_flagged(): void
     {
         $html = $this->renderList($this->page(devices: $this->devicesWith(
@@ -278,7 +276,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Live', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_healthy_handset_is_not_flagged(): void
     {
         $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
@@ -287,7 +285,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Live', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_superseded_handset_keeps_its_warning_until_it_is_revoked(): void
     {
         // Signing in again does not repair a faulted row — it creates a
@@ -328,7 +326,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->fail('No row found for handset "' . $label . '"');
     }
 
-    /** @test */
+    #[Test]
     public function a_revoked_handset_reads_as_revoked_even_with_a_key_fault(): void
     {
         // Revoked is the more final of the two and the one an admin acted
@@ -343,7 +341,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Cannot read alerts', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_revoked_handset_is_shown_as_history_with_no_revoke_button(): void
     {
         // Rows are kept rather than deleted so the list is a record of
@@ -358,7 +356,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Revoke</button>', $html, 'history is not re-revocable');
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_falls_back_to_its_email_when_unity_knows_no_name(): void
     {
         $page = $this->page(
@@ -369,7 +367,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('unknown@example.test', $this->renderList($page));
     }
 
-    /** @test */
+    #[Test]
     public function a_member_with_a_blank_anonymous_name_falls_back_to_the_email(): void
     {
         $page = $this->page(
@@ -380,7 +378,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('jo@example.test', $this->renderList($page));
     }
 
-    /** @test */
+    #[Test]
     public function an_unlabelled_handset_renders_a_placeholder(): void
     {
         $page = $this->page(devices: $this->devicesWith($this->device(label: '')));
@@ -388,10 +386,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('—', $this->renderList($page));
     }
 
-    /**
-     * @test
-     * @dataProvider deliveryModes
-     */
+    #[DataProvider('deliveryModes')]
+    #[Test]
     public function the_delivery_column_distinguishes_push_from_poll(
         string $pushProvider,
         string $pushToken,
@@ -417,7 +413,7 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_never_seen_since_enrolment_shows_a_placeholder(): void
     {
         $page = $this->page(devices: $this->devicesWith($this->device(lastSeenAt: 0)));
@@ -428,7 +424,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('—', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_total_counts_every_row_not_just_the_page(): void
     {
         $devices = $this->devicesWith(
@@ -442,7 +438,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('3 items', $this->renderList($this->page(devices: $devices)));
     }
 
-    /** @test */
+    #[Test]
     public function the_list_pages_fifty_at_a_time(): void
     {
         $_GET = ['paged' => '3'];
@@ -453,10 +449,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([['limit' => 50, 'offset' => 100]], $devices->paging);
     }
 
-    /**
-     * @test
-     * @dataProvider nonsensePages
-     */
+    #[DataProvider('nonsensePages')]
+    #[Test]
     public function a_nonsense_page_number_falls_back_to_the_first(string $paged): void
     {
         $_GET = ['paged' => $paged];
@@ -477,7 +471,7 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function sorting_a_handset_column_reaches_the_repository_as_its_own_column_name(): void
     {
         // The list is paginated over the whole table, so the sort has to
@@ -491,7 +485,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([['orderBy' => 'last_seen_at', 'order' => 'asc']], $devices->sorting);
     }
 
-    /** @test */
+    #[Test]
     public function an_unsortable_handset_column_leaves_the_list_in_its_default_order(): void
     {
         // Both tables on this screen read the same `orderby`, so the
@@ -504,7 +498,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([['orderBy' => '', 'order' => 'asc']], $devices->sorting);
     }
 
-    /** @test */
+    #[Test]
     public function sorting_by_responder_orders_by_the_name_shown_not_the_email_behind_it(): void
     {
         // The name comes from Unity, not from the devices table, so there
@@ -532,7 +526,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function sorting_by_responder_ignores_the_markup_around_the_name(): void
     {
         // The cell is a link, so sorting the rendered cell would sort
@@ -561,7 +555,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function sorting_by_responder_reverses_on_a_descending_request(): void
     {
         $devices = $this->devicesWith(
@@ -584,7 +578,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function sorting_by_responder_asks_the_repository_for_no_ordering_of_its_own(): void
     {
         // The ordering cannot happen in SQL, so the read is the whole
@@ -601,7 +595,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([['limit' => 500, 'offset' => 0]], $devices->paging);
     }
 
-    /** @test */
+    #[Test]
     public function a_sortable_handset_column_is_offered_as_a_link_in_the_header(): void
     {
         $html = $this->renderList($this->page());
@@ -611,8 +605,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── the recent-alerts table ───────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_recent_alert_shows_its_kind_source_and_title(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -625,7 +618,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Callback wanted', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_level_column_shows_the_level(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -634,7 +627,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('>red<', $this->renderList($this->page(alerts: $alerts)));
     }
 
-    /** @test */
+    #[Test]
     public function an_alert_that_named_no_level_shows_as_yellow(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -646,7 +639,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('>red<', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_response_column_says_whether_somebody_has_to_take_it_on(): void
     {
         // The column answers "will this clear off the rest of the rota
@@ -664,7 +657,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Everyone closes', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_unacknowledged_alert_says_nobody_yet(): void
     {
         // The answer to "did this reach anybody", which is the whole
@@ -675,7 +668,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Nobody yet', $this->renderList($this->page(alerts: $alerts)));
     }
 
-    /** @test */
+    #[Test]
     public function an_acknowledged_alert_names_who_answered_it(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -691,7 +684,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Nobody yet', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_acknowledging_responder_is_linked_to_their_member_record(): void
     {
         // "Who answered this" is only half the question; the other half
@@ -709,10 +702,10 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('>Jo M.</a>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_acknowledging_responder_the_admin_cannot_edit_is_named_without_a_link(): void
     {
-        Functions\when('get_edit_post_link')->justReturn(null);
+        when('get_edit_post_link')->justReturn(null);
 
         $alerts = new InMemoryAlertRepository();
         $alert = $alerts->create($this->alertRequest(), $this->createdAt());
@@ -727,7 +720,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('>Jo M.</a>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_acknowledgement_from_someone_unity_does_not_know_is_not_linked(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -740,7 +733,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('>stranger@example.test</a>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function two_responders_sharing_an_anonymous_name_are_both_listed(): void
     {
         // Deduplication is by address, not by name: two people who happen
@@ -764,7 +757,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('post.php?post=8', $html);
     }
 
-    /** @test */
+    #[Test]
     public function sorting_by_acknowledged_by_ignores_the_markup_around_the_names(): void
     {
         // The linked names would otherwise all sort under "<", leaving
@@ -793,7 +786,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function one_responder_answering_on_two_handsets_is_named_once(): void
     {
         // The same person acknowledging from a phone and a tablet is one
@@ -811,7 +804,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame(1, substr_count($html, 'Jo M.'));
     }
 
-    /** @test */
+    #[Test]
     public function an_acknowledgement_from_someone_unity_does_not_know_falls_back_to_the_email(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -824,7 +817,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function the_alerts_table_sorts_the_window_it_shows_rather_than_the_whole_table(): void
     {
         // Pushing this sort down to the database would apply it before
@@ -846,7 +839,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function the_alerts_table_ignores_a_sort_that_belongs_to_the_handsets_table(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -865,8 +858,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── sending is its own capability ─────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_reader_who_cannot_send_is_offered_no_send_form(): void
     {
         // Buttons that answer 403 are worse than no buttons. The handler
@@ -880,7 +872,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Send a test to every live handset', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_reader_who_cannot_send_is_offered_no_tick_boxes(): void
     {
         // The tick column exists to choose who a send goes to. Without
@@ -893,7 +885,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('reach-device-select', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_reader_who_cannot_send_still_sees_the_handsets(): void
     {
         // Reading the screen is a personal-data read and stays on
@@ -910,7 +902,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Revoke</button>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_test_alert_is_refused_without_the_send_capability(): void
     {
         WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
@@ -924,7 +916,7 @@ final class DevicesPageTest extends ReachTestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function revoking_is_not_affected_by_the_send_capability(): void
     {
         // Three separate powers over the same screen: reading it, ringing
@@ -939,7 +931,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=revoked', $target);
     }
 
-    /** @test */
+    #[Test]
     public function a_reader_who_cannot_manage_is_offered_no_revoke_or_remove(): void
     {
         // The actions column holds nothing else, so it goes with them
@@ -953,7 +945,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('reach_revoke_device', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_reader_who_cannot_manage_still_sees_the_handsets(): void
     {
         WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
@@ -968,7 +960,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Live', $html);
     }
 
-    /** @test */
+    #[Test]
     public function managing_is_not_affected_by_the_send_capability(): void
     {
         // The mirror of revoking_is_not_affected_by_the_send_capability:
@@ -984,7 +976,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertCount(1, $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function the_test_alert_form_and_its_handler_agree_on_one_nonce(): void
     {
         // The nonce is named for the screen's actions rather than for the
@@ -1002,7 +994,7 @@ final class DevicesPageTest extends ReachTestCase
         $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
 
         $verified = [];
-        Functions\when('check_admin_referer')->alias(
+        when('check_admin_referer')->alias(
             static function (string $action = '', string $name = '_wpnonce') use (&$verified): bool {
                 $verified[] = $action;
 
@@ -1021,7 +1013,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function notices_are_plain_text_because_they_are_escaped_on_the_way_out(): void
     {
         // The whole string goes through esc_html(), so an HTML entity
@@ -1035,8 +1027,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── the Recent alerts refresh ─────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_recent_alerts_table_is_wrapped_for_refreshing_on_its_own(): void
     {
         // Reloading the whole screen every five seconds would throw away
@@ -1048,7 +1039,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('data-nonce="', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_refresh_answers_with_the_alerts_table_and_nothing_else(): void
     {
         $alerts = new InMemoryAlertRepository();
@@ -1062,7 +1053,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('reach_scope', $html, 'nor is the test-alert form');
     }
 
-    /** @test */
+    #[Test]
     public function the_refreshed_table_links_its_sort_back_to_the_screen_not_to_admin_ajax(): void
     {
         // Core builds the sort links from REQUEST_URI, which during an
@@ -1076,7 +1067,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('admin-ajax', $_SERVER['REQUEST_URI']);
     }
 
-    /** @test */
+    #[Test]
     public function the_refresh_keeps_whatever_sort_the_screen_is_showing(): void
     {
         $_GET = ['orderby' => 'kind', 'order' => 'asc'];
@@ -1088,7 +1079,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('order=asc', $_SERVER['REQUEST_URI']);
     }
 
-    /** @test */
+    #[Test]
     public function refreshing_without_the_personal_data_capability_dies(): void
     {
         // The table names the responders who acknowledged, so the
@@ -1101,11 +1092,8 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── notices ───────────────────────────────────────────────────────
-
-    /**
-     * @test
-     * @dataProvider notices
-     */
+    #[DataProvider('notices')]
+    #[Test]
     public function the_result_of_the_last_action_is_reported(string $result, string $class, string $text): void
     {
         $_GET = ['reach_result' => $result];
@@ -1131,10 +1119,8 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @test
-     * @dataProvider unknownResults
-     */
+    #[DataProvider('unknownResults')]
+    #[Test]
     public function an_unrecognised_result_shows_no_notice(mixed $result): void
     {
         $_GET = ['reach_result' => $result];
@@ -1152,15 +1138,14 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function no_notice_is_shown_on_a_plain_visit(): void
     {
         $this->assertStringNotContainsString('is-dismissible', $this->renderList($this->page()));
     }
 
     // ── revoking ──────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function revoking_cuts_the_handset_off_and_reports_it(): void
     {
         $_POST = ['device_id' => '7'];
@@ -1173,7 +1158,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('page=' . DevicesPage::PAGE_SLUG, $target);
     }
 
-    /** @test */
+    #[Test]
     public function a_revoked_handset_stops_appearing_in_the_broadcast_list(): void
     {
         // The point of the button: the handset is cut off immediately
@@ -1187,7 +1172,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([], $devices->findAllLive());
     }
 
-    /** @test */
+    #[Test]
     public function revoking_an_already_revoked_handset_reports_the_failure(): void
     {
         $_POST = ['device_id' => '7'];
@@ -1199,10 +1184,10 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider missingDeviceIds
      * @param array<string, string> $post
      */
+    #[DataProvider('missingDeviceIds')]
+    #[Test]
     public function a_revoke_without_a_usable_device_id_touches_nothing(array $post): void
     {
         $_POST = $post;
@@ -1225,7 +1210,7 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function revoking_an_unknown_handset_reports_the_failure(): void
     {
         $_POST = ['device_id' => '999'];
@@ -1236,8 +1221,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── the test alert ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_test_alert_is_a_real_alert_through_the_real_path(): void
     {
         // Nothing about it is special-cased — that is what makes it worth
@@ -1255,7 +1239,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=test_sent', $target);
     }
 
-    /** @test */
+    #[Test]
     public function the_test_alert_is_a_red_broadcast_nobody_has_to_take_on(): void
     {
         // Red because the whole value of a test is exercising the loudest
@@ -1272,7 +1256,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertTrue($alerts->alerts[0]->isInformational());
     }
 
-    /** @test */
+    #[Test]
     public function the_test_alert_expires_in_five_minutes(): void
     {
         // A test still ringing handsets ten minutes later is a nuisance;
@@ -1287,7 +1271,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame(300, $alert->expiresAt - $alert->createdAt);
     }
 
-    /** @test */
+    #[Test]
     public function the_test_alert_names_the_admin_who_sent_it(): void
     {
         $this->signedInAs('Site Admin');
@@ -1299,7 +1283,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Site Admin', $alerts->alerts[0]->body);
     }
 
-    /** @test */
+    #[Test]
     public function an_admin_with_no_display_name_is_described_generically(): void
     {
         $this->signedInAs('');
@@ -1311,7 +1295,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('an administrator', $alerts->alerts[0]->body);
     }
 
-    /** @test */
+    #[Test]
     public function the_test_alert_carries_no_personal_data(): void
     {
         // Its text travels through Google's push infrastructure and onto
@@ -1329,8 +1313,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── selecting handsets ────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_live_handset_can_be_ticked_for_a_test(): void
     {
         // Bound to the test form by its `form` attribute rather than by
@@ -1345,7 +1328,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('value="7"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_revoked_handset_has_no_checkbox(): void
     {
         // Nothing to test on a handset that has already been cut off.
@@ -1356,7 +1339,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('name="device_ids[]"', $this->renderList($page));
     }
 
-    /** @test */
+    #[Test]
     public function the_page_offers_both_test_scopes_in_the_table_toolbar(): void
     {
         // Both live in the tablenav now, in WordPress's own shape: the
@@ -1370,7 +1353,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Send test to all live handsets', $html);
     }
 
-    /** @test */
+    #[Test]
     public function no_toolbar_control_is_named_action_because_admin_post_routes_on_it(): void
     {
         // admin-post.php picks its handler from $_REQUEST['action'], and
@@ -1392,7 +1375,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('name="reach_bulk"', $toolbar);
     }
 
-    /** @test */
+    #[Test]
     public function the_table_controls_are_bound_to_the_form_they_are_not_inside(): void
     {
         // The rows carry POST forms of their own for Revoke and Remove, so
@@ -1410,7 +1393,7 @@ final class DevicesPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function a_handset_keeps_its_lock_screen_report_through_every_other_write(): void
     {
         // The repository updates one column at a time, so nothing it does
@@ -1433,8 +1416,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── the handsets refresh ──────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_handsets_table_is_wrapped_for_swapping_on_its_own(): void
     {
         // Reloading the screen to sort would throw away the handsets an
@@ -1445,7 +1427,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('data-action="reach_handsets"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_refresh_answers_with_the_handsets_table_and_nothing_else(): void
     {
         $devices = $this->devicesWith($this->device(id: 7, label: 'Duty phone'));
@@ -1457,7 +1439,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('<h1>', $html, 'nor is the rest of the screen');
     }
 
-    /** @test */
+    #[Test]
     public function the_refresh_is_refused_without_the_personal_data_capability(): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
@@ -1466,7 +1448,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->page()->handleHandsets();
     }
 
-    /** @test */
+    #[Test]
     public function the_fragment_points_its_links_back_at_the_screen_not_at_admin_ajax(): void
     {
         // Core builds every sort and page link out of REQUEST_URI, which
@@ -1484,7 +1466,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('admin-ajax', $uri);
     }
 
-    /** @test */
+    #[Test]
     public function the_fragment_carries_the_sort_page_and_search_through(): void
     {
         // A sort that dropped the search would silently widen the list
@@ -1501,8 +1483,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── search ────────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_table_offers_a_search_box(): void
     {
         $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
@@ -1511,7 +1492,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('name="s"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_search_narrows_the_list_to_matching_handsets(): void
     {
         $devices = $this->devicesWith(
@@ -1526,7 +1507,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Duty phone', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_search_that_matches_nothing_says_which_kind_of_empty_it_is(): void
     {
         // An intergroup with no handsets at all has a setup problem; one
@@ -1541,7 +1522,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('No handsets have been enrolled yet.', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_search_term_reaches_the_repository_rather_than_being_filtered_after(): void
     {
         // Filtering a page after fetching it would page over the whole
@@ -1557,8 +1538,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── the scoped test alert ─────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_selected_handset_gets_an_alert_addressed_to_it_alone(): void
     {
         // The point of the selection: ringing one phone on its own is the
@@ -1578,7 +1558,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=test_sent_selected', $target);
     }
 
-    /** @test */
+    #[Test]
     public function each_selected_handset_gets_its_own_alert(): void
     {
         // One alert per handset, not one shared between them: each then
@@ -1600,7 +1580,7 @@ final class DevicesPageTest extends ReachTestCase
         ));
     }
 
-    /** @test */
+    #[Test]
     public function a_selected_test_is_still_a_short_lived_test_alert(): void
     {
         // Nothing about the scoped path is special-cased — same kind,
@@ -1620,7 +1600,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringNotContainsString('@', $alert->body);
     }
 
-    /** @test */
+    #[Test]
     public function ticking_handsets_and_pressing_broadcast_still_broadcasts(): void
     {
         // The button says what it does. Inferring the scope from whatever
@@ -1639,7 +1619,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=test_sent', $target);
     }
 
-    /** @test */
+    #[Test]
     public function sending_to_an_empty_selection_raises_nothing_and_says_so(): void
     {
         $this->signedInAs('Site Admin');
@@ -1652,10 +1632,8 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=test_none_selected', $target);
     }
 
-    /**
-     * @test
-     * @dataProvider unusableSelections
-     */
+    #[DataProvider('unusableSelections')]
+    #[Test]
     public function an_unusable_selection_raises_nothing(mixed $posted): void
     {
         // Every id is resolved against the repository rather than trusted
@@ -1692,7 +1670,7 @@ final class DevicesPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function the_same_handset_ticked_twice_is_tested_once(): void
     {
         $this->signedInAs('Site Admin');
@@ -1708,8 +1686,7 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     // ── removing a handset ────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function removing_a_handset_notifies_it_and_then_deletes_the_row(): void
     {
         // Both halves, in that order. Once the row is gone the handset has
@@ -1728,7 +1705,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=removed', $target);
     }
 
-    /** @test */
+    #[Test]
     public function the_removal_notice_carries_no_personal_data(): void
     {
         // Its text travels through Google's push infrastructure and onto a
@@ -1746,7 +1723,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertFalse($alert->isUrgent());
     }
 
-    /** @test */
+    #[Test]
     public function a_removed_handset_leaves_no_record_behind(): void
     {
         // The difference from revoking, which keeps the row as history.
@@ -1759,7 +1736,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([], $devices->findAllLive());
     }
 
-    /** @test */
+    #[Test]
     public function an_already_revoked_handset_can_still_be_removed(): void
     {
         // Revoking and removing answer different questions, so having done
@@ -1774,10 +1751,10 @@ final class DevicesPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider missingDeviceIds
      * @param array<string, string> $post
      */
+    #[DataProvider('missingDeviceIds')]
+    #[Test]
     public function a_remove_without_a_usable_device_id_touches_nothing(array $post): void
     {
         $_POST = $post;
@@ -1791,7 +1768,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([], $alerts->alerts, 'nothing is told about a removal that did not happen');
     }
 
-    /** @test */
+    #[Test]
     public function removing_an_unknown_handset_reports_the_failure(): void
     {
         $_POST = ['device_id' => '999'];
@@ -1806,7 +1783,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertSame([], $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function removing_without_the_manage_capability_dies(): void
     {
         WpState::$deniedCaps = [Capabilities::MANAGE_DEVICES];
@@ -1822,7 +1799,7 @@ final class DevicesPageTest extends ReachTestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function every_live_row_offers_both_revoke_and_remove(): void
     {
         $html = $this->renderList($this->page(devices: $this->devicesWith($this->device(id: 7))));
@@ -1831,7 +1808,7 @@ final class DevicesPageTest extends ReachTestCase
         $this->assertStringContainsString('Remove</button>', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_revoked_row_can_be_removed_but_not_re_revoked(): void
     {
         $html = $this->renderList($this->page(devices: $this->devicesWith(
@@ -1946,7 +1923,7 @@ final class DevicesPageTest extends ReachTestCase
         $user = new WP_User(['administrator'], 1);
         $user->display_name = $displayName;
 
-        Functions\when('wp_get_current_user')->justReturn($user);
+        when('wp_get_current_user')->justReturn($user);
     }
 
     private function revokeFromRequest(DevicesPage $page): string

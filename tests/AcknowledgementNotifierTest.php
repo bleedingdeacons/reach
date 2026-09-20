@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\Alert;
@@ -107,9 +108,7 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         $this->assertSame($uuid, $second->messageUuid);
     }
 
-    /**
-     * @dataProvider callerUuids
-     */
+    #[DataProvider('callerUuids')]
     public function testACallerSOwnUuidIsKeptWhateverVersionItIs(string $uuid): void
     {
         // The value is an opaque grouping key and nothing reads meaning
@@ -134,9 +133,7 @@ final class AcknowledgementNotifierTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider unusableUuids
-     */
+    #[DataProvider('unusableUuids')]
     public function testAMalformedUuidIsReplacedRatherThanRefused(string $uuid): void
     {
         // Still refused: a value that is not a uuid at all. That is a

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use Brain\Monkey\Functions;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use Scrutiny\Privacy\PersonalDataPolicy;
+use function Brain\Monkey\Functions\when;
 use Reach\Core\Capabilities;
 use WP_Role;
 
@@ -16,16 +19,15 @@ use WP_Role;
  * updated over an active plugin — which is how these sites update — and
  * the release introducing it would quietly take the send buttons away
  * from every administrator.
- *
- * @covers \Reach\Core\Capabilities
  */
+#[CoversClass(\Reach\Core\Capabilities::class)]
 final class CapabilitiesTest extends ReachTestCase
 {
-    /** @test */
+    #[Test]
     public function an_administrator_is_given_the_send_capability(): void
     {
         $role = new WP_Role('administrator');
-        Functions\when('get_role')->justReturn($role);
+        when('get_role')->justReturn($role);
 
         Capabilities::ensureAssigned();
 
@@ -33,7 +35,7 @@ final class CapabilitiesTest extends ReachTestCase
         $this->assertTrue($role->has_cap(Capabilities::MANAGE_DEVICES));
     }
 
-    /** @test */
+    #[Test]
     public function a_role_that_already_has_it_is_not_written_to_again(): void
     {
         // add_cap() writes to the options table, and this runs on every
@@ -53,7 +55,7 @@ final class CapabilitiesTest extends ReachTestCase
             }
         };
 
-        Functions\when('get_role')->justReturn($role);
+        when('get_role')->justReturn($role);
 
         Capabilities::ensureAssigned();
 
@@ -61,30 +63,30 @@ final class CapabilitiesTest extends ReachTestCase
         unset($granted);
     }
 
-    /** @test */
+    #[Test]
     public function a_site_with_no_administrator_role_is_left_alone(): void
     {
         // get_role() answers null on a site whose roles have been
         // rewritten. Reaching into null would fatal on every request.
-        Functions\when('get_role')->justReturn(null);
+        when('get_role')->justReturn(null);
 
         Capabilities::ensureAssigned();
 
         $this->assertTrue(true, 'no error is the assertion');
     }
 
-    /** @test */
+    #[Test]
     public function sending_is_not_scrutinys_view_capability(): void
     {
         // The whole point of the split: reading the devices screen names
         // responders and is a personal-data read; sending makes every
         // handset on the rota ring. They are not the same permission.
         $this->assertNotSame(
-            \Scrutiny\Privacy\PersonalDataPolicy::VIEW_CAPABILITY,
+            PersonalDataPolicy::VIEW_CAPABILITY,
             Capabilities::SEND_ALERTS,
         );
         $this->assertNotSame(
-            \Scrutiny\Privacy\PersonalDataPolicy::VIEW_CAPABILITY,
+            PersonalDataPolicy::VIEW_CAPABILITY,
             Capabilities::MANAGE_DEVICES,
         );
         $this->assertNotSame(

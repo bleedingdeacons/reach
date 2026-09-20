@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\Test;
 use Reach\Rest\SameOriginOnly;
 use WP_REST_Request;
 
@@ -26,7 +27,7 @@ final class SameOriginOnlyTest extends ReachTestCase
      */
     private const SITE = 'https://example.test';
 
-    /** @test */
+    #[Test]
     public function a_request_with_no_origin_is_allowed(): void
     {
         // Browsers omit Origin on ordinary same-origin GETs, and curl, the
@@ -37,13 +38,13 @@ final class SameOriginOnlyTest extends ReachTestCase
         $this->assertTrue(SameOriginOnly::allows(new WP_REST_Request([], '/reach/v1/session')));
     }
 
-    /** @test */
+    #[Test]
     public function this_sites_own_origin_is_allowed(): void
     {
         $this->assertTrue(SameOriginOnly::allows($this->requestFrom(self::SITE)));
     }
 
-    /** @test */
+    #[Test]
     public function a_sibling_subdomain_is_refused(): void
     {
         // The finding exactly: same-site for the Lax cookie, so the cookie
@@ -52,19 +53,19 @@ final class SameOriginOnlyTest extends ReachTestCase
         $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://blog.example.test')));
     }
 
-    /** @test */
+    #[Test]
     public function an_unrelated_origin_is_refused(): void
     {
         $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://evil.example')));
     }
 
-    /** @test */
+    #[Test]
     public function the_scheme_must_match(): void
     {
         $this->assertFalse(SameOriginOnly::allows($this->requestFrom('http://example.test')));
     }
 
-    /** @test */
+    #[Test]
     public function a_prefix_of_the_host_is_not_the_host(): void
     {
         // example.test.evil.example is a different site entirely, but a naive
@@ -73,7 +74,7 @@ final class SameOriginOnlyTest extends ReachTestCase
         $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://evil-example.test')));
     }
 
-    /** @test */
+    #[Test]
     public function trailing_slashes_and_case_do_not_make_the_site_a_stranger(): void
     {
         $this->assertTrue(SameOriginOnly::allows($this->requestFrom('https://EXAMPLE.TEST')));
@@ -81,7 +82,7 @@ final class SameOriginOnlyTest extends ReachTestCase
         $this->assertTrue(SameOriginOnly::allows($this->requestFrom(self::SITE . ':443')));
     }
 
-    /** @test */
+    #[Test]
     public function the_null_origin_is_treated_as_absent(): void
     {
         // Sent by sandboxed iframes and some redirects. It carries no
@@ -89,7 +90,7 @@ final class SameOriginOnlyTest extends ReachTestCase
         $this->assertTrue(SameOriginOnly::allows($this->requestFrom('null')));
     }
 
-    /** @test */
+    #[Test]
     public function junk_in_the_header_is_refused(): void
     {
         $this->assertFalse(SameOriginOnly::allows($this->requestFrom('not a url')));

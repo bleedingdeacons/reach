@@ -6,7 +6,6 @@ namespace Reach\Tests;
 
 use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
-use wpdb;
 
 if (!class_exists('wpdb')) {
     class_alias(WpdbStub::class, 'wpdb');

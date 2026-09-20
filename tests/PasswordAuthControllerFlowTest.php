@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use Scrutiny\Audit\Interfaces\AuditLogger;
 use BleedingDeacons\WpMocks\WpState;
 use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Tests\ReachTestCase;
@@ -138,7 +139,7 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
     private function controller(
         array $members,
         ?InMemoryPasswordCredentialRepository $repo = null,
-        ?\Scrutiny\Audit\Interfaces\AuditLogger $audit = null,
+        ?AuditLogger $audit = null,
     ): PasswordAuthController {
         $repo    = $repo ?? new InMemoryPasswordCredentialRepository();
         $memRepo = new InMemoryMemberRepository($members);

@@ -9,7 +9,6 @@ use Reach\Geocoding\Coordinates;
 use Reach\Geocoding\Geocoder;
 use Reach\Resolution\NearestMembersResolver;
 use Unity\Members\Interfaces\Member;
-use Unity\Members\Interfaces\MemberRepository;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 

@@ -20,7 +20,6 @@ use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
 use Reach\Session\SessionRevocationList;
 use Unity\Members\Interfaces\Member;
-use Unity\Members\Interfaces\MemberRepository;
 use Unity\Members\ResponderCertification;
 use WP_Error;
 use WP_REST_Request;
@@ -210,7 +209,8 @@ final class OAuthControllerGateTest extends ReachTestCase
     private function invokeGate(OAuthController $controller, VerifiedIdentity $identity): ?WP_Error
     {
         $ref = new \ReflectionMethod($controller, 'assertMemberAllowed');
-        $ref->setAccessible(true);
+        // No setAccessible() call: it has been a no-op since PHP 8.1 and
+        // PHP 8.5 deprecates it outright.
         /** @var WP_Error|null $result */
         $result = $ref->invoke($controller, $identity);
         return $result;
@@ -226,7 +226,8 @@ final class OAuthControllerGateTest extends ReachTestCase
     private function seedState(OAuthController $controller, string $provider): array
     {
         $ref = new \ReflectionProperty($controller, 'stateStore');
-        $ref->setAccessible(true);
+        // No setAccessible() call: it has been a no-op since PHP 8.1 and
+        // PHP 8.5 deprecates it outright.
         /** @var StateStore $store */
         $store = $ref->getValue($controller);
         $tokens = $store->issue($provider, 'https://example.test/reach/find');

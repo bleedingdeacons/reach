@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Auth\OutreachEligibility;
 use Reach\Auth\PasswordPolicy;
@@ -54,9 +55,7 @@ final class OutreachEligibilityTest extends ReachTestCase
         )));
     }
 
-    /**
-     * @dataProvider uncertifiedStates
-     */
+    #[DataProvider('uncertifiedStates')]
     public function testUncertifiedTelephoneResponderIsRefused(ResponderCertification $certification): void
     {
         $this->assertFalse(OutreachEligibility::permits(new MemberStub(

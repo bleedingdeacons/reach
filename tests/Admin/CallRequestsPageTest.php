@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\DataProvider;
+use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
-use Brain\Monkey\Functions;
 use Reach\Admin\CallRequestsPage;
 use Reach\CallRequests\CallRequest;
 use Reach\Tests\Fixtures\InMemoryCallRequestRepository;
@@ -42,9 +45,8 @@ use WP_User;
  * caller's details are emailed and never stored), but the screen is still
  * gated on {@see PersonalDataPolicy::VIEW_CAPABILITY} to match the rest of
  * Reach's admin — so that is the capability the guards are tested against.
- *
- * @covers \Reach\Admin\CallRequestsPage
  */
+#[CoversClass(\Reach\Admin\CallRequestsPage::class)]
 final class CallRequestsPageTest extends ReachTestCase
 {
     protected function setUp(): void
@@ -64,8 +66,7 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function register_hooks_the_menu_and_the_completed_post_handler(): void
     {
         $this->page()->register();
@@ -78,7 +79,7 @@ final class CallRequestsPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function add_menu_attaches_under_the_reach_menu_behind_the_personal_data_capability(): void
     {
         $this->page()->addMenu();
@@ -91,8 +92,7 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── capability guards ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_list_renders_nothing_without_the_personal_data_capability(): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
@@ -103,7 +103,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertSame([], $repository->paging, 'the guard must run before anything is read');
     }
 
-    /** @test */
+    #[Test]
     public function completing_a_request_without_the_personal_data_capability_dies(): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
@@ -120,8 +120,7 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── list rendering ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_empty_list_says_so(): void
     {
         $html = $this->renderList($this->page());
@@ -130,7 +129,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertMatchesRegularExpression('/0\s+requests pending/', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_counts_separate_pending_from_the_total(): void
     {
         $page = $this->page(repository: new InMemoryCallRequestRepository([
@@ -145,7 +144,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertMatchesRegularExpression('/3 in total/', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_single_pending_request_is_counted_in_the_singular(): void
     {
         $page = $this->page(repository: new InMemoryCallRequestRepository([$this->request()]));
@@ -153,7 +152,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertMatchesRegularExpression('/1\s+request pending/', $this->renderList($page));
     }
 
-    /** @test */
+    #[Test]
     public function a_pending_row_shows_its_reference_area_responder_and_a_completed_button(): void
     {
         $page = $this->page(repository: new InMemoryCallRequestRepository([
@@ -171,7 +170,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertStringContainsString('name="id" value="5"', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_completed_row_names_who_closed_it_and_offers_no_button(): void
     {
         $page = $this->page(repository: new InMemoryCallRequestRepository([
@@ -186,7 +185,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertStringNotContainsString('Pending', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_completed_row_with_no_recorded_name_says_unknown(): void
     {
         $page = $this->page(repository: new InMemoryCallRequestRepository([
@@ -196,10 +195,8 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertStringContainsString('Completed</span> by <em>(unknown)</em>', $this->renderList($page));
     }
 
-    /**
-     * @test
-     * @dataProvider blankCells
-     */
+    #[DataProvider('blankCells')]
+    #[Test]
     public function a_blank_responder_or_area_renders_a_placeholder(
         string $responderName,
         string $area,
@@ -223,7 +220,7 @@ final class CallRequestsPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function the_completed_notice_shows_only_after_a_completion(): void
     {
         $this->assertStringNotContainsString('Request marked completed.', $this->renderList($this->page()));
@@ -234,8 +231,7 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── the pager ─────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_single_page_of_requests_has_no_pager(): void
     {
         $html = $this->renderList($this->page(repository: new InMemoryCallRequestRepository([], 50)));
@@ -243,7 +239,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertStringNotContainsString('tablenav', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_middle_of_several_pages_offers_both_directions(): void
     {
         $_GET = ['paged' => '2'];
@@ -256,10 +252,8 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertStringContainsString('120 items', $html);
     }
 
-    /**
-     * @test
-     * @dataProvider pageNumbers
-     */
+    #[DataProvider('pageNumbers')]
+    #[Test]
     public function the_requested_page_is_clamped_to_a_real_page(string $paged, int $expectedOffset): void
     {
         $_GET = ['paged' => $paged];
@@ -285,7 +279,7 @@ final class CallRequestsPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function an_absurd_total_is_capped_at_a_thousand_pages(): void
     {
         $html = $this->renderList($this->page(repository: new InMemoryCallRequestRepository([], 10_000_000)));
@@ -294,8 +288,7 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── completing a request (reflection: the live caller exits) ───────
-
-    /** @test */
+    #[Test]
     public function a_pending_request_is_completed_and_audited(): void
     {
         $_POST = ['id' => '5'];
@@ -325,9 +318,8 @@ final class CallRequestsPageTest extends ReachTestCase
     /**
      * The detail carries a reference, never the caller — the whole point of
      * this table is that caller data lives in an inbox, not the database.
-     *
-     * @test
      */
+    #[Test]
     public function the_audit_detail_carries_no_email_address(): void
     {
         $_POST = ['id' => '5'];
@@ -343,7 +335,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertStringNotContainsString('@', $audit->batches[0]['detail']);
     }
 
-    /** @test */
+    #[Test]
     public function a_request_whose_responder_is_unknown_is_audited_against_no_member(): void
     {
         $_POST = ['id' => '5'];
@@ -358,11 +350,11 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider nonCompletions
      * @param array<string, string> $post
      * @param array<int, CallRequest> $rows
      */
+    #[DataProvider('nonCompletions')]
+    #[Test]
     public function nothing_is_completed_or_audited_when_there_is_no_pending_row(array $post, array $rows): void
     {
         $_POST = $post;
@@ -409,8 +401,7 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── who actioned it ───────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_acting_admin_is_recorded_as_their_unity_member(): void
     {
         $_POST = ['id' => '5'];
@@ -427,10 +418,10 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider fallbackIdentities
      * @param array<int, Member> $members
      */
+    #[DataProvider('fallbackIdentities')]
+    #[Test]
     public function an_admin_without_a_usable_member_name_falls_back_to_wordpress(
         array $members,
         int $expectedId,
@@ -463,7 +454,7 @@ final class CallRequestsPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function an_admin_with_no_display_name_is_recorded_under_their_login(): void
     {
         $_POST = ['id' => '5'];
@@ -475,7 +466,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $this->assertSame('siteadmin', $repository->completions[0]['memberName']);
     }
 
-    /** @test */
+    #[Test]
     public function an_admin_with_no_email_is_not_looked_up_at_all(): void
     {
         $_POST = ['id' => '5'];
@@ -493,12 +484,11 @@ final class CallRequestsPageTest extends ReachTestCase
     }
 
     // ── where the browser goes next ───────────────────────────────────
-
     /**
-     * @test
-     * @dataProvider redirectTargets
      * @param array<string, string> $post
      */
+    #[DataProvider('redirectTargets')]
+    #[Test]
     public function the_redirect_returns_to_the_list_flagged_as_completed(array $post, string $expected): void
     {
         $_POST = $post;
@@ -562,7 +552,7 @@ final class CallRequestsPageTest extends ReachTestCase
         $user->display_name = $displayName;
         $user->user_login = $login;
 
-        Functions\when('wp_get_current_user')->justReturn($user);
+        when('wp_get_current_user')->justReturn($user);
     }
 
     private function createdAt(): int

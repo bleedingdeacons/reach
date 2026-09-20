@@ -19,7 +19,6 @@ use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
 use Reach\Session\SessionRevocationList;
-use Unity\Members\Interfaces\Member;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
