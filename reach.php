@@ -5,7 +5,7 @@
  * Description: Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, Apple, or Facebook, plus a mobile-first finder UI for locating the nearest available 12th-step members. Requires Unity and Scrutiny.
  * Version: 2.11.0
  * Requires at least: 6.1
- * Requires PHP: 8.1
+ * Requires PHP: 8.4
  * Requires Plugins: unity, scrutiny
  * GitHub Plugin URI: https://github.com/bleedingdeacons/reach
  * GitHub Branch: main

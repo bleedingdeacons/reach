@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Auth\DeviceRedirectValidator;
 
 /**
@@ -48,9 +49,7 @@ final class DeviceRedirectValidatorTest extends ReachTestCase
         $this->assertTrue($this->validator->isAllowed('http://[::1]:49152/cb'));
     }
 
-    /**
-     * @dataProvider refusedRedirects
-     */
+    #[DataProvider('refusedRedirects')]
     public function testRefuses(string $uri, string $why): void
     {
         $this->assertFalse($this->validator->isAllowed($uri), $why);

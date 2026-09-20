@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Devices\Device;
 use Reach\Devices\WpdbDeviceRepository;
 use Reach\Tests\ReachTestCase;
@@ -357,9 +358,7 @@ final class WpdbDeviceRepositoryTest extends ReachTestCase
         $this->assertStringContainsString('ORDER BY platform DESC, id DESC', $db->queries[0]);
     }
 
-    /**
-     * @dataProvider unsortableColumns
-     */
+    #[DataProvider('unsortableColumns')]
     public function testListRefusesAColumnItDoesNotRecognise(string $column): void
     {
         // ORDER BY takes no prepared placeholder, so the column can only
@@ -516,9 +515,7 @@ final class WpdbDeviceRepositoryTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider platforms
-     */
+    #[DataProvider('platforms')]
     public function testPlatformNormalisation(string $claimed, string $expected): void
     {
         // '' is a bad request to every caller: the platform decides the

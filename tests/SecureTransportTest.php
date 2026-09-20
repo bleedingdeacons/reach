@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\CoversTrait;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Rest\AlertController;
 use Reach\Rest\DeviceAuthController;
@@ -25,15 +30,12 @@ use WP_REST_Request;
  * controller, and one list is easier to keep complete than two. If a
  * route is added to either controller and not added here, that is the
  * omission this file exists to make visible.</para>
- *
- * @covers \Reach\Rest\RequiresSecureTransport
  */
+#[CoversTrait(\Reach\Rest\RequiresSecureTransport::class)]
 final class SecureTransportTest extends ReachTestCase
 {
-    /**
-     * @test
-     * @dataProvider deviceRoutes
-     */
+    #[DataProvider('deviceRoutes')]
+    #[Test]
     public function a_handset_route_refuses_plain_http(string $controller, string $method): void
     {
         WpState::$isSsl = false;
@@ -45,10 +47,8 @@ final class SecureTransportTest extends ReachTestCase
         $this->assertSame(403, $result->get_error_data()['status']);
     }
 
-    /**
-     * @test
-     * @dataProvider deviceRoutes
-     */
+    #[DataProvider('deviceRoutes')]
+    #[Test]
     public function the_refusal_happens_before_anything_else(string $controller, string $method): void
     {
         // The point of guarding first: a request that should not have been
@@ -71,11 +71,10 @@ final class SecureTransportTest extends ReachTestCase
      * constant in this process would silently disable the guard for every
      * test that ran afterwards, and they would pass for the wrong
      * reason.</para>
-     *
-     * @test
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
      */
+    #[PreserveGlobalState(false)]
+    #[Test]
+    #[RunInSeparateProcess]
     public function the_constant_lets_a_laptop_through(): void
     {
         WpState::$isSsl = false;

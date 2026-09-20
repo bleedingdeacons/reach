@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use Reach\Alerts\AcknowledgementNotifier;
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
@@ -774,7 +775,7 @@ final class HandComposeTest extends ReachTestCase
             new CurrentDevice($this->devices, $this->minter, $gate),
             $this->audit,
             $this->devices,
-            new \Reach\Alerts\AcknowledgementNotifier($this->alerts, $dispatcher),
+            new AcknowledgementNotifier($this->alerts, $dispatcher),
             $this->replies,
             new RecipientResolver($this->devices, $members, $this->committees),
             new AlertApi($dispatcher),

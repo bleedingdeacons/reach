@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Alerts\Fcm\FcmClient;
 use Reach\Alerts\Fcm\ServiceAccount;
@@ -274,9 +275,7 @@ final class FcmClientTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider statuses
-     */
+    #[DataProvider('statuses')]
     public function testDeadTokenStatusesAreTheOnesWorthClearingAStoredTokenFor(int $status, bool $dead): void
     {
         $this->assertSame($dead, (new FcmClient())->isDeadTokenStatus($status));

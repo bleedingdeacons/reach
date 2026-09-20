@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\DataProvider;
 use BleedingDeacons\WpMocks\WpState;
 use Mockery;
 use Reach\Admin\CallAttemptsPage;
@@ -39,9 +42,8 @@ use Unity\Testing\Doubles\InMemoryMemberRepository;
  * check and fail this one. They also assert the repository was never asked for
  * rows, because a guard that renders nothing after reading the data has still
  * read the data.
- *
- * @covers \Reach\Admin\CallAttemptsPage
  */
+#[CoversClass(\Reach\Admin\CallAttemptsPage::class)]
 final class CallAttemptsPageTest extends ReachTestCase
 {
     protected function setUp(): void
@@ -59,8 +61,7 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function register_hooks_the_admin_menu(): void
     {
         $this->page()->register();
@@ -68,7 +69,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertActionAdded('admin_menu', false, 'the page should register its menu on admin_menu');
     }
 
-    /** @test */
+    #[Test]
     public function add_menu_registers_the_top_level_menu_and_both_submenus(): void
     {
         $this->page()->addMenu();
@@ -90,9 +91,8 @@ final class CallAttemptsPageTest extends ReachTestCase
      * The menu is the first gate on the personal-data surface: registering any
      * of these under a weaker capability would show the screen in the sidebar
      * to someone whose personal-data access has been revoked.
-     *
-     * @test
      */
+    #[Test]
     public function every_menu_entry_is_gated_on_the_personal_data_capability(): void
     {
         $this->page()->addMenu();
@@ -107,16 +107,13 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── capability guards ─────────────────────────────────────────────
-
-    /**
-     * @test
-     * @dataProvider guardedScreens
-     */
+    #[DataProvider('guardedScreens')]
+    #[Test]
     public function a_screen_renders_nothing_without_the_personal_data_capability(string $method): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
 
-        $attempts = new RecordingCallAttemptRepository([$this->attempt()]);
+        $attempts = new RecordingCallAttemptRepository([$this->callAttempt()]);
 
         $this->assertSame('', $this->render($this->page(attempts: $attempts), $method));
         $this->assertSame([], $attempts->listFilters, 'the guard must run before anything is read');
@@ -136,9 +133,8 @@ final class CallAttemptsPageTest extends ReachTestCase
      * The guard has to be that capability and not merely "is an admin": a user
      * who can do everything except view personal data is exactly the case
      * Scrutiny's capability exists to describe.
-     *
-     * @test
      */
+    #[Test]
     public function the_list_renders_for_a_user_who_lacks_manage_options(): void
     {
         // The mirror of the test above: deny the neighbouring capability and
@@ -152,8 +148,7 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── list rendering ────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_empty_list_says_so_rather_than_rendering_an_empty_table(): void
     {
         $html = $this->render($this->page(), 'renderList');
@@ -162,12 +157,12 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertMatchesRegularExpression('/0\s+attempts match\./', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_row_renders_its_time_responder_member_and_outcome(): void
     {
         $page = $this->page(
             attempts: new RecordingCallAttemptRepository([
-                $this->attempt(id: 5, memberId: 7, email: 'responder@example.test', outcome: CallAttempt::OUTCOME_REACHED),
+                $this->callAttempt(id: 5, memberId: 7, email: 'responder@example.test', outcome: CallAttempt::OUTCOME_REACHED),
             ]),
             views: new FakeMemberViewFactory([
                 new MemberViewStub(id: 7, anonymousName: 'Bob T.', area: 'Bedminster'),
@@ -189,13 +184,12 @@ final class CallAttemptsPageTest extends ReachTestCase
      * The detail screen has no sidebar entry — it's registered with an empty
      * parent — so this link is the only way in. Without it, renderDetail() and
      * the note it alone displays are unreachable from the UI.
-     *
-     * @test
      */
+    #[Test]
     public function each_rows_time_links_to_that_attempts_detail_screen(): void
     {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(id: 5)]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(id: 5)]),
         );
 
         $this->assertStringContainsString(
@@ -210,13 +204,11 @@ final class CallAttemptsPageTest extends ReachTestCase
         );
     }
 
-    /**
-     * @test
-     * @dataProvider outcomes
-     */
+    #[DataProvider('outcomes')]
+    #[Test]
     public function each_stored_outcome_renders_under_its_label(string $outcome, string $label): void
     {
-        $page = $this->page(attempts: new RecordingCallAttemptRepository([$this->attempt(outcome: $outcome)]));
+        $page = $this->page(attempts: new RecordingCallAttemptRepository([$this->callAttempt(outcome: $outcome)]));
 
         $this->assertStringContainsString($label, $this->render($page, 'renderList'));
     }
@@ -237,18 +229,17 @@ final class CallAttemptsPageTest extends ReachTestCase
     /**
      * One factory call for the whole page, not one per row — the comment on
      * loadMemberViews() is the reason the batch entry point is used at all.
-     *
-     * @test
      */
+    #[Test]
     public function member_views_are_resolved_in_one_batched_call_with_ids_deduplicated(): void
     {
         $views = new FakeMemberViewFactory([new MemberViewStub(id: 7, anonymousName: 'Bob T.')]);
 
         $this->render($this->page(
             attempts: new RecordingCallAttemptRepository([
-                $this->attempt(id: 1, memberId: 7),
-                $this->attempt(id: 2, memberId: 7),
-                $this->attempt(id: 3, memberId: 9),
+                $this->callAttempt(id: 1, memberId: 7),
+                $this->callAttempt(id: 2, memberId: 7),
+                $this->callAttempt(id: 3, memberId: 9),
             ]),
             views: $views,
         ), 'renderList');
@@ -257,28 +248,26 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertSame([7, 9], $views->calls[0]);
     }
 
-    /** @test */
+    #[Test]
     public function a_member_the_factory_could_not_resolve_is_marked_rather_than_left_blank(): void
     {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(memberId: 404)]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(memberId: 404)]),
             views: new FakeMemberViewFactory(),
         );
 
         $this->assertStringContainsString('(member not found)', $this->render($page, 'renderList'));
     }
 
-    /**
-     * @test
-     * @dataProvider memberCells
-     */
+    #[DataProvider('memberCells')]
+    #[Test]
     public function the_member_cell_falls_back_through_name_then_area(
         string $name,
         string $area,
         string $expected
     ): void {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(memberId: 7)]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(memberId: 7)]),
             views: new FakeMemberViewFactory([
                 new MemberViewStub(id: 7, anonymousName: $name, area: $area),
             ]),
@@ -300,11 +289,11 @@ final class CallAttemptsPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function the_member_name_links_to_the_member_record(): void
     {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(memberId: 7)]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(memberId: 7)]),
             views: new FakeMemberViewFactory([new MemberViewStub(id: 7, anonymousName: 'Bob T.')]),
         );
 
@@ -315,12 +304,11 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── the responder cell ────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_unmatched_responder_email_is_shown_rather_than_blanked(): void
     {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(email: 'stranger@example.test')]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(email: 'stranger@example.test')]),
         );
 
         $this->assertStringContainsString('stranger@example.test', $this->render($page, 'renderList'));
@@ -329,13 +317,12 @@ final class CallAttemptsPageTest extends ReachTestCase
     /**
      * A member record with no anonymous name set — the cell falls back to the
      * email so the audit trail still names someone.
-     *
-     * @test
      */
+    #[Test]
     public function a_matched_responder_without_a_name_falls_back_to_their_email(): void
     {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(email: 'responder@example.test')]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(email: 'responder@example.test')]),
             members: new InMemoryMemberRepository([
                 new MemberStub(personalEmail: 'responder@example.test', id: 3, anonymousName: '  '),
             ]),
@@ -349,11 +336,11 @@ final class CallAttemptsPageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function an_attempt_with_no_recorded_responder_renders_an_empty_cell(): void
     {
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(email: '')]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(email: '')]),
             members: new InMemoryMemberRepository([
                 new MemberStub(personalEmail: 'responder@example.test', id: 3, anonymousName: 'Alice K.'),
             ]),
@@ -366,9 +353,8 @@ final class CallAttemptsPageTest extends ReachTestCase
      * The memo is the reason the cell is built once and reused: a page of
      * fifty attempts by the same responder would otherwise be fifty
      * findByEmail() calls, each a get_post plus an ACF read.
-     *
-     * @test
      */
+    #[Test]
     public function repeat_responders_are_looked_up_once_per_render(): void
     {
         $members = Mockery::mock(MemberRepository::class);
@@ -379,9 +365,9 @@ final class CallAttemptsPageTest extends ReachTestCase
 
         $page = $this->page(
             attempts: new RecordingCallAttemptRepository([
-                $this->attempt(id: 1, email: 'responder@example.test'),
-                $this->attempt(id: 2, email: 'responder@example.test'),
-                $this->attempt(id: 3, email: 'responder@example.test'),
+                $this->callAttempt(id: 1, email: 'responder@example.test'),
+                $this->callAttempt(id: 2, email: 'responder@example.test'),
+                $this->callAttempt(id: 3, email: 'responder@example.test'),
             ]),
             members: $members,
         );
@@ -390,8 +376,7 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── filters ───────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function no_query_string_sends_no_filters_and_asks_for_the_first_page(): void
     {
         $attempts = new RecordingCallAttemptRepository();
@@ -402,7 +387,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertSame([['limit' => 50, 'offset' => 0]], $attempts->paging);
     }
 
-    /** @test */
+    #[Test]
     public function member_id_outcome_and_dates_are_converted_for_the_repository(): void
     {
         $_GET = [
@@ -429,9 +414,8 @@ final class CallAttemptsPageTest extends ReachTestCase
      * Both name filters are applied client-side after render — the
      * call_attempts table has no anonymous-name column to filter on — so
      * forwarding either would filter on a column that does not exist.
-     *
-     * @test
      */
+    #[Test]
     public function the_two_name_filters_are_never_forwarded_to_the_repository(): void
     {
         $_GET = ['member' => 'Bob', 'responder' => 'Alice'];
@@ -447,10 +431,10 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider droppedFilters
      * @param array<string, string> $query
      */
+    #[DataProvider('droppedFilters')]
+    #[Test]
     public function an_unusable_filter_value_is_dropped_rather_than_queried(array $query): void
     {
         $_GET = $query;
@@ -474,7 +458,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function the_selected_outcome_is_marked_in_the_filter_dropdown(): void
     {
         $_GET = ['outcome' => CallAttempt::OUTCOME_WRONG_OR_BAD];
@@ -488,8 +472,7 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── the pager ─────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_single_page_of_results_has_no_pager(): void
     {
         $html = $this->render($this->page(attempts: new RecordingCallAttemptRepository([], 50)), 'renderList');
@@ -497,7 +480,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertStringNotContainsString('tablenav', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_first_of_several_pages_offers_next_but_not_prev(): void
     {
         $html = $this->render($this->page(attempts: new RecordingCallAttemptRepository([], 120)), 'renderList');
@@ -508,7 +491,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertStringContainsString('120 items', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_last_page_offers_prev_but_not_next(): void
     {
         $_GET = ['paged' => '3'];
@@ -520,7 +503,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertStringNotContainsString('next-page', $html);
     }
 
-    /** @test */
+    #[Test]
     public function pager_links_carry_the_current_filters(): void
     {
         $_GET = ['outcome' => CallAttempt::OUTCOME_REACHED, 'member_id' => '7'];
@@ -532,10 +515,8 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertStringContainsString('paged=2', $html);
     }
 
-    /**
-     * @test
-     * @dataProvider pageNumbers
-     */
+    #[DataProvider('pageNumbers')]
+    #[Test]
     public function the_requested_page_is_clamped_to_a_real_page(string $paged, int $expectedOffset): void
     {
         $_GET = ['paged' => $paged];
@@ -561,9 +542,8 @@ final class CallAttemptsPageTest extends ReachTestCase
     /**
      * A row count large enough to make the pager arithmetic silly is capped:
      * 1000 pages of 50 is as far as the links go.
-     *
-     * @test
      */
+    #[Test]
     public function an_absurd_total_is_capped_at_a_thousand_pages(): void
     {
         $html = $this->render(
@@ -575,8 +555,7 @@ final class CallAttemptsPageTest extends ReachTestCase
     }
 
     // ── the detail screen ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_detail_screen_says_so_when_the_attempt_is_gone(): void
     {
         $_GET = ['id' => '404'];
@@ -587,24 +566,24 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertStringContainsString('Back to call attempts', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_detail_screen_with_no_id_at_all_looks_up_nothing(): void
     {
-        $attempts = new RecordingCallAttemptRepository([$this->attempt(id: 5)]);
+        $attempts = new RecordingCallAttemptRepository([$this->callAttempt(id: 5)]);
 
         $html = $this->render($this->page(attempts: $attempts), 'renderDetail');
 
         $this->assertStringContainsString('That call attempt could not be found.', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_detail_screen_shows_everything_stored_about_an_attempt(): void
     {
         $_GET = ['id' => '5'];
 
         $page = $this->page(
             attempts: new RecordingCallAttemptRepository([
-                $this->attempt(
+                $this->callAttempt(
                     id: 5,
                     memberId: 7,
                     email: 'responder@example.test',
@@ -624,16 +603,14 @@ final class CallAttemptsPageTest extends ReachTestCase
         $this->assertStringContainsString(date('Y-m-d H:i', $this->createdAt()), $html);
     }
 
-    /**
-     * @test
-     * @dataProvider emptyNotes
-     */
+    #[DataProvider('emptyNotes')]
+    #[Test]
     public function an_attempt_with_no_note_says_none_rather_than_rendering_an_empty_block(?string $note): void
     {
         $_GET = ['id' => '5'];
 
         $page = $this->page(
-            attempts: new RecordingCallAttemptRepository([$this->attempt(id: 5, note: $note)]),
+            attempts: new RecordingCallAttemptRepository([$this->callAttempt(id: 5, note: $note)]),
         );
 
         $html = $this->render($page, 'renderDetail');
@@ -672,7 +649,7 @@ final class CallAttemptsPageTest extends ReachTestCase
         return (int) strtotime('2026-07-24 09:15:00 UTC');
     }
 
-    private function attempt(
+    private function callAttempt(
         int $id = 1,
         int $memberId = 7,
         string $email = 'responder@example.test',

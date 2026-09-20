@@ -1,8 +1,8 @@
 === Reach ===
 Contributors: thebleedingdeacons
 Requires at least: 6.1
-Tested up to: 6.7
-Requires PHP: 8.1
+Tested up to: 7.1.1
+Requires PHP: 8.4
 Stable tag: 2.11.0
 Build date: 2026/09/10 15:07:33
 License: MIT (Modified)

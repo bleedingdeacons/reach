@@ -32,12 +32,12 @@ final class ResponsivenessScorerTest extends ReachTestCase
         // single recent reach should override all of it. A successful
         // contact is the strongest signal.
         $attempts = [
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 5000),
-            $this->attempt(1, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 4000),
-            $this->attempt(1, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
-            $this->attempt(1, 'd@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 2000),
-            $this->attempt(1, 'e@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 1500),
-            $this->attempt(1, 'f@example.com', CallAttempt::OUTCOME_REACHED, self::NOW - 1000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 5000),
+            $this->callAttempt(1, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 4000),
+            $this->callAttempt(1, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
+            $this->callAttempt(1, 'd@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 2000),
+            $this->callAttempt(1, 'e@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 1500),
+            $this->callAttempt(1, 'f@example.com', CallAttempt::OUTCOME_REACHED, self::NOW - 1000),
         ];
 
         $scorer = new ResponsivenessScorer();
@@ -54,7 +54,7 @@ final class ResponsivenessScorerTest extends ReachTestCase
         // unresponsive.
         $attempts = [];
         for ($i = 0; $i < 5; $i++) {
-            $attempts[] = $this->attempt(
+            $attempts[] = $this->callAttempt(
                 1,
                 'alice@example.com',
                 CallAttempt::OUTCOME_NO_ANSWER,
@@ -75,8 +75,8 @@ final class ResponsivenessScorerTest extends ReachTestCase
         // threshold. Two no-answers in a fortnight isn't enough to
         // call someone unresponsive.
         $attempts = [
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
-            $this->attempt(1, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
+            $this->callAttempt(1, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
         ];
         $scorer = new ResponsivenessScorer();
         $this->assertSame(
@@ -89,9 +89,9 @@ final class ResponsivenessScorerTest extends ReachTestCase
     {
         // 3 no-answers, 2 distinct viewers, no successful reach.
         $attempts = [
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
-            $this->attempt(1, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
+            $this->callAttempt(1, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
         ];
         $scorer = new ResponsivenessScorer();
         $this->assertSame(
@@ -105,7 +105,7 @@ final class ResponsivenessScorerTest extends ReachTestCase
         // One person reports a bad number → no badge. Could be a typo,
         // could be a wrong button tap.
         $attempts = [
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 1000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 1000),
         ];
         $scorer = new ResponsivenessScorer();
         $this->assertSame(
@@ -120,11 +120,11 @@ final class ResponsivenessScorerTest extends ReachTestCase
         // also be "quiet". The bad-number flag is more actionable, so
         // it should surface.
         $attempts = [
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 5000),
-            $this->attempt(1, 'b@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 4000),
-            $this->attempt(1, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
-            $this->attempt(1, 'd@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
-            $this->attempt(1, 'e@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 5000),
+            $this->callAttempt(1, 'b@example.com', CallAttempt::OUTCOME_WRONG_OR_BAD, self::NOW - 4000),
+            $this->callAttempt(1, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
+            $this->callAttempt(1, 'd@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
+            $this->callAttempt(1, 'e@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
         ];
         $scorer = new ResponsivenessScorer();
         $this->assertSame(
@@ -138,9 +138,9 @@ final class ResponsivenessScorerTest extends ReachTestCase
         // The same person signing in via two providers shouldn't count
         // as two distinct viewers — emails are normalised by case.
         $attempts = [
-            $this->attempt(1, 'Alice@Example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
-            $this->attempt(1, 'alice@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
-            $this->attempt(1, 'ALICE@EXAMPLE.COM', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
+            $this->callAttempt(1, 'Alice@Example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
+            $this->callAttempt(1, 'alice@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
+            $this->callAttempt(1, 'ALICE@EXAMPLE.COM', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
         ];
         $scorer = new ResponsivenessScorer();
         $this->assertSame(
@@ -154,11 +154,11 @@ final class ResponsivenessScorerTest extends ReachTestCase
     {
         $attempts = [
             // member 1: reached
-            $this->attempt(1, 'a@example.com', CallAttempt::OUTCOME_REACHED, self::NOW - 1000),
+            $this->callAttempt(1, 'a@example.com', CallAttempt::OUTCOME_REACHED, self::NOW - 1000),
             // member 2: quiet
-            $this->attempt(2, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
-            $this->attempt(2, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
-            $this->attempt(2, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
+            $this->callAttempt(2, 'a@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 3000),
+            $this->callAttempt(2, 'b@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 2000),
+            $this->callAttempt(2, 'c@example.com', CallAttempt::OUTCOME_NO_ANSWER, self::NOW - 1000),
             // member 3: nothing in range, but member 4 ids are absent
             // → 3 should come back null.
         ];
@@ -173,7 +173,7 @@ final class ResponsivenessScorerTest extends ReachTestCase
         );
     }
 
-    private function attempt(int $memberId, string $email, string $outcome, int $at): CallAttempt
+    private function callAttempt(int $memberId, string $email, string $outcome, int $at): CallAttempt
     {
         static $id = 0;
         return new CallAttempt(

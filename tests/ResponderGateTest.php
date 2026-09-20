@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Devices\ResponderGate;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Members\ResponderCertification;
@@ -59,9 +60,8 @@ final class ResponderGateTest extends ReachTestCase
      * asserted rather than one standing for the rest: the old gate
      * refused Applied, In Training, Pending and None, and none of them
      * is refused now.
-     *
-     * @dataProvider uncertifiedStates
      */
+    #[DataProvider('uncertifiedStates')]
     public function testAdmitsResponderWhateverTheirCertification(
         ResponderCertification $certification
     ): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Alerts\AlertApi;
 use Reach\Alerts\AlertDispatcher;
 use Reach\Devices\ResponderGate;
@@ -63,9 +64,9 @@ final class AlertApiTest extends ReachTestCase
     }
 
     /**
-     * @dataProvider refusals
      * @param array<string, mixed> $args
      */
+    #[DataProvider('refusals')]
     public function testSendExplainsARefusal(array $args, string $code): void
     {
         $result = $this->api()->send($args);
@@ -124,9 +125,7 @@ final class AlertApiTest extends ReachTestCase
         $this->assertSame([], $this->alerts->alerts);
     }
 
-    /**
-     * @dataProvider nonArrays
-     */
+    #[DataProvider('nonArrays')]
     public function testTheActionFormIgnoresAnythingThatIsNotAnArray(mixed $args): void
     {
         // do_action() passes whatever it was given, and a caller firing

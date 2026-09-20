@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use BleedingDeacons\WpMocks\WpState;
 use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Auth\DeviceCodeStore;
@@ -433,10 +434,7 @@ final class DeviceAuthControllerFlowTest extends ReachTestCase
     }
 
     // ── rate limiting ─────────────────────────────────────────────────
-
-    /**
-     * @dataProvider enrolmentEndpoints
-     */
+    #[DataProvider('enrolmentEndpoints')]
     public function testEnrolmentIsRateLimitedPerIp(string $method): void
     {
         // 30 attempts per 15 minutes per IP. Generous, because behind a

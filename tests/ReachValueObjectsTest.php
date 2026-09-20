@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use InvalidArgumentException;
 use Reach\Tests\ReachTestCase;
 use Reach\Auth\Base64Url;
@@ -39,9 +40,7 @@ final class ReachValueObjectsTest extends ReachTestCase
         $this->assertInstanceOf(Coordinates::class, new Coordinates(90.0, 180.0));
     }
 
-    /**
-     * @dataProvider outOfRangeCoordinates
-     */
+    #[DataProvider('outOfRangeCoordinates')]
     public function testCoordinatesRejectOutOfRangeValues(float $lat, float $lng): void
     {
         $this->expectException(InvalidArgumentException::class);

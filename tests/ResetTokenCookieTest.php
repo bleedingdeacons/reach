@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\Test;
 use Reach\Auth\ResetTokenCookie;
 
 /**
@@ -35,7 +36,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         parent::tearDown();
     }
 
-    /** @test */
+    #[Test]
     public function it_captures_a_token_from_the_query_string(): void
     {
         $_GET['token'] = 'a-reset-token';
@@ -43,7 +44,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         $this->assertTrue((new ResetTokenCookie())->captureFromQuery());
     }
 
-    /** @test */
+    #[Test]
     public function a_captured_token_is_readable_on_the_same_request(): void
     {
         // headers_sent() can be true under test, and in production a
@@ -58,7 +59,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         $this->assertSame('a-reset-token', $cookie->read());
     }
 
-    /** @test */
+    #[Test]
     public function it_captures_nothing_when_the_query_string_is_bare(): void
     {
         // The post-redirect load. Nothing to move, so the page falls
@@ -66,7 +67,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         $this->assertFalse((new ResetTokenCookie())->captureFromQuery());
     }
 
-    /** @test */
+    #[Test]
     public function it_captures_nothing_from_an_empty_token(): void
     {
         $_GET['token'] = '';
@@ -74,7 +75,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         $this->assertFalse((new ResetTokenCookie())->captureFromQuery());
     }
 
-    /** @test */
+    #[Test]
     public function it_reads_the_token_back_from_the_cookie(): void
     {
         // The post-redirect load proper: no query string, token in the
@@ -84,13 +85,13 @@ final class ResetTokenCookieTest extends ReachTestCase
         $this->assertSame('a-reset-token', (new ResetTokenCookie())->read());
     }
 
-    /** @test */
+    #[Test]
     public function it_reads_an_empty_string_when_there_is_no_token_anywhere(): void
     {
         $this->assertSame('', (new ResetTokenCookie())->read());
     }
 
-    /** @test */
+    #[Test]
     public function the_redirect_target_carries_no_token(): void
     {
         $_GET['token'] = 'a-reset-token';
@@ -105,9 +106,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         $this->assertStringNotContainsString('?', $bare);
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function the_set_password_template_takes_the_token_from_the_cookie(): void
     {
         // The class above is only useful if the page actually uses it, and a
@@ -129,7 +128,7 @@ final class ResetTokenCookieTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function the_cookie_is_scoped_to_the_page_that_needs_it(): void
     {
         // Narrower than the session cookie's path on purpose: this

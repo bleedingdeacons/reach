@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Alerts\Fcm\ServiceAccount;
 use Reach\Tests\ReachTestCase;
 
@@ -43,9 +44,8 @@ final class ServiceAccountTest extends ReachTestCase
      * A key file is pasted in by an administrator, which makes this a
      * low-privilege-gain sink rather than a hole — but a doctored file
      * or a typo should not be able to redirect the exchange.
-     *
-     * @dataProvider foreignTokenUris
      */
+    #[DataProvider('foreignTokenUris')]
     public function testRefusesATokenUriThatIsNotGooglesAndFallsBack(string $configured): void
     {
         $account = ServiceAccount::fromJson($this->json(['token_uri' => $configured]));
@@ -81,9 +81,8 @@ final class ServiceAccountTest extends ReachTestCase
     /**
      * The two endpoints Google actually publishes are honoured as
      * given, so a key file naming either keeps working.
-     *
-     * @dataProvider googleTokenUris
      */
+    #[DataProvider('googleTokenUris')]
     public function testHonoursGooglesOwnTokenEndpoints(string $configured): void
     {
         $account = ServiceAccount::fromJson($this->json(['token_uri' => $configured]));
@@ -150,9 +149,7 @@ final class ServiceAccountTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider unusableFiles
-     */
+    #[DataProvider('unusableFiles')]
     public function testAnythingUnusableParsesAsNotConfigured(string $json): void
     {
         // Null covers empty configuration, malformed JSON and missing

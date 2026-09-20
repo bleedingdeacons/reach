@@ -15,7 +15,6 @@ use Reach\Rest\PasswordAuthController;
 use Reach\Session\CurrentSession;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;
-use ReflectionClass;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use Unity\Core\Interfaces\Container;
 use Unity\Auth\Interfaces\PasswordCredentialRepository;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceTokenMinter;
@@ -66,9 +67,7 @@ final class DeviceCredentialsTest extends ReachTestCase
         $this->assertNotSame($before, $minter->hash($token));
     }
 
-    /**
-     * @dataProvider malformedTokens
-     */
+    #[DataProvider('malformedTokens')]
     public function testLooksLikeTokenRejects(string $candidate): void
     {
         $this->assertFalse((new DeviceTokenMinter())->looksLikeToken($candidate));
@@ -87,9 +86,7 @@ final class DeviceCredentialsTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider authorizationHeaders
-     */
+    #[DataProvider('authorizationHeaders')]
     public function testBearerExtraction(string $header, string $expected): void
     {
         $this->assertSame($expected, (new DeviceTokenMinter())->bearerFrom($header));

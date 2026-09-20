@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Tests\ReachTestCase;
 use Reach\Auth\AnonymisedEmailDetector;
 
@@ -19,9 +20,7 @@ use Reach\Auth\AnonymisedEmailDetector;
  */
 final class AnonymisedEmailDetectorTest extends ReachTestCase
 {
-    /**
-     * @dataProvider relayCases
-     */
+    #[DataProvider('relayCases')]
     public function testRelayDomainsAreAnonymised(string $email): void
     {
         $this->assertTrue(
@@ -51,9 +50,7 @@ final class AnonymisedEmailDetectorTest extends ReachTestCase
         yield ['x@anything.facebook.com'];
     }
 
-    /**
-     * @dataProvider realEmailCases
-     */
+    #[DataProvider('realEmailCases')]
     public function testRealAddressesAreNotAnonymised(string $email): void
     {
         $this->assertFalse(
@@ -80,9 +77,7 @@ final class AnonymisedEmailDetectorTest extends ReachTestCase
         yield ['x@fake-facebook.com.evil.example'];
     }
 
-    /**
-     * @dataProvider malformedCases
-     */
+    #[DataProvider('malformedCases')]
     public function testMalformedInputIsNotAnonymised(string $email): void
     {
         $this->assertFalse(AnonymisedEmailDetector::isAnonymised($email));

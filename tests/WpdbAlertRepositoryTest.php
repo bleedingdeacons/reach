@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertRequest;
 use Reach\Alerts\MessageUuid;
@@ -435,9 +436,7 @@ final class WpdbAlertRepositoryTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider pendingLimitProvider
-     */
+    #[DataProvider('pendingLimitProvider')]
     public function testPendingForClampsTheLimit(int $asked, int $expected): void
     {
         $db = $this->db();

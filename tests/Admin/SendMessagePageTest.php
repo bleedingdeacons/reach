@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Admin\SendMessagePage;
@@ -40,9 +42,8 @@ use Unity\Testing\Doubles\InMemoryMemberRepository;
  * behind it rather than a tick-box selection, so the tests that matter
  * most are the ones about what happens when somebody types something the
  * list does not contain.
- *
- * @covers \Reach\Admin\SendMessagePage
  */
+#[CoversClass(\Reach\Admin\SendMessagePage::class)]
 final class SendMessagePageTest extends ReachTestCase
 {
     protected function setUp(): void
@@ -62,8 +63,7 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function register_hooks_the_menu_and_the_post_handler(): void
     {
         $this->page()->register();
@@ -76,7 +76,7 @@ final class SendMessagePageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function add_menu_attaches_under_the_reach_menu_as_send_message(): void
     {
         $this->page()->addMenu();
@@ -92,8 +92,7 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     // ── capability guards ─────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_page_renders_nothing_without_the_personal_data_capability(): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
@@ -101,7 +100,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame('', $this->render($this->page()));
     }
 
-    /** @test */
+    #[Test]
     public function a_reader_who_cannot_send_is_shown_no_form(): void
     {
         // Not buttons that answer 403. The handler checks again anyway.
@@ -113,7 +112,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertStringContainsString('do not have permission', $html);
     }
 
-    /** @test */
+    #[Test]
     public function sending_is_refused_without_the_send_capability(): void
     {
         WpState::$deniedCaps = [Capabilities::SEND_ALERTS];
@@ -128,8 +127,7 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     // ── the form ──────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function the_page_offers_a_message_form_and_says_where_the_text_ends_up(): void
     {
         $html = $this->render($this->page(devices: $this->devicesWith($this->device())));
@@ -147,7 +145,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertStringContainsString('action=reach_send_message', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_recipient_is_a_text_box_backed_by_a_datalist(): void
     {
         // Text *and* dropdown: an admin can type a few letters or open
@@ -167,7 +165,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertStringContainsString('Jo M.', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_responder_with_two_handsets_is_offered_once(): void
     {
         // The list is of people, not of phones.
@@ -181,7 +179,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame(1, substr_count($html, 'value="jo@example.test"'));
     }
 
-    /** @test */
+    #[Test]
     public function a_responder_with_only_a_revoked_handset_is_not_offered(): void
     {
         // There is nothing to send to, so offering them would be an
@@ -197,8 +195,7 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     // ── sending ───────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_message_to_every_handset_is_raised_as_one_broadcast_alert(): void
     {
         $_POST = [
@@ -216,7 +213,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame('Line down until 18:00', $alerts->alerts[0]->title);
     }
 
-    /** @test */
+    #[Test]
     public function the_form_offers_all_three_levels_and_defaults_to_yellow(): void
     {
         $html = $this->render($this->page());
@@ -229,7 +226,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertMatchesRegularExpression('/value="yellow"[^>]*checked/', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_form_offers_first_to_respond_and_starts_ticked(): void
     {
         // Ticked, because that is what every message did before the
@@ -242,7 +239,7 @@ final class SendMessagePageTest extends ReachTestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function the_chosen_level_reaches_the_alert(): void
     {
         $_POST = [
@@ -257,7 +254,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame(Alert::LEVEL_RED, $alerts->alerts[0]->level);
     }
 
-    /** @test */
+    #[Test]
     public function an_unticked_box_makes_the_message_informational(): void
     {
         // An unticked checkbox posts nothing at all, so absent has to mean
@@ -274,7 +271,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertTrue($alerts->alerts[0]->isInformational());
     }
 
-    /** @test */
+    #[Test]
     public function a_ticked_box_makes_the_message_first_to_respond(): void
     {
         $_POST = [
@@ -289,7 +286,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertTrue($alerts->alerts[0]->isFirstToRespond());
     }
 
-    /** @test */
+    #[Test]
     public function a_message_that_names_no_level_is_yellow(): void
     {
         $_POST = ['reach_scope' => 'all', 'reach_subject' => 'Anything'];
@@ -300,7 +297,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame(Alert::LEVEL_YELLOW, $alerts->alerts[0]->level);
     }
 
-    /** @test */
+    #[Test]
     public function both_of_a_responders_handsets_get_the_same_level_and_response(): void
     {
         // One message told two ways would be a responder whose phone
@@ -326,7 +323,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertTrue($alerts->alerts[1]->isInformational());
     }
 
-    /** @test */
+    #[Test]
     public function a_message_to_a_responder_is_raised_once_per_handset(): void
     {
         // One alert per handset, so each carries its own acknowledgement
@@ -349,7 +346,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(2, $alerts->alerts, 'one per handset that responder holds, and nobody else');
     }
 
-    /** @test */
+    #[Test]
     public function a_responder_is_matched_without_regard_to_case(): void
     {
         // An admin typing an address by hand should not have to match the
@@ -395,7 +392,7 @@ final class SendMessagePageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function a_message_to_a_committee_reaches_its_members_handsets(): void
     {
         $devices = $this->devicesWith(
@@ -424,9 +421,8 @@ final class SendMessagePageTest extends ReachTestCase
     /**
      * Messaging a parent and not reaching the committees under it would be a
      * trap: the tree says they are part of it.
-     *
-     * @test
      */
+    #[Test]
     public function a_message_to_a_committee_reaches_the_committees_under_it(): void
     {
         $devices = $this->devicesWith(
@@ -454,9 +450,8 @@ final class SendMessagePageTest extends ReachTestCase
      * Splitting by handset is a delivery decision. Ten people on a committee
      * were sent one message, and an acknowledgement from any of them has to be
      * able to find the rest.
-     *
-     * @test
      */
+    #[Test]
     public function a_message_to_a_committee_is_one_message_across_every_handset(): void
     {
         $devices = $this->devicesWith(
@@ -490,9 +485,8 @@ final class SendMessagePageTest extends ReachTestCase
     /**
      * A member can hold the parent and the child, and two paths must not ring
      * the same phone twice.
-     *
-     * @test
      */
+    #[Test]
     public function a_member_on_two_committees_in_the_branch_is_only_sent_one_copy(): void
     {
         $committees = new InMemoryCommitteeRepository(
@@ -520,7 +514,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(1, $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function a_committee_message_never_reaches_a_revoked_handset(): void
     {
         $devices = $this->devicesWith(
@@ -546,9 +540,8 @@ final class SendMessagePageTest extends ReachTestCase
 
     /**
      * Saying "sent" when nothing was sent is a lie an admin acts on.
-     *
-     * @test
      */
+    #[Test]
     public function a_committee_whose_members_have_no_handsets_is_reported_not_swallowed(): void
     {
         $devices = $this->devicesWith($this->device(id: 7, memberEmail: 'kit@example.test'));
@@ -570,7 +563,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(0, $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function a_committee_message_needs_a_committee(): void
     {
         $_POST = [
@@ -592,9 +585,8 @@ final class SendMessagePageTest extends ReachTestCase
     /**
      * The control posts a slug, and a slug is only ever a string somebody's
      * browser sent back.
-     *
-     * @test
      */
+    #[Test]
     public function an_unknown_committee_is_told_so_rather_than_silently_sending_nothing(): void
     {
         $_POST = [
@@ -612,7 +604,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertStringContainsString('reach_result=message_unknown_committee', $target);
         $this->assertCount(0, $alerts->alerts);
     }
-    /** @test */
+    #[Test]
     public function a_message_never_reaches_a_revoked_handset(): void
     {
         $devices = $this->devicesWith(
@@ -631,7 +623,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertCount(1, $alerts->alerts, 'the revoked handset is not a destination');
     }
 
-    /** @test */
+    #[Test]
     public function a_subject_and_body_are_unslashed_before_they_are_sent(): void
     {
         // WordPress runs wp_magic_quotes() on every request, so $_POST
@@ -653,8 +645,7 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     // ── refusals ──────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_message_with_no_subject_is_refused(): void
     {
         $_POST = ['reach_scope' => 'all', 'reach_body' => 'Body only'];
@@ -666,7 +657,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame([], $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function a_message_with_no_scope_is_refused_rather_than_broadcast(): void
     {
         // The form has text boxes in it, so Enter can submit it with no
@@ -681,7 +672,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame([], $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function a_message_to_nobody_in_particular_is_refused(): void
     {
         $_POST = ['reach_scope' => 'responder', 'reach_subject' => 'Who is this for?'];
@@ -693,7 +684,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertSame([], $alerts->alerts);
     }
 
-    /** @test */
+    #[Test]
     public function a_typed_responder_who_matches_nothing_is_refused(): void
     {
         // The datalist offers the list; it does not confine anyone to it.
@@ -716,8 +707,7 @@ final class SendMessagePageTest extends ReachTestCase
     }
 
     // ── notices ───────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function notices_are_plain_text_because_they_are_escaped_on_the_way_out(): void
     {
         // The whole string goes through esc_html(), so an HTML entity
@@ -730,7 +720,7 @@ final class SendMessagePageTest extends ReachTestCase
         $this->assertStringContainsString('A message needs a subject', $html);
     }
 
-    /** @test */
+    #[Test]
     public function an_unknown_result_shows_no_notice(): void
     {
         $_GET = ['reach_result' => 'something_else'];

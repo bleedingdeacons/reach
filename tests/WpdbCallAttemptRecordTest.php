@@ -7,7 +7,6 @@ namespace Reach\Tests;
 use Reach\Tests\ReachTestCase;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallAttempts\WpdbCallAttemptRepository;
-use wpdb;
 
 require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliased to wpdb)
 

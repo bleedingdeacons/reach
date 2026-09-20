@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Alerts\Alert;
 use Reach\Alerts\AlertRequest;
 use WP_Error;
@@ -219,9 +220,7 @@ final class AlertRequestTest extends ReachTestCase
         $this->assertSame(86400, $tooLong->ttlSeconds);
     }
 
-    /**
-     * @dataProvider deviceTargets
-     */
+    #[DataProvider('deviceTargets')]
     public function testTheDeviceTargetOnlyEverWidensToEverybody(mixed $given, int $expected): void
     {
         // Nonsense becomes 0 — "any handset this alert's address resolves
@@ -281,7 +280,7 @@ final class AlertRequestTest extends ReachTestCase
         $this->assertSame(Alert::RESPONSE_FIRST, $request->response);
     }
 
-    /** @dataProvider levels */
+    #[DataProvider('levels')]
     public function testTheLevelIsTakenAsGiven(string $given, string $expected): void
     {
         $this->assertSame($expected, $this->request(['level' => $given])->level);
@@ -303,7 +302,7 @@ final class AlertRequestTest extends ReachTestCase
         ];
     }
 
-    /** @dataProvider responses */
+    #[DataProvider('responses')]
     public function testTheResponseRequirementIsTakenAsGiven(string $given, string $expected): void
     {
         $this->assertSame($expected, $this->request(['response' => $given])->response);

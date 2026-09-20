@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\Attributes\DataProvider;
+use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\WpState;
-use Brain\Monkey\Functions;
 use Reach\Admin\MemberSearchPage;
 use Reach\Geocoding\Coordinates;
 use Reach\Resolution\NearestMembersResolver;
@@ -38,9 +41,8 @@ use Unity\Testing\Doubles\InMemoryMemberRepository;
  * Fixtures use example.test addresses and obviously-fake numbers throughout —
  * these screens are a personal-data surface and a realistic-looking phone
  * number in a committed test file is a liability, not a fixture.
- *
- * @covers \Reach\Admin\MemberSearchPage
  */
+#[CoversClass(\Reach\Admin\MemberSearchPage::class)]
 final class MemberSearchPageTest extends ReachTestCase
 {
     /** A number that is clearly not anyone's: Ofcom's drama range. */
@@ -64,8 +66,7 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     // ── registration ──────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function register_hooks_the_admin_menu(): void
     {
         $this->page()->register();
@@ -73,7 +74,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertActionAdded('admin_menu', false, 'the page should register its menu on admin_menu');
     }
 
-    /** @test */
+    #[Test]
     public function add_menu_attaches_under_the_reach_menu_behind_the_personal_data_capability(): void
     {
         $this->page()->addMenu();
@@ -86,14 +87,12 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     // ── capability guard ──────────────────────────────────────────────
-
     /**
      * The point of the gate: a search surfaces mobile numbers, so revoking
      * Scrutiny's personal-data capability has to close the screen even for a
      * user who can otherwise do everything.
-     *
-     * @test
      */
+    #[Test]
     public function the_search_renders_nothing_without_the_personal_data_capability(): void
     {
         WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
@@ -105,7 +104,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringNotContainsString(self::FAKE_MOBILE, $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_search_renders_for_a_user_who_lacks_manage_options(): void
     {
         WpState::$deniedCaps = ['manage_options'];
@@ -114,8 +113,7 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     // ── the search form ───────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_empty_screen_shows_the_form_and_runs_no_search(): void
     {
         $html = $this->render($this->page(members: [$this->twelfthStepper()]));
@@ -126,7 +124,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringNotContainsString(self::FAKE_MOBILE, $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_form_offers_the_three_gender_filters_by_their_stored_option_values(): void
     {
         $html = $this->render($this->page());
@@ -139,7 +137,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringContainsString('Non-Binary', $html);
     }
 
-    /** @test */
+    #[Test]
     public function the_submitted_search_is_echoed_back_into_the_form(): void
     {
         $_GET = ['location' => 'Bedminster', 'accepts' => ['accepts-female']];
@@ -151,10 +149,8 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringNotContainsString('value="accepts-male"' . "\n" . ' checked', $html);
     }
 
-    /**
-     * @test
-     * @dataProvider unusableAccepts
-     */
+    #[DataProvider('unusableAccepts')]
+    #[Test]
     public function an_accepts_value_that_is_not_one_we_offer_is_dropped(mixed $raw): void
     {
         $_GET = ['location' => 'BS1', 'accepts' => $raw];
@@ -182,7 +178,7 @@ final class MemberSearchPageTest extends ReachTestCase
         ];
     }
 
-    /** @test */
+    #[Test]
     public function a_gender_filter_that_we_do_offer_is_applied(): void
     {
         $_GET = ['location' => 'BS1', 'accepts' => ['accepts-female']];
@@ -203,8 +199,7 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     // ── results ───────────────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function an_unresolvable_area_says_so_instead_of_an_empty_table(): void
     {
         $_GET = ['location' => 'Atlantis'];
@@ -216,7 +211,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringNotContainsString('wp-list-table', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_resolved_area_with_no_matching_members_says_so(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -226,7 +221,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringContainsString('No 12th-steppers match this search.', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_result_row_carries_the_name_area_distance_accepts_and_number(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -258,11 +253,11 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider resultCounts
      * @param array<int, Member>     $members
      * @param array<int, MemberView> $views
      */
+    #[DataProvider('resultCounts')]
+    #[Test]
     public function the_result_count_agrees_with_itself(array $members, array $views, string $expected): void
     {
         $_GET = ['location' => 'BS1'];
@@ -299,9 +294,8 @@ final class MemberSearchPageTest extends ReachTestCase
      * area column has to show the entry the reported distance belongs to, not
      * the raw field — otherwise the row reads "Kingswood|Hanham, 2.1 km" and
      * the number belongs to neither.
-     *
-     * @test
      */
+    #[Test]
     public function the_area_shown_is_the_one_the_distance_was_measured_to(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -324,9 +318,8 @@ final class MemberSearchPageTest extends ReachTestCase
     /**
      * The defensive arm of the distance cell: a view the resolver never scored
      * gets a dash rather than a distance belonging to somebody else.
-     *
-     * @test
      */
+    #[Test]
     public function a_view_the_resolver_never_scored_shows_no_distance(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -348,8 +341,7 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     // ── individual cells ──────────────────────────────────────────────
-
-    /** @test */
+    #[Test]
     public function a_member_with_no_anonymous_name_is_labelled_rather_than_blank(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -366,13 +358,12 @@ final class MemberSearchPageTest extends ReachTestCase
      * get_edit_post_link() answers null when the current user cannot edit the
      * member. The name still has to appear — as plain text rather than a link
      * that would only lead to a permissions error.
-     *
-     * @test
      */
+    #[Test]
     public function a_member_the_admin_cannot_edit_is_named_without_a_link(): void
     {
         $_GET = ['location' => 'BS1'];
-        Functions\when('get_edit_post_link')->justReturn(null);
+        when('get_edit_post_link')->justReturn(null);
 
         $html = $this->render($this->page(
             members: [$this->twelfthStepper(id: 7)],
@@ -383,7 +374,7 @@ final class MemberSearchPageTest extends ReachTestCase
         $this->assertStringNotContainsString('<a href="https://example.test/wp-admin/post.php', $html);
     }
 
-    /** @test */
+    #[Test]
     public function a_member_with_no_number_on_file_shows_a_dash_not_an_empty_link(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -400,9 +391,8 @@ final class MemberSearchPageTest extends ReachTestCase
     /**
      * The landline gets its own dialable column: a member who asked to be
      * rung at home is no use to an admin whose only column is the mobile.
-     *
-     * @test
      */
+    #[Test]
     public function the_landline_is_shown_as_a_dialable_number_of_its_own(): void
     {
         $_GET = ['location' => 'BS1'];
@@ -423,10 +413,8 @@ final class MemberSearchPageTest extends ReachTestCase
         );
     }
 
-    /**
-     * @test
-     * @dataProvider preferences
-     */
+    #[DataProvider('preferences')]
+    #[Test]
     public function the_number_the_member_asked_to_be_rung_on_is_tagged(
         PreferredContact $preference,
         string $taggedNumber,
@@ -470,10 +458,9 @@ final class MemberSearchPageTest extends ReachTestCase
      * still says Landline for a member whose landline has since been deleted,
      * which ACF leaves behind because it keeps the last saved choice for a
      * field its conditional logic has hidden.
-     *
-     * @test
-     * @dataProvider lonelyNumbers
      */
+    #[DataProvider('lonelyNumbers')]
+    #[Test]
     public function one_number_on_file_is_never_tagged_preferred(
         string $mobile,
         string $landline,
@@ -507,10 +494,10 @@ final class MemberSearchPageTest extends ReachTestCase
     }
 
     /**
-     * @test
-     * @dataProvider acceptsLists
      * @param array<int, string> $accepts
      */
+    #[DataProvider('acceptsLists')]
+    #[Test]
     public function the_accepts_column_reads_as_labels(array $accepts, string $expected): void
     {
         $_GET = ['location' => 'BS1'];
@@ -527,9 +514,8 @@ final class MemberSearchPageTest extends ReachTestCase
      * The accepts list comes back from ACF, which types nothing: a checkbox
      * field edited by hand or migrated badly can hold anything. The cell skips
      * what it cannot read rather than fataling on it.
-     *
-     * @test
      */
+    #[Test]
     public function a_non_string_in_the_accepts_list_is_skipped(): void
     {
         $_GET = ['location' => 'BS1'];

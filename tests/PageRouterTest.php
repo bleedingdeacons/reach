@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use Brain\Monkey\Functions;
+use PHPUnit\Framework\Attributes\DataProvider;
+use function Brain\Monkey\Functions\when;
 use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
@@ -59,10 +60,7 @@ final class PageRouterTest extends ReachTestCase
     }
 
     // ── the session gate ──────────────────────────────────────────────
-
-    /**
-     * @dataProvider gatedPages
-     */
+    #[DataProvider('gatedPages')]
     public function testAGatedPageRendersSigninWhenThereIsNoSession(string $page): void
     {
         // Rendered in place rather than redirected: the URL stays put, so
@@ -74,9 +72,7 @@ final class PageRouterTest extends ReachTestCase
         );
     }
 
-    /**
-     * @dataProvider gatedPages
-     */
+    #[DataProvider('gatedPages')]
     public function testAGatedPageRendersItselfForASignedInVisitor(string $page): void
     {
         $this->assertSame(
@@ -97,9 +93,7 @@ final class PageRouterTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider publicPages
-     */
+    #[DataProvider('publicPages')]
     public function testAPublicPageRendersWithoutASession(string $page): void
     {
         // A signed-out member must be able to reach these, or a forgotten
@@ -162,7 +156,7 @@ final class PageRouterTest extends ReachTestCase
     public function testEveryRoutedPageHasARewriteRule(): void
     {
         $rules = [];
-        Functions\when('add_rewrite_rule')->alias(
+        when('add_rewrite_rule')->alias(
             static function (string $regex, string $query) use (&$rules): void {
                 $rules[$regex] = $query;
             }
@@ -182,7 +176,7 @@ final class PageRouterTest extends ReachTestCase
         // '^reach' unanchored would swallow /reach/find and every other
         // page, sending the whole front end to the redirect.
         $rules = [];
-        Functions\when('add_rewrite_rule')->alias(
+        when('add_rewrite_rule')->alias(
             static function (string $regex, string $query) use (&$rules): void {
                 $rules[$regex] = $query;
             }
@@ -199,7 +193,7 @@ final class PageRouterTest extends ReachTestCase
         // Self-heals the cached rules after an update that added a route,
         // without a manual permalink flush or a full reactivate.
         $flushes = 0;
-        Functions\when('flush_rewrite_rules')->alias(static function () use (&$flushes): void {
+        when('flush_rewrite_rules')->alias(static function () use (&$flushes): void {
             $flushes++;
         });
 
@@ -213,7 +207,7 @@ final class PageRouterTest extends ReachTestCase
     {
         // template_redirect fires on every front-end request, so the
         // overwhelming majority of calls have to fall straight through.
-        Functions\when('get_query_var')->justReturn('');
+        when('get_query_var')->justReturn('');
 
         $this->router()->renderPage();
 

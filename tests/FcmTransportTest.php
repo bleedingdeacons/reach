@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Alerts\Alert;
 use Reach\Alerts\Fcm\FcmClient;
@@ -558,9 +559,7 @@ final class FcmTransportTest extends ReachTestCase
         ];
     }
 
-    /**
-     * @dataProvider unsupportedPlatforms
-     */
+    #[DataProvider('unsupportedPlatforms')]
     public function testDesktopHeadsAreDeclinedAndPollInstead(string $platform): void
     {
         // They enrol happily and simply never claim this transport.
@@ -690,9 +689,8 @@ final class FcmTransportTest extends ReachTestCase
      * Three levels, three channels. An Android channel's importance and
      * sound are fixed at creation, so they cannot be one channel
      * reconfigured — see FcmTransport::ANDROID_CHANNEL.
-     *
-     * @dataProvider levelChannels
      */
+    #[DataProvider('levelChannels')]
     public function testTheChannelFollowsTheLevel(string $level, string $channel): void
     {
         $data = $this->opened($this->alert($level), $this->device('ios'));
@@ -714,9 +712,8 @@ final class FcmTransportTest extends ReachTestCase
      * An older Hand build reads `priority` and ignores every field it has
      * never heard of, so a red alert still has to reach it as urgent. See
      * Alert::PRIORITY_NORMAL.
-     *
-     * @dataProvider levelPriorities
      */
+    #[DataProvider('levelPriorities')]
     public function testTheDerivedPriorityTravelsForHandsetsThatPredateTheLevel(
         string $level,
         string $priority
