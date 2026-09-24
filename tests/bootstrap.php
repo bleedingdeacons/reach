@@ -30,6 +30,16 @@ declare(strict_types=1);
 use BleedingDeacons\WpMocks\Bootstrap;
 use BleedingDeacons\WpMocks\WpState;
 
+// Pest's launcher does not define PHPUNIT_COMPOSER_INSTALL, which
+// vendor/bin/phpunit does and PHPUnit's separate-process template reads to
+// load Composer in the child. Without it the child has no autoloader at all,
+// and every #[RunInSeparateProcess] test dies before it starts — which is
+// what SecureTransportTest's REACH_ALLOW_INSECURE_TRANSPORT case needs, since
+// a defined constant cannot be undone.
+if (!defined('PHPUNIT_COMPOSER_INSTALL')) {
+    define('PHPUNIT_COMPOSER_INSTALL', dirname(__DIR__) . '/vendor/autoload.php');
+}
+
 $autoloader = dirname(__DIR__) . '/vendor/autoload.php';
 if (is_file($autoloader)) {
     require_once $autoloader;
@@ -173,6 +183,16 @@ require_once __DIR__ . '/stubs/class-wp-list-table.php';
 // stdClass, which is enough to read a role's name and not enough to grant a
 // capability to one; Reach\Core\Capabilities does the latter.
 require_once __DIR__ . '/stubs/class-wp-role.php';
+
+// wpdb, for the repository tests: Reach\Tests\Fixtures\WpdbStub records the
+// SQL each repository emits. This alias used to sit at the top of
+// WpdbCallAttemptRepositoryTest.php, and every other repository test
+// require_once'd that file to get it — which only works while test files are
+// classes PHPUnit loads with include_once. Pest specs are not, so the stub is
+// a fixture now and the alias is made once, here.
+if (!class_exists('wpdb')) {
+    class_alias(\Reach\Tests\Fixtures\WpdbStub::class, 'wpdb');
+}
 
 // dbDelta() is the one WordPress function still defined here: it lives in
 // wp-admin/includes rather than the loaded core, so no shared stub group

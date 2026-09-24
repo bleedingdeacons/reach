@@ -23,124 +23,107 @@ use Reach\Auth\PasswordResetMailer;
  * hooks without firing them) and the sending ({@see flush()}, which is
  * what the hook eventually calls).
  */
-final class PasswordResetMailerTest extends ReachTestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
 
-        WpState::$mail = [];
-        WpState::$mailResult = true;
-    }
+beforeEach(function () {
+    WpState::$mail = [];
+    WpState::$mailResult = true;
+});
 
-    protected function tearDown(): void
-    {
-        WpState::$mailResult = true;
-        parent::tearDown();
-    }
+afterEach(function () {
+    WpState::$mailResult = true;
+});
 
-    public function testQueueingSendsNothingYet(): void
-    {
-        (new PasswordResetMailer())->queue('user@example.com', 'raw-token');
+test('queueing sends nothing yet', function () {
+    (new PasswordResetMailer())->queue('user@example.com', 'raw-token');
 
-        $this->assertSame([], WpState::$mail, 'the send must not happen during the request');
-    }
+    $this->assertSame([], WpState::$mail, 'the send must not happen during the request');
+});
 
-    public function testQueueingRegistersTheShutdownFlush(): void
-    {
-        $mailer = new PasswordResetMailer();
-        $mailer->queue('user@example.com', 'raw-token');
+test('queueing registers the shutdown flush', function () {
+    $mailer = new PasswordResetMailer();
+    $mailer->queue('user@example.com', 'raw-token');
 
-        $this->assertActionAdded('shutdown', [$mailer, 'flush']);
-    }
+    $this->assertActionAdded('shutdown', [$mailer, 'flush']);
+});
 
-    public function testFlushSendsTheQueuedLink(): void
-    {
-        $mailer = new PasswordResetMailer();
-        $mailer->queue('user@example.com', 'raw-token');
+test('flush sends the queued link', function () {
+    $mailer = new PasswordResetMailer();
+    $mailer->queue('user@example.com', 'raw-token');
 
-        $mailer->flush();
+    $mailer->flush();
 
-        $this->assertCount(1, WpState::$mail);
-        $this->assertSame('user@example.com', WpState::$mail[0]['to']);
-        $this->assertStringContainsString('token=raw-token', (string) WpState::$mail[0]['message']);
-    }
+    $this->assertCount(1, WpState::$mail);
+    $this->assertSame('user@example.com', WpState::$mail[0]['to']);
+    $this->assertStringContainsString('token=raw-token', (string) WpState::$mail[0]['message']);
+});
 
-    public function testFlushingTwiceDoesNotSendTwice(): void
-    {
-        // The shutdown hook is one callback but nothing stops it being
-        // reached twice; a member must not get two links because of it.
-        $mailer = new PasswordResetMailer();
-        $mailer->queue('user@example.com', 'raw-token');
+test('flushing twice does not send twice', function () {
+    // The shutdown hook is one callback but nothing stops it being
+    // reached twice; a member must not get two links because of it.
+    $mailer = new PasswordResetMailer();
+    $mailer->queue('user@example.com', 'raw-token');
 
-        $mailer->flush();
-        $mailer->flush();
+    $mailer->flush();
+    $mailer->flush();
 
-        $this->assertCount(1, WpState::$mail);
-    }
+    $this->assertCount(1, WpState::$mail);
+});
 
-    public function testFlushWithNothingQueuedIsANoOp(): void
-    {
-        (new PasswordResetMailer())->flush();
+test('flush with nothing queued is a no op', function () {
+    (new PasswordResetMailer())->flush();
 
-        $this->assertSame([], WpState::$mail);
-    }
+    $this->assertSame([], WpState::$mail);
+});
 
-    public function testTwoQueuedLinksBothGoOutOnOneFlush(): void
-    {
-        $mailer = new PasswordResetMailer();
-        $mailer->queue('one@example.com', 'token-one');
-        $mailer->queue('two@example.com', 'token-two');
+test('two queued links both go out on one flush', function () {
+    $mailer = new PasswordResetMailer();
+    $mailer->queue('one@example.com', 'token-one');
+    $mailer->queue('two@example.com', 'token-two');
 
-        $mailer->flush();
+    $mailer->flush();
 
-        $this->assertCount(2, WpState::$mail);
-        $this->assertSame('one@example.com', WpState::$mail[0]['to']);
-        $this->assertSame('two@example.com', WpState::$mail[1]['to']);
-    }
+    $this->assertCount(2, WpState::$mail);
+    $this->assertSame('one@example.com', WpState::$mail[0]['to']);
+    $this->assertSame('two@example.com', WpState::$mail[1]['to']);
+});
 
-    public function testTheFlushIsRegisteredOnceHoweverManyLinksAreQueued(): void
-    {
-        // Capture before the code that registers, per ReachTestCase.
-        $this->captureAction('shutdown');
+test('the flush is registered once however many links are queued', function () {
+    // Capture before the code that registers, per ReachTestCase.
+    $this->captureAction('shutdown');
 
-        $mailer = new PasswordResetMailer();
-        $mailer->queue('one@example.com', 'token-one');
-        $mailer->queue('two@example.com', 'token-two');
+    $mailer = new PasswordResetMailer();
+    $mailer->queue('one@example.com', 'token-one');
+    $mailer->queue('two@example.com', 'token-two');
 
-        // Registering twice would send the first batch, then send
-        // nothing - harmless today, but only by accident.
-        $this->assertCount(1, $this->actionCallbacks('shutdown'));
-    }
+    // Registering twice would send the first batch, then send
+    // nothing - harmless today, but only by accident.
+    $this->assertCount(1, $this->actionCallbacks('shutdown'));
+});
 
-    public function testSendDeliversImmediatelyForCallersThatWantIt(): void
-    {
-        $sent = (new PasswordResetMailer())->send('user@example.com', 'raw-token');
+test('send delivers immediately for callers that want it', function () {
+    $sent = (new PasswordResetMailer())->send('user@example.com', 'raw-token');
 
-        $this->assertTrue($sent);
-        $this->assertCount(1, WpState::$mail);
-    }
+    $this->assertTrue($sent);
+    $this->assertCount(1, WpState::$mail);
+});
 
-    public function testSendReportsFailure(): void
-    {
-        WpState::$mailResult = false;
+test('send reports failure', function () {
+    WpState::$mailResult = false;
 
-        $this->assertFalse((new PasswordResetMailer())->send('user@example.com', 'raw-token'));
-    }
+    $this->assertFalse((new PasswordResetMailer())->send('user@example.com', 'raw-token'));
+});
 
-    /**
-     * The link carries the token and nothing else — no address in the
-     * URL, and no statement about whether an account existed.
-     */
-    public function testTheMessageCarriesOnlyTheToken(): void
-    {
-        $mailer = new PasswordResetMailer();
-        $mailer->queue('user@example.com', 'raw-token');
-        $mailer->flush();
+/**
+ * The link carries the token and nothing else — no address in the
+ * URL, and no statement about whether an account existed.
+ */
+test('the message carries only the token', function () {
+    $mailer = new PasswordResetMailer();
+    $mailer->queue('user@example.com', 'raw-token');
+    $mailer->flush();
 
-        $message = (string) WpState::$mail[0]['message'];
+    $message = (string) WpState::$mail[0]['message'];
 
-        $this->assertStringContainsString('token=raw-token', $message);
-        $this->assertStringNotContainsString('user@example.com', $message);
-    }
-}
+    $this->assertStringContainsString('token=raw-token', $message);
+    $this->assertStringNotContainsString('user@example.com', $message);
+});

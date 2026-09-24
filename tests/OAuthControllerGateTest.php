@@ -6,7 +6,6 @@ namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Core\RateLimiter;
-use Reach\Tests\ReachTestCase;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\ProviderRegistry;
@@ -52,203 +51,54 @@ use Unity\Testing\Doubles\InMemoryMemberRepository;
  *     stub provider so the detector + controller wiring is covered as
  *     a unit.
  */
-final class OAuthControllerGateTest extends ReachTestCase
+
+/**
+ * Issue a real OAuth state token for $provider through the
+ * controller's own StateStore, so callback() can consume it back
+ * out the other side. Returns [state, nonce].
+ *
+ * @return array{0: string, 1: string}
+ */
+function seedState(OAuthController $controller, string $provider): array
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
+    $ref = new \ReflectionProperty($controller, 'stateStore');
+    // No setAccessible() call: it has been a no-op since PHP 8.1 and
+    // PHP 8.5 deprecates it outright.
+    /** @var StateStore $store */
+    $store = $ref->getValue($controller);
+    $tokens = $store->issue($provider, 'https://example.test/reach/find');
+    return [$tokens['state'], $tokens['nonce']];
+}
 
-        // Each test gets a fresh transient/option store so OAuth state
-        // tokens issued here don't leak between tests.
-        WpState::$transients = [];
-        WpState::$options    = [];
-    }
-
-    // --- eligibility gate -------------------------------------------------
-
-    public function testGateRejectsWhenNoMemberMatchesTheEmail(): void
-    {
-        $controller = $this->controllerWith(members: []);
-
-        $result = $this->invokeGate($controller, $this->identity('nobody@example.com'));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_not_eligible', $result->get_error_code());
-        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
-    }
-
-    public function testGateRejectsMemberWithNeitherRole(): void
-    {
-        // A member exists for this email but has neither isTwelfthStepper
-        // nor isTelephoneResponder set — e.g. a regular member who has
-        // not opted into either outreach role. Reach is not for them.
-        $member = $this->stubMember('regular@example.com', twelfth: false, responder: false);
-
-        $controller = $this->controllerWith(members: [$member]);
-
-        $result = $this->invokeGate($controller, $this->identity('regular@example.com'));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_not_eligible', $result->get_error_code());
-    }
-
-    public function testGateAcceptsTwelfthStepperMember(): void
-    {
-        $member = $this->stubMember('twelfth@example.com', twelfth: true, responder: false);
-
-        $controller = $this->controllerWith(members: [$member]);
-
-        // null return from the gate == "sign-in may proceed".
-        $this->assertNull($this->invokeGate($controller, $this->identity('twelfth@example.com')));
-    }
-
-    public function testGateAcceptsCertifiedTelephoneResponderMember(): void
-    {
-        // A responder is not necessarily a 12th-stepper, but a certified
-        // one must still be allowed to sign in. If this test fails the
-        // gate has slipped back to a 12th-stepper-only check.
-        $member = $this->stubMember(
-            'responder@example.com',
-            twelfth: false,
-            responder: true,
-            certification: ResponderCertification::Certified,
-        );
-
-        $controller = $this->controllerWith(members: [$member]);
-
-        $this->assertNull($this->invokeGate($controller, $this->identity('responder@example.com')));
-    }
-
-    public function testGateRejectsUncertifiedTelephoneResponderMember(): void
-    {
-        // A telephone responder who is not yet certified (still Pending)
-        // is not cleared for the helpline and must be turned away, even
-        // though the responder role itself is set.
-        $member = $this->stubMember(
-            'trainee@example.com',
-            twelfth: false,
-            responder: true,
-            certification: ResponderCertification::Pending,
-        );
-
-        $controller = $this->controllerWith(members: [$member]);
-
-        $result = $this->invokeGate($controller, $this->identity('trainee@example.com'));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_not_eligible', $result->get_error_code());
-    }
-
-    // --- anonymised-email refusal ----------------------------------------
-
-    public function testCallbackRefusesAnonymisedRelayAddressWithEmailRequired(): void
-    {
-        // Facebook proved who the user is but only gave back a relay
-        // address on *.facebook.com. There is no contactable email, so
-        // the callback must refuse rather than mint a session — and it
-        // must refuse before the eligibility gate even runs (we never
-        // got a real address to look a member up by).
-        //
-        // The refusal is a friendly redirect back to the sign-in page
-        // carrying ?reach_error=email_required (the template renders a
-        // styled notice), NOT a raw WP_Error/JSON page.
-        $relay = 'abc123hash@privaterelay.facebook.com';
-        $provider = new GateStubProvider($this->identity($relay, 'facebook'));
-
-        // A member *does* exist on the relay address; this proves the
-        // refusal is driven by anonymisation, not by member eligibility.
-        $member = $this->stubMember($relay, twelfth: true, responder: false);
-        $controller = $this->controllerWith(members: [$member], provider: $provider);
-
-        [$state] = $this->seedState($controller, 'facebook');
-
-        $result = $controller->callback(new WP_REST_Request([
-            'state' => $state,
-            'code'  => 'auth-code-xyz',
-        ]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(302, $result->get_status());
-        $location = $result->get_headers()['Location'] ?? '';
-        $this->assertStringContainsString('/reach/signin', $location);
-        $this->assertStringContainsString('reach_error=email_required', $location);
-    }
-
-    public function testCallbackAcceptsRealAddressThenRunsEligibilityGate(): void
-    {
-        // A real (non-relay) address from the provider must NOT trip the
-        // email-required refusal — it should fall through to the
-        // eligibility gate. Here the address matches no member, so the
-        // gate rejects it and the user is redirected back to sign-in
-        // with ?reach_error=not_eligible. Seeing that code (rather than
-        // email_required) confirms a real address sailed past the
-        // anonymisation check and into the gate.
-        $provider = new GateStubProvider($this->identity('real-but-unknown@example.com', 'facebook'));
-        $controller = $this->controllerWith(members: [], provider: $provider);
-
-        [$state] = $this->seedState($controller, 'facebook');
-
-        $result = $controller->callback(new WP_REST_Request([
-            'state' => $state,
-            'code'  => 'auth-code-xyz',
-        ]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(302, $result->get_status());
-        $location = $result->get_headers()['Location'] ?? '';
-        $this->assertStringContainsString('/reach/signin', $location);
-        $this->assertStringContainsString('reach_error=not_eligible', $location);
-    }
-
+beforeEach(function () {
     // --- helpers ----------------------------------------------------------
 
     /**
      * Call the private eligibility gate and return its result
      * (null == allowed, WP_Error == denied).
      */
-    private function invokeGate(OAuthController $controller, VerifiedIdentity $identity): ?WP_Error
-    {
+    $this->invokeGate = function (OAuthController $controller, VerifiedIdentity $identity): ?WP_Error {
         $ref = new \ReflectionMethod($controller, 'assertMemberAllowed');
         // No setAccessible() call: it has been a no-op since PHP 8.1 and
         // PHP 8.5 deprecates it outright.
         /** @var WP_Error|null $result */
         $result = $ref->invoke($controller, $identity);
         return $result;
-    }
+    };
 
-    /**
-     * Issue a real OAuth state token for $provider through the
-     * controller's own StateStore, so callback() can consume it back
-     * out the other side. Returns [state, nonce].
-     *
-     * @return array{0: string, 1: string}
-     */
-    private function seedState(OAuthController $controller, string $provider): array
-    {
-        $ref = new \ReflectionProperty($controller, 'stateStore');
-        // No setAccessible() call: it has been a no-op since PHP 8.1 and
-        // PHP 8.5 deprecates it outright.
-        /** @var StateStore $store */
-        $store = $ref->getValue($controller);
-        $tokens = $store->issue($provider, 'https://example.test/reach/find');
-        return [$tokens['state'], $tokens['nonce']];
-    }
-
-    private function identity(string $email, string $provider = 'facebook'): VerifiedIdentity
-    {
+    $this->identity = function (string $email, string $provider = 'facebook'): VerifiedIdentity {
         return new VerifiedIdentity(
             email: $email,
             provider: $provider,
             sub: 'oauth-sub-42',
             providerEmail: $email,
         );
-    }
+    };
 
     /**
      * @param array<int, Member> $members
      */
-    private function controllerWith(array $members, ?OAuthProvider $provider = null): OAuthController
-    {
+    $this->controllerWith = function (array $members, ?OAuthProvider $provider = null): OAuthController {
         $registry = new ProviderRegistry();
         if ($provider !== null) {
             $registry->register($provider);
@@ -276,9 +126,9 @@ final class OAuthControllerGateTest extends ReachTestCase
             new SessionCsrf(),
             new RateLimiter(),
         );
-    }
+    };
 
-    private function stubMember(
+    $this->stubMember = function (
         string $email,
         bool $twelfth,
         bool $responder,
@@ -290,8 +140,140 @@ final class OAuthControllerGateTest extends ReachTestCase
             telephoneResponder: $responder,
             responderCertification: $certification,
         );
-    }
-}
+    };
+
+    // Each test gets a fresh transient/option store so OAuth state
+    // tokens issued here don't leak between tests.
+    WpState::$transients = [];
+    WpState::$options    = [];
+});
+
+// --- eligibility gate -------------------------------------------------
+test('gate rejects when no member matches the email', function () {
+    $controller = ($this->controllerWith)(members: []);
+
+    $result = ($this->invokeGate)($controller, ($this->identity)('nobody@example.com'));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_not_eligible', $result->get_error_code());
+    $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+});
+
+test('gate rejects member with neither role', function () {
+    // A member exists for this email but has neither isTwelfthStepper
+    // nor isTelephoneResponder set — e.g. a regular member who has
+    // not opted into either outreach role. Reach is not for them.
+    $member = ($this->stubMember)('regular@example.com', twelfth: false, responder: false);
+
+    $controller = ($this->controllerWith)(members: [$member]);
+
+    $result = ($this->invokeGate)($controller, ($this->identity)('regular@example.com'));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_not_eligible', $result->get_error_code());
+});
+
+test('gate accepts twelfth stepper member', function () {
+    $member = ($this->stubMember)('twelfth@example.com', twelfth: true, responder: false);
+
+    $controller = ($this->controllerWith)(members: [$member]);
+
+    // null return from the gate == "sign-in may proceed".
+    $this->assertNull(($this->invokeGate)($controller, ($this->identity)('twelfth@example.com')));
+});
+
+test('gate accepts certified telephone responder member', function () {
+    // A responder is not necessarily a 12th-stepper, but a certified
+    // one must still be allowed to sign in. If this test fails the
+    // gate has slipped back to a 12th-stepper-only check.
+    $member = ($this->stubMember)(
+        'responder@example.com',
+        twelfth: false,
+        responder: true,
+        certification: ResponderCertification::Certified,
+    );
+
+    $controller = ($this->controllerWith)(members: [$member]);
+
+    $this->assertNull(($this->invokeGate)($controller, ($this->identity)('responder@example.com')));
+});
+
+test('gate rejects uncertified telephone responder member', function () {
+    // A telephone responder who is not yet certified (still Pending)
+    // is not cleared for the helpline and must be turned away, even
+    // though the responder role itself is set.
+    $member = ($this->stubMember)(
+        'trainee@example.com',
+        twelfth: false,
+        responder: true,
+        certification: ResponderCertification::Pending,
+    );
+
+    $controller = ($this->controllerWith)(members: [$member]);
+
+    $result = ($this->invokeGate)($controller, ($this->identity)('trainee@example.com'));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_not_eligible', $result->get_error_code());
+});
+
+// --- anonymised-email refusal ----------------------------------------
+test('callback refuses anonymised relay address with email required', function () {
+    // Facebook proved who the user is but only gave back a relay
+    // address on *.facebook.com. There is no contactable email, so
+    // the callback must refuse rather than mint a session — and it
+    // must refuse before the eligibility gate even runs (we never
+    // got a real address to look a member up by).
+    //
+    // The refusal is a friendly redirect back to the sign-in page
+    // carrying ?reach_error=email_required (the template renders a
+    // styled notice), NOT a raw WP_Error/JSON page.
+    $relay = 'abc123hash@privaterelay.facebook.com';
+    $provider = new GateStubProvider(($this->identity)($relay, 'facebook'));
+
+    // A member *does* exist on the relay address; this proves the
+    // refusal is driven by anonymisation, not by member eligibility.
+    $member = ($this->stubMember)($relay, twelfth: true, responder: false);
+    $controller = ($this->controllerWith)(members: [$member], provider: $provider);
+
+    [$state] = seedState($controller, 'facebook');
+
+    $result = $controller->callback(new WP_REST_Request([
+        'state' => $state,
+        'code'  => 'auth-code-xyz',
+    ]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(302, $result->get_status());
+    $location = $result->get_headers()['Location'] ?? '';
+    $this->assertStringContainsString('/reach/signin', $location);
+    $this->assertStringContainsString('reach_error=email_required', $location);
+});
+
+test('callback accepts real address then runs eligibility gate', function () {
+    // A real (non-relay) address from the provider must NOT trip the
+    // email-required refusal — it should fall through to the
+    // eligibility gate. Here the address matches no member, so the
+    // gate rejects it and the user is redirected back to sign-in
+    // with ?reach_error=not_eligible. Seeing that code (rather than
+    // email_required) confirms a real address sailed past the
+    // anonymisation check and into the gate.
+    $provider = new GateStubProvider(($this->identity)('real-but-unknown@example.com', 'facebook'));
+    $controller = ($this->controllerWith)(members: [], provider: $provider);
+
+    [$state] = seedState($controller, 'facebook');
+
+    $result = $controller->callback(new WP_REST_Request([
+        'state' => $state,
+        'code'  => 'auth-code-xyz',
+    ]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(302, $result->get_status());
+    $location = $result->get_headers()['Location'] ?? '';
+    $this->assertStringContainsString('/reach/signin', $location);
+    $this->assertStringContainsString('reach_error=not_eligible', $location);
+});
 
 /**
  * Minimal server-side OAuthProvider that yields a fixed identity from

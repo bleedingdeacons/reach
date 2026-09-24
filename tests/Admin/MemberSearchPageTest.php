@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\Attributes\DataProvider;
 use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Admin\MemberSearchPage;
@@ -16,7 +13,6 @@ use Reach\Tests\Fixtures\FakeMemberViewFactory;
 use Reach\Tests\Fixtures\MemberStub;
 use Reach\Tests\Fixtures\MemberViewStub;
 use Reach\Tests\Fixtures\StubGeocoder;
-use Reach\Tests\ReachTestCase;
 use Scrutiny\Privacy\PersonalDataPolicy;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\Interfaces\MemberView;
@@ -42,508 +38,55 @@ use Unity\Testing\Doubles\InMemoryMemberRepository;
  * these screens are a personal-data surface and a realistic-looking phone
  * number in a committed test file is a liability, not a fixture.
  */
-#[CoversClass(\Reach\Admin\MemberSearchPage::class)]
-final class MemberSearchPageTest extends ReachTestCase
+
+covers(\Reach\Admin\MemberSearchPage::class);
+
+/** A number that is clearly not anyone's: Ofcom's drama range. */
+const FAKE_MOBILE = '07700 900123';
+
+/** The landline half of the same range. */
+const FAKE_LANDLINE = '01632 960123';
+
+/**
+ * @param array<int, Member>              $members
+ * @param array<string, Coordinates>|null $places
+ */
+function resolver(array $members, ?array $places = null): NearestMembersResolver
 {
-    /** A number that is clearly not anyone's: Ofcom's drama range. */
-    private const FAKE_MOBILE = '07700 900123';
-
-    /** The landline half of the same range. */
-    private const FAKE_LANDLINE = '01632 960123';
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $_GET = [];
-    }
-
-    protected function tearDown(): void
-    {
-        $_GET = [];
-
-        parent::tearDown();
-    }
-
-    // ── registration ──────────────────────────────────────────────────
-    #[Test]
-    public function register_hooks_the_admin_menu(): void
-    {
-        $this->page()->register();
-
-        $this->assertActionAdded('admin_menu', false, 'the page should register its menu on admin_menu');
-    }
-
-    #[Test]
-    public function add_menu_attaches_under_the_reach_menu_behind_the_personal_data_capability(): void
-    {
-        $this->page()->addMenu();
-
-        $this->assertCount(1, WpState::$menus);
-        $this->assertSame('submenu', WpState::$menus[0]['type']);
-        $this->assertSame('reach', WpState::$menus[0]['parent']);
-        $this->assertSame(MemberSearchPage::PAGE_SLUG, WpState::$menus[0]['slug']);
-        $this->assertSame(PersonalDataPolicy::VIEW_CAPABILITY, WpState::$menus[0]['cap']);
-    }
-
-    // ── capability guard ──────────────────────────────────────────────
-    /**
-     * The point of the gate: a search surfaces mobile numbers, so revoking
-     * Scrutiny's personal-data capability has to close the screen even for a
-     * user who can otherwise do everything.
-     */
-    #[Test]
-    public function the_search_renders_nothing_without_the_personal_data_capability(): void
-    {
-        WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(members: [$this->twelfthStepper()]));
-
-        $this->assertSame('', $html);
-        $this->assertStringNotContainsString(self::FAKE_MOBILE, $html);
-    }
-
-    #[Test]
-    public function the_search_renders_for_a_user_who_lacks_manage_options(): void
-    {
-        WpState::$deniedCaps = ['manage_options'];
-
-        $this->assertStringContainsString('Find a 12th Stepper', $this->render($this->page()));
-    }
-
-    // ── the search form ───────────────────────────────────────────────
-    #[Test]
-    public function an_empty_screen_shows_the_form_and_runs_no_search(): void
-    {
-        $html = $this->render($this->page(members: [$this->twelfthStepper()]));
-
-        $this->assertStringContainsString('name="location"', $html);
-        $this->assertStringContainsString('value="' . MemberSearchPage::PAGE_SLUG . '"', $html);
-        $this->assertStringNotContainsString('wp-list-table', $html, 'no search, no results table');
-        $this->assertStringNotContainsString(self::FAKE_MOBILE, $html);
-    }
-
-    #[Test]
-    public function the_form_offers_the_three_gender_filters_by_their_stored_option_values(): void
-    {
-        $html = $this->render($this->page());
-
-        // The stored ACF option value, not the label — sending "Male" matches
-        // nothing, because the resolver does not strip the accepts- prefix.
-        foreach (['accepts-male', 'accepts-female', 'accepts-non-binary'] as $value) {
-            $this->assertStringContainsString('value="' . $value . '"', $html);
-        }
-        $this->assertStringContainsString('Non-Binary', $html);
-    }
-
-    #[Test]
-    public function the_submitted_search_is_echoed_back_into_the_form(): void
-    {
-        $_GET = ['location' => 'Bedminster', 'accepts' => ['accepts-female']];
-
-        $html = $this->render($this->page());
-
-        $this->assertStringContainsString('value="Bedminster"', $html);
-        $this->assertMatchesRegularExpression('/value="accepts-female"\s+checked="checked"/', $html);
-        $this->assertStringNotContainsString('value="accepts-male"' . "\n" . ' checked', $html);
-    }
-
-    #[DataProvider('unusableAccepts')]
-    #[Test]
-    public function an_accepts_value_that_is_not_one_we_offer_is_dropped(mixed $raw): void
-    {
-        $_GET = ['location' => 'BS1', 'accepts' => $raw];
-
-        // Every fixture member accepts men only. If an unusable filter value
-        // reached the resolver it would match nobody, so the woman-only member
-        // coming back proves the filter was dropped rather than applied.
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7, accepts: ['accepts-male'])],
-            views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
-        ));
-
-        $this->assertStringContainsString('Bob T.', $html);
-    }
-
-    /** @return array<string, array{0: mixed}> */
-    public static function unusableAccepts(): array
-    {
-        return [
-            'a label rather than an option value' => [['Male']],
-            'a value we do not offer'             => [['accepts-other']],
-            'an empty string'                     => [['']],
-            'not a list at all'                   => ['accepts-male'],
-            'a nested array'                      => [[['accepts-male']]],
-        ];
-    }
-
-    #[Test]
-    public function a_gender_filter_that_we_do_offer_is_applied(): void
-    {
-        $_GET = ['location' => 'BS1', 'accepts' => ['accepts-female']];
-
-        $html = $this->render($this->page(
-            members: [
-                $this->twelfthStepper(id: 7, area: 'BS1 1AA', accepts: ['accepts-male']),
-                $this->twelfthStepper(id: 8, area: 'BS1 1AB', accepts: ['accepts-female']),
-            ],
-            views: [
-                new MemberViewStub(id: 7, anonymousName: 'Bob T.'),
-                new MemberViewStub(id: 8, anonymousName: 'Carol M.'),
-            ],
-        ));
-
-        $this->assertStringContainsString('Carol M.', $html);
-        $this->assertStringNotContainsString('Bob T.', $html);
-    }
-
-    // ── results ───────────────────────────────────────────────────────
-    #[Test]
-    public function an_unresolvable_area_says_so_instead_of_an_empty_table(): void
-    {
-        $_GET = ['location' => 'Atlantis'];
-
-        $html = $this->render($this->page(members: [$this->twelfthStepper()]));
-
-        $this->assertStringContainsString('Could not find the area', $html);
-        $this->assertStringContainsString('Atlantis', $html);
-        $this->assertStringNotContainsString('wp-list-table', $html);
-    }
-
-    #[Test]
-    public function a_resolved_area_with_no_matching_members_says_so(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(members: []));
-
-        $this->assertStringContainsString('No 12th-steppers match this search.', $html);
-    }
-
-    #[Test]
-    public function a_result_row_carries_the_name_area_distance_accepts_and_number(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7, area: 'BS1 1AA', accepts: ['accepts-male'])],
-            views: [new MemberViewStub(
-                id: 7,
-                anonymousName: 'Bob T.',
-                mobileNumber: self::FAKE_MOBILE,
-                area: 'BS1 1AA',
-                accepts: ['accepts-male'],
-            )],
-        ));
-
-        $this->assertStringContainsString('>Bob T.</a>', $html);
-        $this->assertStringContainsString('BS1 1AA', $html);
-        $this->assertStringContainsString('Male', $html);
-        // The href is percent-encoded and the link text is not: esc_url()
-        // turns the space in the number into %20, while esc_html() leaves it
-        // alone. Asserting the raw number in both positions described output
-        // WordPress would never emit, and passed only while the test double
-        // returned its input untouched.
-        $this->assertStringContainsString(
-            '<a href="tel:' . str_replace(' ', '%20', self::FAKE_MOBILE) . '">' . self::FAKE_MOBILE . '</a>',
-            $html
-        );
-        $this->assertMatchesRegularExpression('/\d+\.\d km/', $html, 'distance is shown to one decimal place');
-    }
-
-    /**
-     * @param array<int, Member>     $members
-     * @param array<int, MemberView> $views
-     */
-    #[DataProvider('resultCounts')]
-    #[Test]
-    public function the_result_count_agrees_with_itself(array $members, array $views, string $expected): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $this->assertMatchesRegularExpression($expected, $this->render($this->page($members, $views)));
-    }
-
-    /** @return array<string, array{0: array<int, Member>, 1: array<int, MemberView>, 2: string}> */
-    public static function resultCounts(): array
-    {
-        return [
-            'none' => [[], [], '/0\s+12th-steppers found\./'],
-            'one'  => [
-                [new MemberStub(id: 7, anonymousName: 'Bob T.', area: 'BS1 1AA', twelfthStepper: true)],
-                [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
-                '/1\s+12th-stepper found\./',
-            ],
-            'several' => [
-                [
-                    new MemberStub(id: 7, anonymousName: 'Bob T.', area: 'BS1 1AA', twelfthStepper: true),
-                    new MemberStub(id: 8, anonymousName: 'Carol M.', area: 'BS1 1AB', twelfthStepper: true),
-                ],
-                [
-                    new MemberViewStub(id: 7, anonymousName: 'Bob T.'),
-                    new MemberViewStub(id: 8, anonymousName: 'Carol M.'),
-                ],
-                '/2\s+12th-steppers found\./',
-            ],
-        ];
-    }
-
-    /**
-     * A member covering several neighbourhoods stores them pipe-separated. The
-     * area column has to show the entry the reported distance belongs to, not
-     * the raw field — otherwise the row reads "Kingswood|Hanham, 2.1 km" and
-     * the number belongs to neither.
-     */
-    #[Test]
-    public function the_area_shown_is_the_one_the_distance_was_measured_to(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7, area: 'Kingswood|Hanham')],
-            views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', area: 'Kingswood|Hanham')],
-            places: [
-                'BS1'       => new Coordinates(51.45, -2.58),
-                'Kingswood' => new Coordinates(51.90, -2.58),
-                // Nearer to the origin, so this is the entry that wins.
-                'Hanham'    => new Coordinates(51.46, -2.58),
-            ],
-        ));
-
-        $this->assertStringContainsString('>Hanham</td>', $this->normalise($html));
-        $this->assertStringNotContainsString('Kingswood|Hanham', $html);
-    }
-
-    /**
-     * The defensive arm of the distance cell: a view the resolver never scored
-     * gets a dash rather than a distance belonging to somebody else.
-     */
-    #[Test]
-    public function a_view_the_resolver_never_scored_shows_no_distance(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $page = new MemberSearchPage(
-            $this->resolver([$this->twelfthStepper(id: 7, area: 'BS1 1AA')]),
-            new FakeMemberViewFactory(
-                [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
-                [new MemberViewStub(id: 99, anonymousName: 'Nobody Asked')],
-            ),
-        );
-
-        $html = $this->normalise($this->render($page));
-
-        $this->assertStringContainsString('Nobody Asked', $html);
-        $this->assertStringContainsString('nowrap;"> &mdash; </td>', $html);
-        // The member who *was* scored still gets a real distance.
-        $this->assertMatchesRegularExpression('/\d+\.\d km/', $html);
-    }
-
-    // ── individual cells ──────────────────────────────────────────────
-    #[Test]
-    public function a_member_with_no_anonymous_name_is_labelled_rather_than_blank(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(id: 7, anonymousName: '  ')],
-        ));
-
-        $this->assertStringContainsString('(no name)', $html);
-    }
-
-    /**
-     * get_edit_post_link() answers null when the current user cannot edit the
-     * member. The name still has to appear — as plain text rather than a link
-     * that would only lead to a permissions error.
-     */
-    #[Test]
-    public function a_member_the_admin_cannot_edit_is_named_without_a_link(): void
-    {
-        $_GET = ['location' => 'BS1'];
-        when('get_edit_post_link')->justReturn(null);
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
-        ));
-
-        $this->assertStringContainsString('<td>Bob T.</td>', $this->normalise($html));
-        $this->assertStringNotContainsString('<a href="https://example.test/wp-admin/post.php', $html);
-    }
-
-    #[Test]
-    public function a_member_with_no_number_on_file_shows_a_dash_not_an_empty_link(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', mobileNumber: '   ')],
-        ));
-
-        $this->assertStringContainsString('<em>&mdash;</em>', $html);
-        $this->assertStringNotContainsString('tel:', $html);
-    }
-
-    /**
-     * The landline gets its own dialable column: a member who asked to be
-     * rung at home is no use to an admin whose only column is the mobile.
-     */
-    #[Test]
-    public function the_landline_is_shown_as_a_dialable_number_of_its_own(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(
-                id: 7,
-                anonymousName: 'Bob T.',
-                landlineNumber: self::FAKE_LANDLINE,
-            )],
-        ));
-
-        $this->assertStringContainsString('>Landline</th>', $html);
-        $this->assertStringContainsString(
-            '<a href="tel:' . str_replace(' ', '%20', self::FAKE_LANDLINE) . '">' . self::FAKE_LANDLINE . '</a>',
-            $html
-        );
-    }
-
-    #[DataProvider('preferences')]
-    #[Test]
-    public function the_number_the_member_asked_to_be_rung_on_is_tagged(
-        PreferredContact $preference,
-        string $taggedNumber,
-        string $untaggedNumber,
-    ): void {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->normalise($this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(
-                id: 7,
-                anonymousName: 'Bob T.',
-                mobileNumber: self::FAKE_MOBILE,
-                landlineNumber: self::FAKE_LANDLINE,
-                preferredContact: $preference,
-            )],
-        )));
-
-        $this->assertStringContainsString(
-            '>' . $taggedNumber . '</a> <span class="description">preferred</span>',
-            $html
-        );
-        $this->assertStringNotContainsString(
-            '>' . $untaggedNumber . '</a> <span class="description">preferred</span>',
-            $html
-        );
-    }
-
-    /** @return array<string, array{0: PreferredContact, 1: string, 2: string}> */
-    public static function preferences(): array
-    {
-        return [
-            'prefers the mobile'   => [PreferredContact::Mobile, self::FAKE_MOBILE, self::FAKE_LANDLINE],
-            'prefers the landline' => [PreferredContact::Landline, self::FAKE_LANDLINE, self::FAKE_MOBILE],
-        ];
-    }
-
-    /**
-     * With one number on file there is nothing to prefer it over, so the row
-     * says nothing about the preference — including when the stored value
-     * still says Landline for a member whose landline has since been deleted,
-     * which ACF leaves behind because it keeps the last saved choice for a
-     * field its conditional logic has hidden.
-     */
-    #[DataProvider('lonelyNumbers')]
-    #[Test]
-    public function one_number_on_file_is_never_tagged_preferred(
-        string $mobile,
-        string $landline,
-        PreferredContact $preference,
-    ): void {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(
-                id: 7,
-                anonymousName: 'Bob T.',
-                mobileNumber: $mobile,
-                landlineNumber: $landline,
-                preferredContact: $preference,
-            )],
-        ));
-
-        $this->assertStringNotContainsString('preferred', $html);
-        $this->assertStringContainsString('<em>&mdash;</em>', $html, 'the missing number still shows a dash');
-    }
-
-    /** @return array<string, array{0: string, 1: string, 2: PreferredContact}> */
-    public static function lonelyNumbers(): array
-    {
-        return [
-            'mobile only'                     => [self::FAKE_MOBILE, '', PreferredContact::Mobile],
-            'landline only'                   => ['', self::FAKE_LANDLINE, PreferredContact::Landline],
-            'a preference for a deleted line' => [self::FAKE_MOBILE, '  ', PreferredContact::Landline],
-        ];
-    }
-
-    /**
-     * @param array<int, string> $accepts
-     */
-    #[DataProvider('acceptsLists')]
-    #[Test]
-    public function the_accepts_column_reads_as_labels(array $accepts, string $expected): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', accepts: $accepts)],
-        ));
-
-        $this->assertStringContainsString('<td>' . $expected . '</td>', $this->normalise($html));
-    }
-
-    /**
-     * The accepts list comes back from ACF, which types nothing: a checkbox
-     * field edited by hand or migrated badly can hold anything. The cell skips
-     * what it cannot read rather than fataling on it.
-     */
-    #[Test]
-    public function a_non_string_in_the_accepts_list_is_skipped(): void
-    {
-        $_GET = ['location' => 'BS1'];
-
-        $html = $this->render($this->page(
-            members: [$this->twelfthStepper(id: 7)],
-            // @phpstan-ignore-next-line — deliberately malformed, as ACF allows.
-            views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', accepts: [123, 'accepts-male'])],
-        ));
-
-        $this->assertStringContainsString('<td>Male</td>', $this->normalise($html));
-    }
-
-    /** @return array<string, array{0: array<int, string>, 1: string}> */
-    public static function acceptsLists(): array
-    {
-        return [
-            'one'                  => [['accepts-male'], 'Male'],
-            'several, in order'    => [['accepts-male', 'accepts-non-binary'], 'Male, Non-Binary'],
-            // Unrecognised values are shown as stored rather than dropped, so
-            // unexpected data stays visible to an admin.
-            'an unknown value'     => [['accepts-alien'], 'accepts-alien'],
-            'blanks are skipped'   => [['', '   ', 'accepts-female'], 'Female'],
-            'nothing at all'       => [[], '—'],
-            'nothing but blanks'   => [['  '], '—'],
-        ];
-    }
-
+    // "Atlantis" is deliberately absent so the unresolvable branch has
+    // something to fail on.
+    return new NearestMembersResolver(
+        new InMemoryMemberRepository($members),
+        new StubGeocoder($places ?? [
+            'BS1'      => new Coordinates(51.45, -2.58),
+            'BS1 1AA'  => new Coordinates(51.46, -2.58),
+            'BS1 1AB'  => new Coordinates(51.47, -2.58),
+        ]),
+    );
+}
+
+/** @param array<int, string> $accepts */
+function twelfthStepper(int $id = 7, string $area = 'BS1 1AA', array $accepts = []): Member
+{
+    return new MemberStub(
+        id: $id,
+        anonymousName: 'Fixture ' . $id,
+        area: $area,
+        accepts: $accepts,
+        twelfthStepper: true,
+    );
+}
+
+/**
+ * Collapse the whitespace the templates indent their cells with, so a
+ * table-cell assertion can name the cell rather than its indentation.
+ */
+function normalise(string $html): string
+{
+    return (string) preg_replace('/\s+/', ' ', $html);
+}
+
+beforeEach(function () {
     // ── helpers ───────────────────────────────────────────────────────
 
     /**
@@ -551,55 +94,14 @@ final class MemberSearchPageTest extends ReachTestCase
      * @param array<int, MemberView>        $views
      * @param array<string, Coordinates>|null $places
      */
-    private function page(array $members = [], array $views = [], ?array $places = null): MemberSearchPage
-    {
+    $this->page = function (array $members = [], array $views = [], ?array $places = null): MemberSearchPage {
         return new MemberSearchPage(
-            $this->resolver($members, $places),
+            resolver($members, $places),
             new FakeMemberViewFactory($views),
         );
-    }
+    };
 
-    /**
-     * @param array<int, Member>              $members
-     * @param array<string, Coordinates>|null $places
-     */
-    private function resolver(array $members, ?array $places = null): NearestMembersResolver
-    {
-        // "Atlantis" is deliberately absent so the unresolvable branch has
-        // something to fail on.
-        return new NearestMembersResolver(
-            new InMemoryMemberRepository($members),
-            new StubGeocoder($places ?? [
-                'BS1'      => new Coordinates(51.45, -2.58),
-                'BS1 1AA'  => new Coordinates(51.46, -2.58),
-                'BS1 1AB'  => new Coordinates(51.47, -2.58),
-            ]),
-        );
-    }
-
-    /** @param array<int, string> $accepts */
-    private function twelfthStepper(int $id = 7, string $area = 'BS1 1AA', array $accepts = []): Member
-    {
-        return new MemberStub(
-            id: $id,
-            anonymousName: 'Fixture ' . $id,
-            area: $area,
-            accepts: $accepts,
-            twelfthStepper: true,
-        );
-    }
-
-    /**
-     * Collapse the whitespace the templates indent their cells with, so a
-     * table-cell assertion can name the cell rather than its indentation.
-     */
-    private function normalise(string $html): string
-    {
-        return (string) preg_replace('/\s+/', ' ', $html);
-    }
-
-    private function render(MemberSearchPage $page): string
-    {
+    $this->render = function (MemberSearchPage $page): string {
         ob_start();
         try {
             $page->render();
@@ -608,5 +110,436 @@ final class MemberSearchPageTest extends ReachTestCase
         }
 
         return $html;
+    };
+
+    $_GET = [];
+});
+
+afterEach(function () {
+    $_GET = [];
+});
+
+// ── registration ──────────────────────────────────────────────────
+test('register hooks the admin menu', function () {
+    ($this->page)()->register();
+
+    $this->assertActionAdded('admin_menu', false, 'the page should register its menu on admin_menu');
+});
+
+test('add menu attaches under the reach menu behind the personal data capability', function () {
+    ($this->page)()->addMenu();
+
+    $this->assertCount(1, WpState::$menus);
+    $this->assertSame('submenu', WpState::$menus[0]['type']);
+    $this->assertSame('reach', WpState::$menus[0]['parent']);
+    $this->assertSame(MemberSearchPage::PAGE_SLUG, WpState::$menus[0]['slug']);
+    $this->assertSame(PersonalDataPolicy::VIEW_CAPABILITY, WpState::$menus[0]['cap']);
+});
+
+// ── capability guard ──────────────────────────────────────────────
+/**
+ * The point of the gate: a search surfaces mobile numbers, so revoking
+ * Scrutiny's personal-data capability has to close the screen even for a
+ * user who can otherwise do everything.
+ */
+test('the search renders nothing without the personal data capability', function () {
+    WpState::$deniedCaps = [PersonalDataPolicy::VIEW_CAPABILITY];
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(members: [twelfthStepper()]));
+
+    $this->assertSame('', $html);
+    $this->assertStringNotContainsString(FAKE_MOBILE, $html);
+});
+
+test('the search renders for a user who lacks manage options', function () {
+    WpState::$deniedCaps = ['manage_options'];
+
+    $this->assertStringContainsString('Find a 12th Stepper', ($this->render)(($this->page)()));
+});
+
+// ── the search form ───────────────────────────────────────────────
+test('an empty screen shows the form and runs no search', function () {
+    $html = ($this->render)(($this->page)(members: [twelfthStepper()]));
+
+    $this->assertStringContainsString('name="location"', $html);
+    $this->assertStringContainsString('value="' . MemberSearchPage::PAGE_SLUG . '"', $html);
+    $this->assertStringNotContainsString('wp-list-table', $html, 'no search, no results table');
+    $this->assertStringNotContainsString(FAKE_MOBILE, $html);
+});
+
+test('the form offers the three gender filters by their stored option values', function () {
+    $html = ($this->render)(($this->page)());
+
+    // The stored ACF option value, not the label — sending "Male" matches
+    // nothing, because the resolver does not strip the accepts- prefix.
+    foreach (['accepts-male', 'accepts-female', 'accepts-non-binary'] as $value) {
+        $this->assertStringContainsString('value="' . $value . '"', $html);
     }
-}
+    $this->assertStringContainsString('Non-Binary', $html);
+});
+
+test('the submitted search is echoed back into the form', function () {
+    $_GET = ['location' => 'Bedminster', 'accepts' => ['accepts-female']];
+
+    $html = ($this->render)(($this->page)());
+
+    $this->assertStringContainsString('value="Bedminster"', $html);
+    $this->assertMatchesRegularExpression('/value="accepts-female"\s+checked="checked"/', $html);
+    $this->assertStringNotContainsString('value="accepts-male"' . "\n" . ' checked', $html);
+});
+
+test('an accepts value that is not one we offer is dropped', function (mixed $raw) {
+    $_GET = ['location' => 'BS1', 'accepts' => $raw];
+
+    // Every fixture member accepts men only. If an unusable filter value
+    // reached the resolver it would match nobody, so the woman-only member
+    // coming back proves the filter was dropped rather than applied.
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7, accepts: ['accepts-male'])],
+        views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
+    ));
+
+    $this->assertStringContainsString('Bob T.', $html);
+})->with('unusableAccepts');
+
+/** @return array<string, array{0: mixed}> */
+dataset('unusableAccepts', function (): array {
+    return [
+        'a label rather than an option value' => [['Male']],
+        'a value we do not offer'             => [['accepts-other']],
+        'an empty string'                     => [['']],
+        'not a list at all'                   => ['accepts-male'],
+        'a nested array'                      => [[['accepts-male']]],
+    ];
+});
+
+test('a gender filter that we do offer is applied', function () {
+    $_GET = ['location' => 'BS1', 'accepts' => ['accepts-female']];
+
+    $html = ($this->render)(($this->page)(
+        members: [
+            twelfthStepper(id: 7, area: 'BS1 1AA', accepts: ['accepts-male']),
+            twelfthStepper(id: 8, area: 'BS1 1AB', accepts: ['accepts-female']),
+        ],
+        views: [
+            new MemberViewStub(id: 7, anonymousName: 'Bob T.'),
+            new MemberViewStub(id: 8, anonymousName: 'Carol M.'),
+        ],
+    ));
+
+    $this->assertStringContainsString('Carol M.', $html);
+    $this->assertStringNotContainsString('Bob T.', $html);
+});
+
+// ── results ───────────────────────────────────────────────────────
+test('an unresolvable area says so instead of an empty table', function () {
+    $_GET = ['location' => 'Atlantis'];
+
+    $html = ($this->render)(($this->page)(members: [twelfthStepper()]));
+
+    $this->assertStringContainsString('Could not find the area', $html);
+    $this->assertStringContainsString('Atlantis', $html);
+    $this->assertStringNotContainsString('wp-list-table', $html);
+});
+
+test('a resolved area with no matching members says so', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(members: []));
+
+    $this->assertStringContainsString('No 12th-steppers match this search.', $html);
+});
+
+test('a result row carries the name area distance accepts and number', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7, area: 'BS1 1AA', accepts: ['accepts-male'])],
+        views: [new MemberViewStub(
+            id: 7,
+            anonymousName: 'Bob T.',
+            mobileNumber: FAKE_MOBILE,
+            area: 'BS1 1AA',
+            accepts: ['accepts-male'],
+        )],
+    ));
+
+    $this->assertStringContainsString('>Bob T.</a>', $html);
+    $this->assertStringContainsString('BS1 1AA', $html);
+    $this->assertStringContainsString('Male', $html);
+    // The href is percent-encoded and the link text is not: esc_url()
+    // turns the space in the number into %20, while esc_html() leaves it
+    // alone. Asserting the raw number in both positions described output
+    // WordPress would never emit, and passed only while the test double
+    // returned its input untouched.
+    $this->assertStringContainsString(
+        '<a href="tel:' . str_replace(' ', '%20', FAKE_MOBILE) . '">' . FAKE_MOBILE . '</a>',
+        $html
+    );
+    $this->assertMatchesRegularExpression('/\d+\.\d km/', $html, 'distance is shown to one decimal place');
+});
+
+/**
+ * @param array<int, Member>     $members
+ * @param array<int, MemberView> $views
+ */
+test('the result count agrees with itself', function (array $members, array $views, string $expected) {
+    $_GET = ['location' => 'BS1'];
+
+    $this->assertMatchesRegularExpression($expected, ($this->render)(($this->page)($members, $views)));
+})->with('resultCounts');
+
+/** @return array<string, array{0: array<int, Member>, 1: array<int, MemberView>, 2: string}> */
+dataset('resultCounts', function (): array {
+    return [
+        'none' => [[], [], '/0\s+12th-steppers found\./'],
+        'one'  => [
+            [new MemberStub(id: 7, anonymousName: 'Bob T.', area: 'BS1 1AA', twelfthStepper: true)],
+            [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
+            '/1\s+12th-stepper found\./',
+        ],
+        'several' => [
+            [
+                new MemberStub(id: 7, anonymousName: 'Bob T.', area: 'BS1 1AA', twelfthStepper: true),
+                new MemberStub(id: 8, anonymousName: 'Carol M.', area: 'BS1 1AB', twelfthStepper: true),
+            ],
+            [
+                new MemberViewStub(id: 7, anonymousName: 'Bob T.'),
+                new MemberViewStub(id: 8, anonymousName: 'Carol M.'),
+            ],
+            '/2\s+12th-steppers found\./',
+        ],
+    ];
+});
+
+/**
+ * A member covering several neighbourhoods stores them pipe-separated. The
+ * area column has to show the entry the reported distance belongs to, not
+ * the raw field — otherwise the row reads "Kingswood|Hanham, 2.1 km" and
+ * the number belongs to neither.
+ */
+test('the area shown is the one the distance was measured to', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7, area: 'Kingswood|Hanham')],
+        views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', area: 'Kingswood|Hanham')],
+        places: [
+            'BS1'       => new Coordinates(51.45, -2.58),
+            'Kingswood' => new Coordinates(51.90, -2.58),
+            // Nearer to the origin, so this is the entry that wins.
+            'Hanham'    => new Coordinates(51.46, -2.58),
+        ],
+    ));
+
+    $this->assertStringContainsString('>Hanham</td>', normalise($html));
+    $this->assertStringNotContainsString('Kingswood|Hanham', $html);
+});
+
+/**
+ * The defensive arm of the distance cell: a view the resolver never scored
+ * gets a dash rather than a distance belonging to somebody else.
+ */
+test('a view the resolver never scored shows no distance', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $page = new MemberSearchPage(
+        resolver([twelfthStepper(id: 7, area: 'BS1 1AA')]),
+        new FakeMemberViewFactory(
+            [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
+            [new MemberViewStub(id: 99, anonymousName: 'Nobody Asked')],
+        ),
+    );
+
+    $html = normalise(($this->render)($page));
+
+    $this->assertStringContainsString('Nobody Asked', $html);
+    $this->assertStringContainsString('nowrap;"> &mdash; </td>', $html);
+    // The member who *was* scored still gets a real distance.
+    $this->assertMatchesRegularExpression('/\d+\.\d km/', $html);
+});
+
+// ── individual cells ──────────────────────────────────────────────
+test('a member with no anonymous name is labelled rather than blank', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(id: 7, anonymousName: '  ')],
+    ));
+
+    $this->assertStringContainsString('(no name)', $html);
+});
+
+/**
+ * get_edit_post_link() answers null when the current user cannot edit the
+ * member. The name still has to appear — as plain text rather than a link
+ * that would only lead to a permissions error.
+ */
+test('a member the admin cannot edit is named without a link', function () {
+    $_GET = ['location' => 'BS1'];
+    when('get_edit_post_link')->justReturn(null);
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.')],
+    ));
+
+    $this->assertStringContainsString('<td>Bob T.</td>', normalise($html));
+    $this->assertStringNotContainsString('<a href="https://example.test/wp-admin/post.php', $html);
+});
+
+test('a member with no number on file shows a dash not an empty link', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', mobileNumber: '   ')],
+    ));
+
+    $this->assertStringContainsString('<em>&mdash;</em>', $html);
+    $this->assertStringNotContainsString('tel:', $html);
+});
+
+/**
+ * The landline gets its own dialable column: a member who asked to be
+ * rung at home is no use to an admin whose only column is the mobile.
+ */
+test('the landline is shown as a dialable number of its own', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(
+            id: 7,
+            anonymousName: 'Bob T.',
+            landlineNumber: FAKE_LANDLINE,
+        )],
+    ));
+
+    $this->assertStringContainsString('>Landline</th>', $html);
+    $this->assertStringContainsString(
+        '<a href="tel:' . str_replace(' ', '%20', FAKE_LANDLINE) . '">' . FAKE_LANDLINE . '</a>',
+        $html
+    );
+});
+
+test('the number the member asked to be rung on is tagged', function (
+    PreferredContact $preference,
+    string $taggedNumber,
+    string $untaggedNumber,
+) {
+    $_GET = ['location' => 'BS1'];
+
+    $html = normalise(($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(
+            id: 7,
+            anonymousName: 'Bob T.',
+            mobileNumber: FAKE_MOBILE,
+            landlineNumber: FAKE_LANDLINE,
+            preferredContact: $preference,
+        )],
+    )));
+
+    $this->assertStringContainsString(
+        '>' . $taggedNumber . '</a> <span class="description">preferred</span>',
+        $html
+    );
+    $this->assertStringNotContainsString(
+        '>' . $untaggedNumber . '</a> <span class="description">preferred</span>',
+        $html
+    );
+})->with('preferences');
+
+/** @return array<string, array{0: PreferredContact, 1: string, 2: string}> */
+dataset('preferences', function (): array {
+    return [
+        'prefers the mobile'   => [PreferredContact::Mobile, FAKE_MOBILE, FAKE_LANDLINE],
+        'prefers the landline' => [PreferredContact::Landline, FAKE_LANDLINE, FAKE_MOBILE],
+    ];
+});
+
+/**
+ * With one number on file there is nothing to prefer it over, so the row
+ * says nothing about the preference — including when the stored value
+ * still says Landline for a member whose landline has since been deleted,
+ * which ACF leaves behind because it keeps the last saved choice for a
+ * field its conditional logic has hidden.
+ */
+test('one number on file is never tagged preferred', function (
+    string $mobile,
+    string $landline,
+    PreferredContact $preference,
+) {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(
+            id: 7,
+            anonymousName: 'Bob T.',
+            mobileNumber: $mobile,
+            landlineNumber: $landline,
+            preferredContact: $preference,
+        )],
+    ));
+
+    $this->assertStringNotContainsString('preferred', $html);
+    $this->assertStringContainsString('<em>&mdash;</em>', $html, 'the missing number still shows a dash');
+})->with('lonelyNumbers');
+
+/** @return array<string, array{0: string, 1: string, 2: PreferredContact}> */
+dataset('lonelyNumbers', function (): array {
+    return [
+        'mobile only'                     => [FAKE_MOBILE, '', PreferredContact::Mobile],
+        'landline only'                   => ['', FAKE_LANDLINE, PreferredContact::Landline],
+        'a preference for a deleted line' => [FAKE_MOBILE, '  ', PreferredContact::Landline],
+    ];
+});
+
+/**
+ * @param array<int, string> $accepts
+ */
+test('the accepts column reads as labels', function (array $accepts, string $expected) {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', accepts: $accepts)],
+    ));
+
+    $this->assertStringContainsString('<td>' . $expected . '</td>', normalise($html));
+})->with('acceptsLists');
+
+/**
+ * The accepts list comes back from ACF, which types nothing: a checkbox
+ * field edited by hand or migrated badly can hold anything. The cell skips
+ * what it cannot read rather than fataling on it.
+ */
+test('a non string in the accepts list is skipped', function () {
+    $_GET = ['location' => 'BS1'];
+
+    $html = ($this->render)(($this->page)(
+        members: [twelfthStepper(id: 7)],
+        // @phpstan-ignore-next-line — deliberately malformed, as ACF allows.
+        views: [new MemberViewStub(id: 7, anonymousName: 'Bob T.', accepts: [123, 'accepts-male'])],
+    ));
+
+    $this->assertStringContainsString('<td>Male</td>', normalise($html));
+});
+
+/** @return array<string, array{0: array<int, string>, 1: string}> */
+dataset('acceptsLists', function (): array {
+    return [
+        'one'                  => [['accepts-male'], 'Male'],
+        'several, in order'    => [['accepts-male', 'accepts-non-binary'], 'Male, Non-Binary'],
+        // Unrecognised values are shown as stored rather than dropped, so
+        // unexpected data stays visible to an admin.
+        'an unknown value'     => [['accepts-alien'], 'accepts-alien'],
+        'blanks are skipped'   => [['', '   ', 'accepts-female'], 'Female'],
+        'nothing at all'       => [[], '—'],
+        'nothing but blanks'   => [['  '], '—'],
+    ];
+});

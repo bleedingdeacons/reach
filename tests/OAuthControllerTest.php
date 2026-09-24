@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
-use Reach\Tests\ReachTestCase;
 use Reach\Core\RateLimiter;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
@@ -22,10 +21,9 @@ use Reach\Session\SessionRevocationList;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use Reach\Tests\Fixtures\ConfigurableProvider;
 use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
-
-require_once __DIR__ . '/PasswordAuthenticatorTest.php'; // MemberStub(Repository)
 
 /**
  * Tests for {@see OAuthController} — the authentication surface itself.
@@ -38,412 +36,36 @@ require_once __DIR__ . '/PasswordAuthenticatorTest.php'; // MemberStub(Repositor
  * fake provider stands in for a real OAuth provider so the controller logic
  * is tested in isolation from JWT verification (covered separately).
  */
-final class OAuthControllerTest extends ReachTestCase
+
+/**
+ * Exhaust the per-IP OAuth budget through the same RateLimiter and bucket
+ * the controller uses, rather than by reaching into its internals.
+ */
+function spendTheOAuthBudget(): void
 {
-    private StateStore $state;
+    $limiter = new RateLimiter();
+    $key = 'oauth:' . $limiter->clientIp();
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        WpState::$transients = [];
-        $this->state = new StateStore();
-        $_COOKIE = [];
+    // One past the cap, so the next call from the controller is over it.
+    for ($i = 0; $i < 121; $i++) {
+        $limiter->overLimit($key, 120, 15 * 60);
     }
-
-    protected function tearDown(): void
-    {
-        $_COOKIE = [];
-        parent::tearDown();
-    }
-
-    // --- start ------------------------------------------------------------
-
-    public function testStartRejectsUnknownProvider(): void
-    {
-        $controller = $this->controller(new ProviderRegistry());
-        $result = $controller->start(new WP_REST_Request(['provider' => 'nope']));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_unknown_provider', $result->get_error_code());
-        $this->assertSame(400, $result->get_error_data()['status'] ?? null);
-    }
-
-    public function testStartRejectsClientSideProvider(): void
-    {
-        $registry = new ProviderRegistry();
-        $registry->register($this->provider('apple', serverSide: false));
-        $result = $this->controller($registry)->start(new WP_REST_Request(['provider' => 'apple']));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_unknown_provider', $result->get_error_code());
-    }
-
-    public function testStartRedirectsToProviderAuthorisationUrl(): void
-    {
-        $registry = new ProviderRegistry();
-        $registry->register($this->provider('google', serverSide: true));
-
-        $result = $this->controller($registry)->start(new WP_REST_Request(['provider' => 'google']));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(302, $result->get_status());
-        $this->assertSame('https://provider.test/auth', $result->get_headers()['Location'] ?? null);
-    }
-
-    // --- callback (server-side flow) --------------------------------------
-
-    public function testCallbackWithUnknownStateRedirectsToSigninFailed(): void
-    {
-        $result = $this->controller($this->registryWith('google'))
-            ->callback(new WP_REST_Request(['state' => 'never-issued', 'code' => 'x']));
-
-        $this->assertRedirectsToSigninError($result, 'signin_failed');
-    }
-
-    public function testCallbackWithFailedExchangeRedirectsToSigninFailed(): void
-    {
-        $registry = $this->registryWith('google', identity: null); // handleCallback → null
-        $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
-
-        $result = $this->controller($registry)
-            ->callback(new WP_REST_Request(['state' => $state, 'code' => 'bad']));
-
-        $this->assertRedirectsToSigninError($result, 'signin_failed');
-    }
-
-    public function testCallbackRefusesAnonymisedRelayEmail(): void
-    {
-        $identity = new VerifiedIdentity('x@privaterelay.facebook.com', 'facebook', 'sub-1');
-        $registry = $this->registryWith('facebook', identity: $identity);
-        $state = $this->state->issue('facebook', 'https://example.test/reach/home')['state'];
-
-        $result = $this->controller($registry, $this->membersWith($identity->email))
-            ->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
-
-        $this->assertRedirectsToSigninError($result, 'email_required');
-    }
-
-    public function testCallbackRejectsIneligibleMember(): void
-    {
-        $identity = new VerifiedIdentity('nobody@example.com', 'google', 'sub-1');
-        $registry = $this->registryWith('google', identity: $identity);
-        // Member with neither outreach role.
-        $members = new InMemoryMemberRepository([new MemberStub('nobody@example.com', false, false)]);
-        $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
-
-        $result = $this->controller($registry, $members)
-            ->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
-
-        $this->assertRedirectsToSigninError($result, 'not_eligible');
-    }
-
-    public function testCallbackHappyPathIssuesSessionAndRedirectsToReturnTo(): void
-    {
-        $identity = new VerifiedIdentity('member@example.com', 'google', 'sub-9');
-        $registry = $this->registryWith('google', identity: $identity);
-        $members = $this->membersWith('member@example.com');
-        $state = $this->state->issue('google', 'https://example.test/reach/find')['state'];
-
-        $result = $this->controller($registry, $members)
-            ->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(302, $result->get_status());
-        // return_to is honoured (and, being same-host, survives the clamp).
-        $this->assertSame('https://example.test/reach/find', $result->get_headers()['Location'] ?? null);
-    }
-
-    public function testCallbackIsSingleUseState(): void
-    {
-        $identity = new VerifiedIdentity('member@example.com', 'google', 'sub-9');
-        $registry = $this->registryWith('google', identity: $identity);
-        $members = $this->membersWith('member@example.com');
-        $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
-        $controller = $this->controller($registry, $members);
-
-        $controller->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
-        // Replaying the same state must now fail — the transient was consumed.
-        $replay = $controller->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
-        $this->assertRedirectsToSigninError($replay, 'signin_failed');
-    }
-
-    // --- apple (client-side POST) -----------------------------------------
-
-    public function testAppleRejectsInvalidState(): void
-    {
-        $result = $this->controller($this->registryWith('apple'))
-            ->apple(new WP_REST_Request(['id_token' => 't', 'state' => 'nope']));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_invalid_state', $result->get_error_code());
-    }
-
-    public function testAppleRejectsStateIssuedForAnotherProvider(): void
-    {
-        $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
-        $result = $this->controller($this->registryWith('apple'))
-            ->apple(new WP_REST_Request(['id_token' => 't', 'state' => $state]));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_invalid_state', $result->get_error_code());
-    }
-
-    public function testAppleReturnsAuthErrorWhenTokenInvalid(): void
-    {
-        $registry = $this->registryWith('apple', identity: null, serverSide: false); // verifyIdToken → null
-        $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
-
-        $result = $this->controller($registry)
-            ->apple(new WP_REST_Request(['id_token' => 'bad', 'state' => $state]));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_signin_failed', $result->get_error_code());
-        $this->assertSame(401, $result->get_error_data()['status'] ?? null);
-    }
-
-    public function testAppleHappyPathIssuesSessionAndReturnsRedirectJson(): void
-    {
-        $identity = new VerifiedIdentity('apple-user@icloud.com', 'apple', 'sub-a');
-        $registry = $this->registryWith('apple', identity: $identity, serverSide: false);
-        $members = $this->membersWith('apple-user@icloud.com');
-        $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
-
-        $result = $this->controller($registry, $members)
-            ->apple(new WP_REST_Request(['id_token' => 'ok', 'state' => $state]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(200, $result->get_status());
-        $this->assertArrayHasKey('redirect', $result->get_data());
-    }
-
-    public function testAppleRejectsIneligibleMember(): void
-    {
-        $identity = new VerifiedIdentity('apple-user@icloud.com', 'apple', 'sub-a');
-        $registry = $this->registryWith('apple', identity: $identity, serverSide: false);
-        $members = new InMemoryMemberRepository([new MemberStub('apple-user@icloud.com', false, false)]);
-        $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
-
-        $result = $this->controller($registry, $members)
-            ->apple(new WP_REST_Request(['id_token' => 'ok', 'state' => $state]));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_not_eligible', $result->get_error_code());
-        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
-    }
-
-    // --- appleStart / signout ---------------------------------------------
-
-    public function testAppleStartReturnsStateAndNonce(): void
-    {
-        $result = $this->controller($this->registryWith('apple'))->appleStart(new WP_REST_Request());
-        $data = $result->get_data();
-        $this->assertArrayHasKey('state', $data);
-        $this->assertArrayHasKey('nonce', $data);
-        $this->assertNotSame('', $data['state']);
-    }
-
-    public function testSignoutAcknowledgesWhenNobodyIsSignedIn(): void
-    {
-        // No cookie, so nothing to revoke and no token to demand. The
-        // caller still gets the outcome it asked for: saying otherwise
-        // would tell an unauthenticated prober whether a cookie was
-        // valid.
-        $result = $this->controller($this->registryWith('google'))->signout(new WP_REST_Request());
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertTrue($result->get_data()['signed_out']);
-    }
-
-    public function testSignoutRevokesTheSessionServerSide(): void
-    {
-        $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
-        $session = $this->sessionFor('user@example.com');
-        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
-
-        $revocations = new SessionRevocationList();
-        $controller  = $this->controllerWithRevocations($members, $revocations);
-
-        $result = $controller->signout($this->withSessionToken(new WP_REST_Request(), $session));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertTrue($result->get_data()['signed_out']);
-
-        // The point of the whole exercise: the token is dead even
-        // though it is still signed, unexpired, and would still verify.
-        $this->assertTrue($revocations->isRevoked($session->id));
-    }
-
-    /**
-     * A revoked session stops being accepted everywhere, not merely in
-     * the browser that pressed Sign out — which is what makes sign-out
-     * mean something for a stateless cookie.
-     */
-    public function testRevokedSessionIsNoLongerAccepted(): void
-    {
-        $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
-        $session = $this->sessionFor('user@example.com');
-        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
-
-        $revocations = new SessionRevocationList();
-        $current = new CurrentSession(new SessionCookie(), $members, $revocations);
-
-        $this->assertNotNull($current->get(), 'sanity: the session is good before revocation');
-
-        $revocations->revoke($session->id, $session->expiresAt, time());
-
-        $this->assertNull(
-            (new CurrentSession(new SessionCookie(), $members, $revocations))->get(),
-            'a revoked session must not be accepted, however valid its signature',
-        );
-    }
-
-    public function testSignoutRefusesWithoutTheSessionToken(): void
-    {
-        $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
-        $session = $this->sessionFor('user@example.com');
-        $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
-
-        $revocations = new SessionRevocationList();
-        $controller  = $this->controllerWithRevocations($members, $revocations);
-
-        // No X-Reach-Token header: a cross-site page must not be able to
-        // sign a responder out mid-shift.
-        $result = $controller->signout(new WP_REST_Request());
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_invalid_session_token', $result->get_error_code());
-        $this->assertSame(403, $result->get_error_data()['status'] ?? null);
-        $this->assertFalse($revocations->isRevoked($session->id));
-    }
-
-    // --- rate limiting ----------------------------------------------------
-
-    /**
-     * This controller was the only unauthenticated one in Reach with no
-     * RateLimiter at all. Each /oauth/start writes a StateStore transient
-     * that only a daily cron sweeps, and /oauth/apple runs a JWT header parse
-     * and JWKS lookup for anyone who asks.
-     */
-    public function testStartIsRateLimitedPerIp(): void
-    {
-        $registry = new ProviderRegistry();
-        $registry->register($this->provider('google', serverSide: true));
-        $controller = $this->controller($registry);
-
-        $this->spendTheOAuthBudget();
-
-        $result = $controller->start(new WP_REST_Request(['provider' => 'google']));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_rate_limited', $result->get_error_code());
-        $this->assertSame(429, $result->get_error_data()['status'] ?? null);
-    }
-
-    public function testAppleStartIsRateLimitedPerIp(): void
-    {
-        $controller = $this->controller(new ProviderRegistry());
-
-        $this->spendTheOAuthBudget();
-
-        $result = $controller->appleStart(new WP_REST_Request([]));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_rate_limited', $result->get_error_code());
-    }
-
-    public function testCallbackIsRateLimitedPerIp(): void
-    {
-        $controller = $this->controller(new ProviderRegistry());
-
-        $this->spendTheOAuthBudget();
-
-        $result = $controller->callback(new WP_REST_Request(['state' => 'x', 'code' => 'y']));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_rate_limited', $result->get_error_code());
-    }
-
-    public function testAppleIsRateLimitedPerIp(): void
-    {
-        $controller = $this->controller(new ProviderRegistry());
-
-        $this->spendTheOAuthBudget();
-
-        $result = $controller->apple(new WP_REST_Request(['id_token' => 'x', 'state' => 'y']));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_rate_limited', $result->get_error_code());
-    }
-
-    public function testTheFourRoutesShareOneBudget(): void
-    {
-        // Steps of one flow, so one bucket: an attacker free to spend a fresh
-        // allowance on each route would simply pick the cheapest.
-        $registry = new ProviderRegistry();
-        $registry->register($this->provider('google', serverSide: true));
-        $controller = $this->controller($registry);
-
-        $this->spendTheOAuthBudget();
-
-        foreach (
-            [
-                'start'      => $controller->start(new WP_REST_Request(['provider' => 'google'])),
-                'appleStart' => $controller->appleStart(new WP_REST_Request([])),
-                'callback'   => $controller->callback(new WP_REST_Request(['state' => 'x', 'code' => 'y'])),
-                'apple'      => $controller->apple(new WP_REST_Request(['id_token' => 'x', 'state' => 'y'])),
-            ] as $route => $result
-        ) {
-            $this->assertInstanceOf(WP_Error::class, $result, $route . ' should be refused');
-            $this->assertSame('reach_rate_limited', $result->get_error_code(), $route . ' should be refused');
-        }
-    }
-
-    public function testSignOutIsNotRateLimited(): void
-    {
-        // Refusing to let somebody sign out is a poor way to defend anything,
-        // and it is cookie-authenticated and CSRF-checked already.
-        $controller = $this->controller(new ProviderRegistry());
-
-        $this->spendTheOAuthBudget();
-
-        $result = $controller->signout(new WP_REST_Request([]));
-
-        $code = $result instanceof WP_Error ? $result->get_error_code() : '';
-        $this->assertNotSame('reach_rate_limited', $code);
-    }
-
-    public function testAWorkingSignInIsNotRefused(): void
-    {
-        // The limit has to be far enough above real usage that a shared CDN
-        // edge is not throttled. Nothing has been spent here.
-        $registry = new ProviderRegistry();
-        $registry->register($this->provider('google', serverSide: true));
-
-        $result = $this->controller($registry)->start(new WP_REST_Request(['provider' => 'google']));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-    }
-
-    /**
-     * Exhaust the per-IP OAuth budget through the same RateLimiter and bucket
-     * the controller uses, rather than by reaching into its internals.
-     */
-    private function spendTheOAuthBudget(): void
-    {
-        $limiter = new RateLimiter();
-        $key = 'oauth:' . $limiter->clientIp();
-
-        // One past the cap, so the next call from the controller is over it.
-        for ($i = 0; $i < 121; $i++) {
-            $limiter->overLimit($key, 120, 15 * 60);
-        }
-    }
-
+}
+
+function membersWith(string $email): InMemoryMemberRepository
+{
+    // Default MemberStub is a 12th-stepper, so it passes the gate.
+    return new InMemoryMemberRepository([new MemberStub($email)]);
+}
+
+function provider(string $name, bool $serverSide = true, ?VerifiedIdentity $identity = null): OAuthProvider
+{
+    return new ConfigurableProvider($name, $serverSide, $identity);
+}
+
+beforeEach(function () {
     // --- helpers ----------------------------------------------------------
-
-    private function controller(ProviderRegistry $registry, ?InMemoryMemberRepository $members = null): OAuthController
-    {
+    $this->controller = function (ProviderRegistry $registry, ?InMemoryMemberRepository $members = null): OAuthController {
         $repository = $members ?? new InMemoryMemberRepository([]);
 
         return new OAuthController(
@@ -469,18 +91,18 @@ final class OAuthControllerTest extends ReachTestCase
             new SessionCsrf(),
             new RateLimiter(),
         );
-    }
+    };
 
     /**
      * A controller sharing an explicit revocation list, so a test can
      * inspect what sign-out actually recorded.
      */
-    private function controllerWithRevocations(
+    $this->controllerWithRevocations = function (
         InMemoryMemberRepository $members,
         SessionRevocationList $revocations
     ): OAuthController {
         return new OAuthController(
-            $this->registryWith('google'),
+            ($this->registryWith)('google'),
             $this->state,
             new SessionCookie(),
             $members,
@@ -492,71 +114,365 @@ final class OAuthControllerTest extends ReachTestCase
             new SessionCsrf(),
             new RateLimiter(),
         );
-    }
+    };
 
-    private function registryWith(string $name, ?VerifiedIdentity $identity = null, bool $serverSide = true): ProviderRegistry
-    {
+    $this->registryWith = function (string $name, ?VerifiedIdentity $identity = null, bool $serverSide = true): ProviderRegistry {
         $registry = new ProviderRegistry();
-        $registry->register($this->provider($name, $serverSide, $identity));
+        $registry->register(provider($name, $serverSide, $identity));
         return $registry;
-    }
+    };
 
-    private function membersWith(string $email): InMemoryMemberRepository
-    {
-        // Default MemberStub is a 12th-stepper, so it passes the gate.
-        return new InMemoryMemberRepository([new MemberStub($email)]);
-    }
-
-    private function provider(string $name, bool $serverSide = true, ?VerifiedIdentity $identity = null): OAuthProvider
-    {
-        return new ConfigurableProvider($name, $serverSide, $identity);
-    }
-
-    private function assertRedirectsToSigninError(mixed $result, string $slug): void
-    {
+    $this->assertRedirectsToSigninError = function (mixed $result, string $slug): void {
         $this->assertInstanceOf(WP_REST_Response::class, $result);
         $this->assertSame(302, $result->get_status());
         $location = $result->get_headers()['Location'] ?? '';
         $this->assertStringContainsString('/reach/signin', $location);
         $this->assertStringContainsString('reach_error=' . $slug, $location);
-    }
-}
+    };
+
+    WpState::$transients = [];
+    $this->state = new StateStore();
+    $_COOKIE = [];
+});
+
+afterEach(function () {
+    $_COOKIE = [];
+});
+
+// --- start ------------------------------------------------------------
+test('start rejects unknown provider', function () {
+    $controller = ($this->controller)(new ProviderRegistry());
+    $result = $controller->start(new WP_REST_Request(['provider' => 'nope']));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_unknown_provider', $result->get_error_code());
+    $this->assertSame(400, $result->get_error_data()['status'] ?? null);
+});
+
+test('start rejects client side provider', function () {
+    $registry = new ProviderRegistry();
+    $registry->register(provider('apple', serverSide: false));
+    $result = ($this->controller)($registry)->start(new WP_REST_Request(['provider' => 'apple']));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_unknown_provider', $result->get_error_code());
+});
+
+test('start redirects to provider authorisation url', function () {
+    $registry = new ProviderRegistry();
+    $registry->register(provider('google', serverSide: true));
+
+    $result = ($this->controller)($registry)->start(new WP_REST_Request(['provider' => 'google']));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(302, $result->get_status());
+    $this->assertSame('https://provider.test/auth', $result->get_headers()['Location'] ?? null);
+});
+
+// --- callback (server-side flow) --------------------------------------
+test('callback with unknown state redirects to signin failed', function () {
+    $result = ($this->controller)(($this->registryWith)('google'))
+        ->callback(new WP_REST_Request(['state' => 'never-issued', 'code' => 'x']));
+
+    ($this->assertRedirectsToSigninError)($result, 'signin_failed');
+});
+
+test('callback with failed exchange redirects to signin failed', function () {
+    $registry = ($this->registryWith)('google', identity: null); // handleCallback → null
+    $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
+
+    $result = ($this->controller)($registry)
+        ->callback(new WP_REST_Request(['state' => $state, 'code' => 'bad']));
+
+    ($this->assertRedirectsToSigninError)($result, 'signin_failed');
+});
+
+test('callback refuses anonymised relay email', function () {
+    $identity = new VerifiedIdentity('x@privaterelay.facebook.com', 'facebook', 'sub-1');
+    $registry = ($this->registryWith)('facebook', identity: $identity);
+    $state = $this->state->issue('facebook', 'https://example.test/reach/home')['state'];
+
+    $result = ($this->controller)($registry, membersWith($identity->email))
+        ->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
+
+    ($this->assertRedirectsToSigninError)($result, 'email_required');
+});
+
+test('callback rejects ineligible member', function () {
+    $identity = new VerifiedIdentity('nobody@example.com', 'google', 'sub-1');
+    $registry = ($this->registryWith)('google', identity: $identity);
+    // Member with neither outreach role.
+    $members = new InMemoryMemberRepository([new MemberStub('nobody@example.com', false, false)]);
+    $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
+
+    $result = ($this->controller)($registry, $members)
+        ->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
+
+    ($this->assertRedirectsToSigninError)($result, 'not_eligible');
+});
+
+test('callback happy path issues session and redirects to return to', function () {
+    $identity = new VerifiedIdentity('member@example.com', 'google', 'sub-9');
+    $registry = ($this->registryWith)('google', identity: $identity);
+    $members = membersWith('member@example.com');
+    $state = $this->state->issue('google', 'https://example.test/reach/find')['state'];
+
+    $result = ($this->controller)($registry, $members)
+        ->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(302, $result->get_status());
+    // return_to is honoured (and, being same-host, survives the clamp).
+    $this->assertSame('https://example.test/reach/find', $result->get_headers()['Location'] ?? null);
+});
+
+test('callback is single use state', function () {
+    $identity = new VerifiedIdentity('member@example.com', 'google', 'sub-9');
+    $registry = ($this->registryWith)('google', identity: $identity);
+    $members = membersWith('member@example.com');
+    $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
+    $controller = ($this->controller)($registry, $members);
+
+    $controller->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
+    // Replaying the same state must now fail — the transient was consumed.
+    $replay = $controller->callback(new WP_REST_Request(['state' => $state, 'code' => 'ok']));
+    ($this->assertRedirectsToSigninError)($replay, 'signin_failed');
+});
+
+// --- apple (client-side POST) -----------------------------------------
+test('apple rejects invalid state', function () {
+    $result = ($this->controller)(($this->registryWith)('apple'))
+        ->apple(new WP_REST_Request(['id_token' => 't', 'state' => 'nope']));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_invalid_state', $result->get_error_code());
+});
+
+test('apple rejects state issued for another provider', function () {
+    $state = $this->state->issue('google', 'https://example.test/reach/home')['state'];
+    $result = ($this->controller)(($this->registryWith)('apple'))
+        ->apple(new WP_REST_Request(['id_token' => 't', 'state' => $state]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_invalid_state', $result->get_error_code());
+});
+
+test('apple returns auth error when token invalid', function () {
+    $registry = ($this->registryWith)('apple', identity: null, serverSide: false); // verifyIdToken → null
+    $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
+
+    $result = ($this->controller)($registry)
+        ->apple(new WP_REST_Request(['id_token' => 'bad', 'state' => $state]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_signin_failed', $result->get_error_code());
+    $this->assertSame(401, $result->get_error_data()['status'] ?? null);
+});
+
+test('apple happy path issues session and returns redirect json', function () {
+    $identity = new VerifiedIdentity('apple-user@icloud.com', 'apple', 'sub-a');
+    $registry = ($this->registryWith)('apple', identity: $identity, serverSide: false);
+    $members = membersWith('apple-user@icloud.com');
+    $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
+
+    $result = ($this->controller)($registry, $members)
+        ->apple(new WP_REST_Request(['id_token' => 'ok', 'state' => $state]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(200, $result->get_status());
+    $this->assertArrayHasKey('redirect', $result->get_data());
+});
+
+test('apple rejects ineligible member', function () {
+    $identity = new VerifiedIdentity('apple-user@icloud.com', 'apple', 'sub-a');
+    $registry = ($this->registryWith)('apple', identity: $identity, serverSide: false);
+    $members = new InMemoryMemberRepository([new MemberStub('apple-user@icloud.com', false, false)]);
+    $state = $this->state->issue('apple', 'https://example.test/reach/home')['state'];
+
+    $result = ($this->controller)($registry, $members)
+        ->apple(new WP_REST_Request(['id_token' => 'ok', 'state' => $state]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_not_eligible', $result->get_error_code());
+    $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+});
+
+// --- appleStart / signout ---------------------------------------------
+test('apple start returns state and nonce', function () {
+    $result = ($this->controller)(($this->registryWith)('apple'))->appleStart(new WP_REST_Request());
+    $data = $result->get_data();
+    $this->assertArrayHasKey('state', $data);
+    $this->assertArrayHasKey('nonce', $data);
+    $this->assertNotSame('', $data['state']);
+});
+
+test('signout acknowledges when nobody is signed in', function () {
+    // No cookie, so nothing to revoke and no token to demand. The
+    // caller still gets the outcome it asked for: saying otherwise
+    // would tell an unauthenticated prober whether a cookie was
+    // valid.
+    $result = ($this->controller)(($this->registryWith)('google'))->signout(new WP_REST_Request());
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertTrue($result->get_data()['signed_out']);
+});
+
+test('signout revokes the session server side', function () {
+    $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
+    $session = $this->sessionFor('user@example.com');
+    $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+    $revocations = new SessionRevocationList();
+    $controller  = ($this->controllerWithRevocations)($members, $revocations);
+
+    $result = $controller->signout($this->withSessionToken(new WP_REST_Request(), $session));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertTrue($result->get_data()['signed_out']);
+
+    // The point of the whole exercise: the token is dead even
+    // though it is still signed, unexpired, and would still verify.
+    $this->assertTrue($revocations->isRevoked($session->id));
+});
 
 /**
- * Configurable OAuthProvider double: fixed authorisation URL, and a preset
- * identity (or null) returned from both handleCallback and verifyIdToken.
+ * A revoked session stops being accepted everywhere, not merely in
+ * the browser that pressed Sign out — which is what makes sign-out
+ * mean something for a stateless cookie.
  */
-final class ConfigurableProvider implements OAuthProvider
-{
-    public function __construct(
-        private string $providerName,
-        private bool $serverSide,
-        private ?VerifiedIdentity $identity,
+test('revoked session is no longer accepted', function () {
+    $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
+    $session = $this->sessionFor('user@example.com');
+    $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+    $revocations = new SessionRevocationList();
+    $current = new CurrentSession(new SessionCookie(), $members, $revocations);
+
+    $this->assertNotNull($current->get(), 'sanity: the session is good before revocation');
+
+    $revocations->revoke($session->id, $session->expiresAt, time());
+
+    $this->assertNull(
+        (new CurrentSession(new SessionCookie(), $members, $revocations))->get(),
+        'a revoked session must not be accepted, however valid its signature',
+    );
+});
+
+test('signout refuses without the session token', function () {
+    $members = new InMemoryMemberRepository([new MemberStub('user@example.com')]);
+    $session = $this->sessionFor('user@example.com');
+    $_COOKIE[SessionCookie::COOKIE_NAME] = (new SessionCookie())->sign($session);
+
+    $revocations = new SessionRevocationList();
+    $controller  = ($this->controllerWithRevocations)($members, $revocations);
+
+    // No X-Reach-Token header: a cross-site page must not be able to
+    // sign a responder out mid-shift.
+    $result = $controller->signout(new WP_REST_Request());
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_invalid_session_token', $result->get_error_code());
+    $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+    $this->assertFalse($revocations->isRevoked($session->id));
+});
+
+// --- rate limiting ----------------------------------------------------
+
+/**
+ * This controller was the only unauthenticated one in Reach with no
+ * RateLimiter at all. Each /oauth/start writes a StateStore transient
+ * that only a daily cron sweeps, and /oauth/apple runs a JWT header parse
+ * and JWKS lookup for anyone who asks.
+ */
+test('start is rate limited per ip', function () {
+    $registry = new ProviderRegistry();
+    $registry->register(provider('google', serverSide: true));
+    $controller = ($this->controller)($registry);
+
+    spendTheOAuthBudget();
+
+    $result = $controller->start(new WP_REST_Request(['provider' => 'google']));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_rate_limited', $result->get_error_code());
+    $this->assertSame(429, $result->get_error_data()['status'] ?? null);
+});
+
+test('apple start is rate limited per ip', function () {
+    $controller = ($this->controller)(new ProviderRegistry());
+
+    spendTheOAuthBudget();
+
+    $result = $controller->appleStart(new WP_REST_Request([]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_rate_limited', $result->get_error_code());
+});
+
+test('callback is rate limited per ip', function () {
+    $controller = ($this->controller)(new ProviderRegistry());
+
+    spendTheOAuthBudget();
+
+    $result = $controller->callback(new WP_REST_Request(['state' => 'x', 'code' => 'y']));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_rate_limited', $result->get_error_code());
+});
+
+test('apple is rate limited per ip', function () {
+    $controller = ($this->controller)(new ProviderRegistry());
+
+    spendTheOAuthBudget();
+
+    $result = $controller->apple(new WP_REST_Request(['id_token' => 'x', 'state' => 'y']));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_rate_limited', $result->get_error_code());
+});
+
+test('the four routes share one budget', function () {
+    // Steps of one flow, so one bucket: an attacker free to spend a fresh
+    // allowance on each route would simply pick the cheapest.
+    $registry = new ProviderRegistry();
+    $registry->register(provider('google', serverSide: true));
+    $controller = ($this->controller)($registry);
+
+    spendTheOAuthBudget();
+
+    foreach (
+        [
+            'start'      => $controller->start(new WP_REST_Request(['provider' => 'google'])),
+            'appleStart' => $controller->appleStart(new WP_REST_Request([])),
+            'callback'   => $controller->callback(new WP_REST_Request(['state' => 'x', 'code' => 'y'])),
+            'apple'      => $controller->apple(new WP_REST_Request(['id_token' => 'x', 'state' => 'y'])),
+        ] as $route => $result
     ) {
+        $this->assertInstanceOf(WP_Error::class, $result, $route . ' should be refused');
+        $this->assertSame('reach_rate_limited', $result->get_error_code(), $route . ' should be refused');
     }
+});
 
-    public function name(): string
-    {
-        return $this->providerName;
-    }
+test('sign out is not rate limited', function () {
+    // Refusing to let somebody sign out is a poor way to defend anything,
+    // and it is cookie-authenticated and CSRF-checked already.
+    $controller = ($this->controller)(new ProviderRegistry());
 
-    public function isServerSide(): bool
-    {
-        return $this->serverSide;
-    }
+    spendTheOAuthBudget();
 
-    public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
-    {
-        return 'https://provider.test/auth';
-    }
+    $result = $controller->signout(new WP_REST_Request([]));
 
-    public function handleCallback(string $code, string $nonce, string $redirectUri, ?string $codeVerifier = null): ?VerifiedIdentity
-    {
-        return $this->identity;
-    }
+    $code = $result instanceof WP_Error ? $result->get_error_code() : '';
+    $this->assertNotSame('reach_rate_limited', $code);
+});
 
-    public function verifyIdToken(string $idToken, string $nonce): ?VerifiedIdentity
-    {
-        return $this->identity;
-    }
-}
+test('a working sign in is not refused', function () {
+    // The limit has to be far enough above real usage that a shared CDN
+    // edge is not throttled. Nothing has been spent here.
+    $registry = new ProviderRegistry();
+    $registry->register(provider('google', serverSide: true));
+
+    $result = ($this->controller)($registry)->start(new WP_REST_Request(['provider' => 'google']));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+});

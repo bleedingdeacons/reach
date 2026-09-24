@@ -27,366 +27,28 @@ use Unity\Testing\Doubles\InMemoryMemberRepository;
  * certification stops being a target even though their handset row is
  * still live.
  */
-final class AlertDispatcherTest extends ReachTestCase
+
+/**
+ * A gate admitting exactly the named emails as certified responders.
+ */
+function gateAdmitting(string ...$emails): ResponderGate
 {
-    public function testStoresTheAlertAndPushesToEveryEligibleHandset(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-        $devices->create('h2', 'b@example.com', 2, 'Phone', 'ios', Device::PUSH_FCM, 'tok-b', 100);
-
-        $transport = new RecordingTransport();
-        $alerts = new InMemoryAlertRepository();
-
-        $dispatcher = new AlertDispatcher(
-            $alerts,
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com', 'b@example.com'),
-            [$transport],
+    $members = [];
+    foreach ($emails as $index => $email) {
+        $members[] = new MemberStub(
+            personalEmail: $email,
+            twelfthStepper: false,
+            telephoneResponder: true,
+            id: $index + 1,
+            responderCertification: ResponderCertification::Certified,
         );
-
-        $alert = $dispatcher->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertCount(1, $alerts->alerts);
-        $this->assertSame($alert->id, $alerts->alerts[0]->id);
-        $this->assertCount(2, $transport->delivered);
     }
 
-    public function testAlertIsStoredEvenWhenEveryPushFails(): void
-    {
-        // The whole reliability story: the handset polls too, so a
-        // transport having a bad afternoon must not lose the alert.
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $alerts = new InMemoryAlertRepository();
-        $dispatcher = new AlertDispatcher(
-            $alerts,
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [new RecordingTransport(succeeds: false)],
-        );
-
-        $dispatcher->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertCount(1, $alerts->alerts);
-    }
-
-    public function testHandsetsOfIneligibleRespondersAreSkipped(): void
-    {
-        // The device row is live; the responder is not certified. The
-        // gate is what decides, not the row.
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'certified@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-        $devices->create('h2', 'lapsed@example.com', 2, 'Phone', 'android', Device::PUSH_FCM, 'tok-b', 100);
-
-        $transport = new RecordingTransport();
-
-        $dispatcher = new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('certified@example.com'),
-            [$transport],
-        );
-
-        $dispatcher->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertCount(1, $transport->delivered);
-        $this->assertSame('tok-a', $transport->delivered[0]->pushToken);
-    }
-
-    public function testRevokedHandsetsAreNotTargets(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $live = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-        $gone = $devices->create('h2', 'a@example.com', 1, 'Old phone', 'android', Device::PUSH_FCM, 'tok-b', 100);
-        $devices->revoke($gone->id, 200);
-
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        ))->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertCount(1, $transport->delivered);
-        $this->assertSame($live->id, $transport->delivered[0]->id);
-    }
-
-    public function testTargetedAlertOnlyReachesThatResponder(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-        $devices->create('h2', 'b@example.com', 2, 'Phone', 'android', Device::PUSH_FCM, 'tok-b', 100);
-
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com', 'b@example.com'),
-            [$transport],
-        ))->dispatch($this->request(['target_email' => 'b@example.com']), 1_700_000_000);
-
-        $this->assertCount(1, $transport->delivered);
-        $this->assertSame('tok-b', $transport->delivered[0]->pushToken);
-    }
-
-    public function testTargetedAlertToAnIneligibleResponderReachesNobodyButIsStillStored(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'lapsed@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $alerts = new InMemoryAlertRepository();
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            $alerts,
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting(),
-            [$transport],
-        ))->dispatch($this->request(['target_email' => 'lapsed@example.com']), 1_700_000_000);
-
-        $this->assertSame([], $transport->delivered);
-        $this->assertCount(1, $alerts->alerts, 'The alert is history even when it reached nobody.');
-    }
-
-    public function testHandsetsWithoutPushAreLeftToPoll(): void
-    {
-        // A Windows or macOS handset enrols with no push transport. It
-        // is not a failure, it collects its own alerts.
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Desktop', 'windows', Device::PUSH_NONE, '', 100);
-
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        ))->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertSame([], $transport->delivered);
-    }
-
-    public function testEachDeviceIsOfferedToOnlyOneTransport(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $first = new RecordingTransport();
-        $second = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$first, $second],
-        ))->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertCount(1, $first->delivered);
-        $this->assertSame([], $second->delivered, 'The second transport should not double-deliver.');
-    }
-
-    public function testADeviceTargetedAlertReachesOnlyThatHandset(): void
-    {
-        // One responder, two handsets. Addressing by email would ring
-        // both, which is exactly the ambiguity the admin test button
-        // exists to remove.
-        $devices = new InMemoryDeviceRepository();
-        $phone  = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-        $devices->create('h2', 'a@example.com', 1, 'Tablet', 'android', Device::PUSH_FCM, 'tok-b', 100);
-
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        ))->dispatch($this->request(['target_device_id' => $phone->id]), 1_700_000_000);
-
-        $this->assertCount(1, $transport->delivered);
-        $this->assertSame($phone->id, $transport->delivered[0]->id);
-    }
-
-    public function testADeviceTargetedAlertIsStillStoredWhenTheHandsetIsGone(): void
-    {
-        // Storing first is unconditional. The admin needs the row in the
-        // Recent alerts table whatever the handset did.
-        $alerts = new InMemoryAlertRepository();
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            $alerts,
-            new InMemoryAlertContactRepository(),
-            new InMemoryDeviceRepository(),
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        ))->dispatch($this->request(['target_device_id' => 999]), 1_700_000_000);
-
-        $this->assertCount(1, $alerts->alerts);
-        $this->assertSame([], $transport->delivered);
-    }
-
-    public function testADeviceTargetedAlertSkipsARevokedHandset(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $device = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-        $devices->revoke($device->id, 200);
-
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        ))->dispatch($this->request(['target_device_id' => $device->id]), 1_700_000_000);
-
-        $this->assertSame([], $transport->delivered);
-    }
-
-    public function testADeviceTargetedAlertStillObeysTheEligibilityGate(): void
-    {
-        // An admin testing the handset of someone who has stepped down
-        // should find it silent — that is the correct answer, not a bug.
-        $devices = new InMemoryDeviceRepository();
-        $device = $devices->create('h1', 'lapsed@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $transport = new RecordingTransport();
-
-        (new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('someone-else@example.com'),
-            [$transport],
-        ))->dispatch($this->request(['target_device_id' => $device->id]), 1_700_000_000);
-
-        $this->assertSame([], $transport->delivered);
-    }
-
-    public function testADeviceTargetedAlertIsNotABroadcast(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $device = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $alerts = new InMemoryAlertRepository();
-
-        (new AlertDispatcher(
-            $alerts,
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [],
-        ))->dispatch($this->request(['target_device_id' => $device->id]), 1_700_000_000);
-
-        // It carries no address, so anything reading isBroadcast() to
-        // decide who may see it must not be fooled by the empty one.
-        $this->assertFalse($alerts->alerts[0]->isBroadcast());
-        $this->assertTrue($alerts->alerts[0]->isDeviceTargeted());
-    }
-
-    public function testTheAlertHandedToATransportKnowsItHasAContact(): void
-    {
-        // <b>create() cannot know.</b> It builds the alert from the
-        // request, and the contact row is written a moment afterwards —
-        // so without the correction the transports are handed an alert
-        // saying it has none, however many details were supplied.
-        //
-        // The consequence was not cosmetic: a handset that learned of an
-        // alert by push never offered Show contact, and the poll copy
-        // that had it right arrived second and was discarded as a
-        // duplicate. On Android, where push usually wins, that made the
-        // audited caller-details flow unreachable.
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $transport = new RecordingTransport();
-
-        $dispatcher = new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        );
-
-        $dispatcher->dispatch(
-            $this->request(['contact' => 'Sam, 07700 900123']),
-            1_700_000_000,
-        );
-
-        $this->assertCount(1, $transport->alerts);
-        $this->assertTrue($transport->alerts[0]->hasContact);
-    }
-
-    public function testAnAlertWithNoContactIsNotClaimedToHaveOne(): void
-    {
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $transport = new RecordingTransport();
-
-        $dispatcher = new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        );
-
-        $dispatcher->dispatch($this->request(), 1_700_000_000);
-
-        $this->assertCount(1, $transport->alerts);
-        $this->assertFalse($transport->alerts[0]->hasContact);
-    }
-
-    public function testTheContactStillNeverTravelsWithTheAlertItself(): void
-    {
-        // The flag is the only thing that changed. The details stay in
-        // their own encrypted table, out of toArray() and therefore out
-        // of both the push and the poll.
-        $devices = new InMemoryDeviceRepository();
-        $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
-
-        $transport = new RecordingTransport();
-
-        $dispatcher = new AlertDispatcher(
-            new InMemoryAlertRepository(),
-            new InMemoryAlertContactRepository(),
-            $devices,
-            $this->gateAdmitting('a@example.com'),
-            [$transport],
-        );
-
-        $dispatcher->dispatch(
-            $this->request(['contact' => 'Sam, 07700 900123']),
-            1_700_000_000,
-        );
-
-        $encoded = (string) json_encode($transport->alerts[0]->toArray());
-
-        $this->assertStringNotContainsString('900123', $encoded);
-        $this->assertStringNotContainsString('Sam', $encoded);
-    }
-
-    private function request(array $overrides = []): AlertRequest
-    {
+    return new ResponderGate(new InMemoryMemberRepository($members));
+}
+
+beforeEach(function () {
+    $this->request = function (array $overrides = []): AlertRequest {
         $request = AlertRequest::fromArray($overrides + [
             'kind'   => 'test',
             'source' => 'reach',
@@ -396,27 +58,348 @@ final class AlertDispatcherTest extends ReachTestCase
         $this->assertInstanceOf(AlertRequest::class, $request);
 
         return $request;
-    }
+    };
+});
 
-    /**
-     * A gate admitting exactly the named emails as certified responders.
-     */
-    private function gateAdmitting(string ...$emails): ResponderGate
-    {
-        $members = [];
-        foreach ($emails as $index => $email) {
-            $members[] = new MemberStub(
-                personalEmail: $email,
-                twelfthStepper: false,
-                telephoneResponder: true,
-                id: $index + 1,
-                responderCertification: ResponderCertification::Certified,
-            );
-        }
+test('stores the alert and pushes to every eligible handset', function () {
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+    $devices->create('h2', 'b@example.com', 2, 'Phone', 'ios', Device::PUSH_FCM, 'tok-b', 100);
 
-        return new ResponderGate(new InMemoryMemberRepository($members));
-    }
-}
+    $transport = new RecordingTransport();
+    $alerts = new InMemoryAlertRepository();
+
+    $dispatcher = new AlertDispatcher(
+        $alerts,
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com', 'b@example.com'),
+        [$transport],
+    );
+
+    $alert = $dispatcher->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertCount(1, $alerts->alerts);
+    $this->assertSame($alert->id, $alerts->alerts[0]->id);
+    $this->assertCount(2, $transport->delivered);
+});
+
+test('alert is stored even when every push fails', function () {
+    // The whole reliability story: the handset polls too, so a
+    // transport having a bad afternoon must not lose the alert.
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $alerts = new InMemoryAlertRepository();
+    $dispatcher = new AlertDispatcher(
+        $alerts,
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [new RecordingTransport(succeeds: false)],
+    );
+
+    $dispatcher->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertCount(1, $alerts->alerts);
+});
+
+test('handsets of ineligible responders are skipped', function () {
+    // The device row is live; the responder is not certified. The
+    // gate is what decides, not the row.
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'certified@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+    $devices->create('h2', 'lapsed@example.com', 2, 'Phone', 'android', Device::PUSH_FCM, 'tok-b', 100);
+
+    $transport = new RecordingTransport();
+
+    $dispatcher = new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('certified@example.com'),
+        [$transport],
+    );
+
+    $dispatcher->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertCount(1, $transport->delivered);
+    $this->assertSame('tok-a', $transport->delivered[0]->pushToken);
+});
+
+test('revoked handsets are not targets', function () {
+    $devices = new InMemoryDeviceRepository();
+    $live = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+    $gone = $devices->create('h2', 'a@example.com', 1, 'Old phone', 'android', Device::PUSH_FCM, 'tok-b', 100);
+    $devices->revoke($gone->id, 200);
+
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertCount(1, $transport->delivered);
+    $this->assertSame($live->id, $transport->delivered[0]->id);
+});
+
+test('targeted alert only reaches that responder', function () {
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+    $devices->create('h2', 'b@example.com', 2, 'Phone', 'android', Device::PUSH_FCM, 'tok-b', 100);
+
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com', 'b@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(['target_email' => 'b@example.com']), 1_700_000_000);
+
+    $this->assertCount(1, $transport->delivered);
+    $this->assertSame('tok-b', $transport->delivered[0]->pushToken);
+});
+
+test('targeted alert to an ineligible responder reaches nobody but is still stored', function () {
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'lapsed@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $alerts = new InMemoryAlertRepository();
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        $alerts,
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting(),
+        [$transport],
+    ))->dispatch(($this->request)(['target_email' => 'lapsed@example.com']), 1_700_000_000);
+
+    $this->assertSame([], $transport->delivered);
+    $this->assertCount(1, $alerts->alerts, 'The alert is history even when it reached nobody.');
+});
+
+test('handsets without push are left to poll', function () {
+    // A Windows or macOS handset enrols with no push transport. It
+    // is not a failure, it collects its own alerts.
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Desktop', 'windows', Device::PUSH_NONE, '', 100);
+
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertSame([], $transport->delivered);
+});
+
+test('each device is offered to only one transport', function () {
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $first = new RecordingTransport();
+    $second = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$first, $second],
+    ))->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertCount(1, $first->delivered);
+    $this->assertSame([], $second->delivered, 'The second transport should not double-deliver.');
+});
+
+test('a device targeted alert reaches only that handset', function () {
+    // One responder, two handsets. Addressing by email would ring
+    // both, which is exactly the ambiguity the admin test button
+    // exists to remove.
+    $devices = new InMemoryDeviceRepository();
+    $phone  = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+    $devices->create('h2', 'a@example.com', 1, 'Tablet', 'android', Device::PUSH_FCM, 'tok-b', 100);
+
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(['target_device_id' => $phone->id]), 1_700_000_000);
+
+    $this->assertCount(1, $transport->delivered);
+    $this->assertSame($phone->id, $transport->delivered[0]->id);
+});
+
+test('a device targeted alert is still stored when the handset is gone', function () {
+    // Storing first is unconditional. The admin needs the row in the
+    // Recent alerts table whatever the handset did.
+    $alerts = new InMemoryAlertRepository();
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        $alerts,
+        new InMemoryAlertContactRepository(),
+        new InMemoryDeviceRepository(),
+        gateAdmitting('a@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(['target_device_id' => 999]), 1_700_000_000);
+
+    $this->assertCount(1, $alerts->alerts);
+    $this->assertSame([], $transport->delivered);
+});
+
+test('a device targeted alert skips a revoked handset', function () {
+    $devices = new InMemoryDeviceRepository();
+    $device = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+    $devices->revoke($device->id, 200);
+
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(['target_device_id' => $device->id]), 1_700_000_000);
+
+    $this->assertSame([], $transport->delivered);
+});
+
+test('a device targeted alert still obeys the eligibility gate', function () {
+    // An admin testing the handset of someone who has stepped down
+    // should find it silent — that is the correct answer, not a bug.
+    $devices = new InMemoryDeviceRepository();
+    $device = $devices->create('h1', 'lapsed@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $transport = new RecordingTransport();
+
+    (new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('someone-else@example.com'),
+        [$transport],
+    ))->dispatch(($this->request)(['target_device_id' => $device->id]), 1_700_000_000);
+
+    $this->assertSame([], $transport->delivered);
+});
+
+test('a device targeted alert is not a broadcast', function () {
+    $devices = new InMemoryDeviceRepository();
+    $device = $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $alerts = new InMemoryAlertRepository();
+
+    (new AlertDispatcher(
+        $alerts,
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [],
+    ))->dispatch(($this->request)(['target_device_id' => $device->id]), 1_700_000_000);
+
+    // It carries no address, so anything reading isBroadcast() to
+    // decide who may see it must not be fooled by the empty one.
+    $this->assertFalse($alerts->alerts[0]->isBroadcast());
+    $this->assertTrue($alerts->alerts[0]->isDeviceTargeted());
+});
+
+test('the alert handed to a transport knows it has a contact', function () {
+    // <b>create() cannot know.</b> It builds the alert from the
+    // request, and the contact row is written a moment afterwards —
+    // so without the correction the transports are handed an alert
+    // saying it has none, however many details were supplied.
+    //
+    // The consequence was not cosmetic: a handset that learned of an
+    // alert by push never offered Show contact, and the poll copy
+    // that had it right arrived second and was discarded as a
+    // duplicate. On Android, where push usually wins, that made the
+    // audited caller-details flow unreachable.
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $transport = new RecordingTransport();
+
+    $dispatcher = new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    );
+
+    $dispatcher->dispatch(
+        ($this->request)(['contact' => 'Sam, 07700 900123']),
+        1_700_000_000,
+    );
+
+    $this->assertCount(1, $transport->alerts);
+    $this->assertTrue($transport->alerts[0]->hasContact);
+});
+
+test('an alert with no contact is not claimed to have one', function () {
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $transport = new RecordingTransport();
+
+    $dispatcher = new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    );
+
+    $dispatcher->dispatch(($this->request)(), 1_700_000_000);
+
+    $this->assertCount(1, $transport->alerts);
+    $this->assertFalse($transport->alerts[0]->hasContact);
+});
+
+test('the contact still never travels with the alert itself', function () {
+    // The flag is the only thing that changed. The details stay in
+    // their own encrypted table, out of toArray() and therefore out
+    // of both the push and the poll.
+    $devices = new InMemoryDeviceRepository();
+    $devices->create('h1', 'a@example.com', 1, 'Phone', 'android', Device::PUSH_FCM, 'tok-a', 100);
+
+    $transport = new RecordingTransport();
+
+    $dispatcher = new AlertDispatcher(
+        new InMemoryAlertRepository(),
+        new InMemoryAlertContactRepository(),
+        $devices,
+        gateAdmitting('a@example.com'),
+        [$transport],
+    );
+
+    $dispatcher->dispatch(
+        ($this->request)(['contact' => 'Sam, 07700 900123']),
+        1_700_000_000,
+    );
+
+    $encoded = (string) json_encode($transport->alerts[0]->toArray());
+
+    $this->assertStringNotContainsString('900123', $encoded);
+    $this->assertStringNotContainsString('Sam', $encoded);
+});
 
 /**
  * A transport that records what it was asked to deliver.

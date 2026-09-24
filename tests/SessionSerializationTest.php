@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use Reach\Tests\ReachTestCase;
 use Reach\Session\Session;
 
 /**
@@ -18,72 +17,66 @@ use Reach\Session\Session;
  *  - the `pem` key is omitted when not set, so the wire format
  *    doesn't gain weight for the common case.
  */
-final class SessionSerializationTest extends ReachTestCase
-{
-    public function testProviderEmailRoundTripsThroughArray(): void
-    {
-        $session = new Session(
-            'real@example.com',
-            'facebook',
-            'fb-sub-1',
-            1000,
-            5000,
-            'hash@privaterelay.facebook.com',
-        );
 
-        $payload = $session->toArray();
-        $this->assertSame('hash@privaterelay.facebook.com', $payload['pem'] ?? null);
+test('provider email round trips through array', function () {
+    $session = new Session(
+        'real@example.com',
+        'facebook',
+        'fb-sub-1',
+        1000,
+        5000,
+        'hash@privaterelay.facebook.com',
+    );
 
-        $restored = Session::fromArray($payload);
-        $this->assertNotNull($restored);
-        $this->assertSame('real@example.com', $restored->email);
-        $this->assertSame('hash@privaterelay.facebook.com', $restored->providerEmail);
-    }
+    $payload = $session->toArray();
+    $this->assertSame('hash@privaterelay.facebook.com', $payload['pem'] ?? null);
 
-    public function testProviderEmailOmittedWhenUnset(): void
-    {
-        // The common case — Google/Microsoft/Apple sign-ins. We don't
-        // want to bloat every cookie with a `"pem":null` field for the
-        // 99% case.
-        $session = new Session('real@example.com', 'google', 'g-sub-1', 1000, 5000);
-        $payload = $session->toArray();
-        $this->assertArrayNotHasKey('pem', $payload);
-    }
+    $restored = Session::fromArray($payload);
+    $this->assertNotNull($restored);
+    $this->assertSame('real@example.com', $restored->email);
+    $this->assertSame('hash@privaterelay.facebook.com', $restored->providerEmail);
+});
 
-    public function testLegacyCookieWithoutPemFieldDeserialises(): void
-    {
-        // The exact shape that sessions issued before this change
-        // carry. The new code must accept it unchanged — otherwise
-        // every user is signed out at deploy time.
-        $legacy = [
-            'email'    => 'real@example.com',
-            'provider' => 'google',
-            'sub'      => 'g-sub-1',
-            'iat'      => 1000,
-            'exp'      => 5000,
-        ];
+test('provider email omitted when unset', function () {
+    // The common case — Google/Microsoft/Apple sign-ins. We don't
+    // want to bloat every cookie with a `"pem":null` field for the
+    // 99% case.
+    $session = new Session('real@example.com', 'google', 'g-sub-1', 1000, 5000);
+    $payload = $session->toArray();
+    $this->assertArrayNotHasKey('pem', $payload);
+});
 
-        $session = Session::fromArray($legacy);
-        $this->assertNotNull($session);
-        $this->assertSame('real@example.com', $session->email);
-        $this->assertNull($session->providerEmail);
-    }
+test('legacy cookie without pem field deserialises', function () {
+    // The exact shape that sessions issued before this change
+    // carry. The new code must accept it unchanged — otherwise
+    // every user is signed out at deploy time.
+    $legacy = [
+        'email'    => 'real@example.com',
+        'provider' => 'google',
+        'sub'      => 'g-sub-1',
+        'iat'      => 1000,
+        'exp'      => 5000,
+    ];
 
-    public function testEmptyStringPemIsTreatedAsNull(): void
-    {
-        // Defensive — a future writer might emit "" instead of
-        // omitting the field. We don't want a session to claim its
-        // providerEmail is empty-string; that's worse than null
-        // because downstream code might branch on isset().
-        $session = Session::fromArray([
-            'email'    => 'a@b.com',
-            'provider' => 'facebook',
-            'sub'      => 'x',
-            'iat'      => 1,
-            'exp'      => 2,
-            'pem'      => '',
-        ]);
-        $this->assertNotNull($session);
-        $this->assertNull($session->providerEmail);
-    }
-}
+    $session = Session::fromArray($legacy);
+    $this->assertNotNull($session);
+    $this->assertSame('real@example.com', $session->email);
+    $this->assertNull($session->providerEmail);
+});
+
+test('empty string pem is treated as null', function () {
+    // Defensive — a future writer might emit "" instead of
+    // omitting the field. We don't want a session to claim its
+    // providerEmail is empty-string; that's worse than null
+    // because downstream code might branch on isset().
+    $session = Session::fromArray([
+        'email'    => 'a@b.com',
+        'provider' => 'facebook',
+        'sub'      => 'x',
+        'iat'      => 1,
+        'exp'      => 2,
+        'pem'      => '',
+    ]);
+    $this->assertNotNull($session);
+    $this->assertNull($session->providerEmail);
+});
