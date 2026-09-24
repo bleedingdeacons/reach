@@ -565,8 +565,25 @@ composer install
 
 | Command | Description |
 |---|---|
-| `composer test` | Run the PHPUnit test suite |
+| `composer test` | Run the test suite (Pest) |
 | `composer phpstan` | Run PHPStan static analysis |
+
+The tests are written in [Pest](https://pestphp.com), running on PHPUnit, and
+live in `tests/`. Run them with Pest, not PHPUnit directly —
+`vendor/bin/phpunit` cannot load Pest's closure-based files. `tests/Pest.php`
+binds every spec to `Reach\Tests\ReachTestCase` (except `UserAgentTest`, on
+wp-mocks' own `TestCase`), which is what gives them Brain Monkey and the
+WordPress stand-ins.
+
+One file stays a PHPUnit class: `SecureTransportConstantTest` defines
+`REACH_ALLOW_INSECURE_TRANSPORT`, which cannot be undone, so it runs in a
+separate process — and Pest does not support process isolation. Pest runs it
+as it is.
+
+The JWT and OAuth-provider tests generate RSA keys and skip themselves when
+OpenSSL has no config file to read. On a Windows PHP build without an
+`openssl.cnf` on its default path, point `OPENSSL_CONF` at one before running
+the suite, and check the skip count is 0.
 
 Line coverage is reported to [Coveralls](https://coveralls.io/github/bleedingdeacons/reach?branch=main)
 on every CI run — see the coverage badge at the top of this file.

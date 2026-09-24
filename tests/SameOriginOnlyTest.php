@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\Attributes\Test;
 use Reach\Rest\SameOriginOnly;
 use WP_REST_Request;
 
@@ -18,89 +17,69 @@ use WP_REST_Request;
  * subdomain, which is same-site for the cookie and gets
  * Access-Control-Allow-Credentials from core's own CORS headers.
  */
-final class SameOriginOnlyTest extends ReachTestCase
+
+/**
+ * The site's own origin, as the shared stub's home_url() reports it.
+ * Taken from there rather than asserted as a literal so this keeps
+ * testing the comparison rather than the stub.
+ */
+const SITE = 'https://example.test';
+
+function requestFrom(string $origin): WP_REST_Request
 {
-    /**
-     * The site's own origin, as the shared stub's home_url() reports it.
-     * Taken from there rather than asserted as a literal so this keeps
-     * testing the comparison rather than the stub.
-     */
-    private const SITE = 'https://example.test';
+    $request = new WP_REST_Request([], '/reach/v1/session');
+    $request->set_header('Origin', $origin);
 
-    #[Test]
-    public function a_request_with_no_origin_is_allowed(): void
-    {
-        // Browsers omit Origin on ordinary same-origin GETs, and curl, the
-        // handsets and monitoring send none either. Refusing on absence
-        // would break all of them and stop nothing: the attack needs a
-        // browser, and a browser sending a cross-origin credentialed
-        // request always sets the header.
-        $this->assertTrue(SameOriginOnly::allows(new WP_REST_Request([], '/reach/v1/session')));
-    }
-
-    #[Test]
-    public function this_sites_own_origin_is_allowed(): void
-    {
-        $this->assertTrue(SameOriginOnly::allows($this->requestFrom(self::SITE)));
-    }
-
-    #[Test]
-    public function a_sibling_subdomain_is_refused(): void
-    {
-        // The finding exactly: same-site for the Lax cookie, so the cookie
-        // is attached — and without this check, CORS would let it read the
-        // token back.
-        $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://blog.example.test')));
-    }
-
-    #[Test]
-    public function an_unrelated_origin_is_refused(): void
-    {
-        $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://evil.example')));
-    }
-
-    #[Test]
-    public function the_scheme_must_match(): void
-    {
-        $this->assertFalse(SameOriginOnly::allows($this->requestFrom('http://example.test')));
-    }
-
-    #[Test]
-    public function a_prefix_of_the_host_is_not_the_host(): void
-    {
-        // example.test.evil.example is a different site entirely, but a naive
-        // str_starts_with or str_contains would wave both of these through.
-        $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://example.test.evil.example')));
-        $this->assertFalse(SameOriginOnly::allows($this->requestFrom('https://evil-example.test')));
-    }
-
-    #[Test]
-    public function trailing_slashes_and_case_do_not_make_the_site_a_stranger(): void
-    {
-        $this->assertTrue(SameOriginOnly::allows($this->requestFrom('https://EXAMPLE.TEST')));
-        $this->assertTrue(SameOriginOnly::allows($this->requestFrom(self::SITE . '/')));
-        $this->assertTrue(SameOriginOnly::allows($this->requestFrom(self::SITE . ':443')));
-    }
-
-    #[Test]
-    public function the_null_origin_is_treated_as_absent(): void
-    {
-        // Sent by sandboxed iframes and some redirects. It carries no
-        // cookie-bearing site, so there is nothing to refuse.
-        $this->assertTrue(SameOriginOnly::allows($this->requestFrom('null')));
-    }
-
-    #[Test]
-    public function junk_in_the_header_is_refused(): void
-    {
-        $this->assertFalse(SameOriginOnly::allows($this->requestFrom('not a url')));
-    }
-
-    private function requestFrom(string $origin): WP_REST_Request
-    {
-        $request = new WP_REST_Request([], '/reach/v1/session');
-        $request->set_header('Origin', $origin);
-
-        return $request;
-    }
+    return $request;
 }
+
+test('a request with no origin is allowed', function () {
+    // Browsers omit Origin on ordinary same-origin GETs, and curl, the
+    // handsets and monitoring send none either. Refusing on absence
+    // would break all of them and stop nothing: the attack needs a
+    // browser, and a browser sending a cross-origin credentialed
+    // request always sets the header.
+    $this->assertTrue(SameOriginOnly::allows(new WP_REST_Request([], '/reach/v1/session')));
+});
+
+test('this sites own origin is allowed', function () {
+    $this->assertTrue(SameOriginOnly::allows(requestFrom(SITE)));
+});
+
+test('a sibling subdomain is refused', function () {
+    // The finding exactly: same-site for the Lax cookie, so the cookie
+    // is attached — and without this check, CORS would let it read the
+    // token back.
+    $this->assertFalse(SameOriginOnly::allows(requestFrom('https://blog.example.test')));
+});
+
+test('an unrelated origin is refused', function () {
+    $this->assertFalse(SameOriginOnly::allows(requestFrom('https://evil.example')));
+});
+
+test('the scheme must match', function () {
+    $this->assertFalse(SameOriginOnly::allows(requestFrom('http://example.test')));
+});
+
+test('a prefix of the host is not the host', function () {
+    // example.test.evil.example is a different site entirely, but a naive
+    // str_starts_with or str_contains would wave both of these through.
+    $this->assertFalse(SameOriginOnly::allows(requestFrom('https://example.test.evil.example')));
+    $this->assertFalse(SameOriginOnly::allows(requestFrom('https://evil-example.test')));
+});
+
+test('trailing slashes and case do not make the site a stranger', function () {
+    $this->assertTrue(SameOriginOnly::allows(requestFrom('https://EXAMPLE.TEST')));
+    $this->assertTrue(SameOriginOnly::allows(requestFrom(SITE . '/')));
+    $this->assertTrue(SameOriginOnly::allows(requestFrom(SITE . ':443')));
+});
+
+test('the null origin is treated as absent', function () {
+    // Sent by sandboxed iframes and some redirects. It carries no
+    // cookie-bearing site, so there is nothing to refuse.
+    $this->assertTrue(SameOriginOnly::allows(requestFrom('null')));
+});
+
+test('junk in the header is refused', function () {
+    $this->assertFalse(SameOriginOnly::allows(requestFrom('not a url')));
+});

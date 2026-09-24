@@ -4,14 +4,9 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use PHPUnit\Framework\Attributes\DataProvider;
 use Reach\Devices\Device;
 use Reach\Devices\WpdbDeviceRepository;
-use Reach\Tests\ReachTestCase;
-
-// Shared wpdb stub and the `wpdb` class alias. See the note in
-// WpdbAlertRepositoryTest.
-require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php';
+use Reach\Tests\Fixtures\WpdbStub;
 
 /**
  * The devices table is what a bearer token authenticates against, so the
@@ -21,506 +16,468 @@ require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php';
  * property of the query rather than a check the caller remembers to make
  * is the design, and it is what these tests pin down.
  */
-final class WpdbDeviceRepositoryTest extends ReachTestCase
+
+/**
+ * @param array<string, mixed> $overrides
+ * @return array<string, mixed>
+ */
+function row(array $overrides = []): array
 {
-    /**
-     * @param array<string, mixed> $overrides
-     * @return array<string, mixed>
-     */
-    private function row(array $overrides = []): array
-    {
-        return $overrides + [
-            'id'            => 7,
-            'token_hash'    => str_repeat('a', 64),
-            'member_email'  => 'jo@example.com',
-            'member_id'     => 42,
-            'label'         => 'Duty handset',
-            'platform'      => 'android',
-            'push_provider' => 'fcm',
-            'push_token'    => 'fcm-token',
-            'created_at'    => 1_700_000_000,
-            'last_seen_at'  => 1_700_000_500,
-            'revoked_at'    => null,
-        ];
-    }
-
-    public function testInstallCreatesTheTableWithTheThreeIndexesItActuallyUses(): void
-    {
-        $GLOBALS['__reach_dbdelta'] = [];
-        $db = new WpdbStub();
-
-        WpdbDeviceRepository::install($db);
-
-        $sql = $GLOBALS['__reach_dbdelta'][0];
-        $this->assertStringContainsString('CREATE TABLE wp_reach_devices', $sql);
-        // Authenticate a bearer token …
-        $this->assertStringContainsString('UNIQUE KEY token_hash (token_hash)', $sql);
-        // … find one responder's handsets …
-        $this->assertStringContainsString('KEY member_email (member_email)', $sql);
-        // … and list every live handset for a broadcast.
-        $this->assertStringContainsString('KEY revoked_at (revoked_at)', $sql);
-    }
-
-    public function testTokenHashIsFixedWidthAndPushTokenIsGenerous(): void
-    {
-        // The hash is always a hex SHA-256, so CHAR(64) keeps the unique
-        // index compact. FCM registration tokens have no documented
-        // maximum and have grown twice — a truncated one is a handset
-        // that silently never rings.
-        $GLOBALS['__reach_dbdelta'] = [];
-        WpdbDeviceRepository::install(new WpdbStub());
-
-        $sql = $GLOBALS['__reach_dbdelta'][0];
-        $this->assertStringContainsString('token_hash CHAR(64) NOT NULL', $sql);
-        $this->assertStringContainsString('push_token VARCHAR(512)', $sql);
-    }
-
-    public function testTableNameUsesThePrefix(): void
-    {
-        $db = new WpdbStub();
-        $db->prefix = 'blog7_';
-
-        $this->assertSame('blog7_reach_devices', WpdbDeviceRepository::tableName($db));
-    }
-
-    public function testCreateStoresTheHashAndReturnsTheEnrolledDevice(): void
-    {
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $device = $repo->create(
-            str_repeat('b', 64),
-            'jo@example.com',
-            42,
-            'Duty handset',
-            'android',
-            'fcm',
-            'fcm-token',
-            1_700_000_000,
-        );
-
-        $this->assertCount(1, $db->inserted);
-        $this->assertSame('wp_reach_devices', $db->inserted[0]['table']);
-        $data = $db->inserted[0]['data'];
-        $this->assertSame(str_repeat('b', 64), $data['token_hash']);
-        // A new handset counts as seen at enrolment, not never.
-        $this->assertSame(1_700_000_000, $data['last_seen_at']);
-        $this->assertArrayNotHasKey('revoked_at', $data);
-
-        $this->assertSame(1, $device->id);
-        $this->assertSame('jo@example.com', $device->memberEmail);
-        $this->assertFalse($device->isRevoked());
-        $this->assertTrue($device->wantsPush());
-    }
-
-    public function testCreateNeverStoresTheBearerTokenItself(): void
-    {
-        // Only the hash is kept, so a database dump cannot be replayed as
-        // a set of live handset credentials.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->create(hash('sha256', 'the-secret-token'), 'jo@example.com', 42, '', 'ios', '', '', 1_000);
-
-        $this->assertStringNotContainsString(
-            'the-secret-token',
-            (string) wp_json_encode($db->inserted[0]['data']),
-        );
-    }
-
-    public function testFindByTokenHashRefusesRevokedRowsInTheQueryItself(): void
-    {
-        // A revoked token must be indistinguishable from an unknown one
-        // at every call site, and the surest way to guarantee that is to
-        // never return the row.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->findByTokenHash(str_repeat('a', 64));
-
-        $q = $db->queries[0];
-        $this->assertStringContainsString("WHERE token_hash = '" . str_repeat('a', 64) . "'", $q);
-        $this->assertStringContainsString('AND revoked_at IS NULL', $q);
-    }
-
-    public function testFindByTokenHashHydratesALiveRow(): void
-    {
-        $db = new WpdbStub();
-        $db->nextRow = $this->row();
-        $repo = new WpdbDeviceRepository($db);
-
-        $device = $repo->findByTokenHash(str_repeat('a', 64));
-
-        $this->assertNotNull($device);
-        $this->assertSame(7, $device->id);
-        $this->assertSame(42, $device->memberId);
-        $this->assertSame('Duty handset', $device->label);
-        $this->assertSame('android', $device->platform);
-        $this->assertSame(1_700_000_500, $device->lastSeenAt);
-        $this->assertNull($device->revokedAt);
-        $this->assertFalse($device->isRevoked());
-    }
-
-    public function testFindByTokenHashReturnsNullOnMiss(): void
-    {
-        $db = new WpdbStub();
-        $db->nextRow = null;
-
-        $this->assertNull((new WpdbDeviceRepository($db))->findByTokenHash('nope'));
-    }
-
-    public function testFindByIdReturnsARowRegardlessOfRevocation(): void
-    {
-        // Unlike the token lookup: the admin page needs to show a revoked
-        // handset and when it was cut off.
-        $db = new WpdbStub();
-        $db->nextRow = $this->row(['revoked_at' => 1_700_009_000]);
-        $repo = new WpdbDeviceRepository($db);
-
-        $device = $repo->findById(7);
-
-        $this->assertNotNull($device);
-        $this->assertTrue($device->isRevoked());
-        $this->assertSame(1_700_009_000, $device->revokedAt);
-        $this->assertStringNotContainsString('revoked_at IS NULL', $db->queries[0]);
-    }
-
-    public function testFindByIdReturnsNullOnMiss(): void
-    {
-        $db = new WpdbStub();
-        $db->nextRow = null;
-
-        $this->assertNull((new WpdbDeviceRepository($db))->findById(99));
-    }
-
-    public function testFindByMemberEmailListsOnlyLiveHandsets(): void
-    {
-        $db = new WpdbStub();
-        $db->nextResults = [$this->row(), $this->row(['id' => 8])];
-        $repo = new WpdbDeviceRepository($db);
-
-        $devices = $repo->findByMemberEmail('jo@example.com');
-
-        $this->assertCount(2, $devices);
-        $q = $db->queries[0];
-        $this->assertStringContainsString("WHERE member_email = 'jo@example.com'", $q);
-        $this->assertStringContainsString('AND revoked_at IS NULL', $q);
-        $this->assertStringContainsString('ORDER BY id ASC', $q);
-    }
-
-    public function testFindAllLiveIsTheBroadcastList(): void
-    {
-        $db = new WpdbStub();
-        $db->nextResults = [$this->row()];
-        $repo = new WpdbDeviceRepository($db);
-
-        $this->assertCount(1, $repo->findAllLive());
-        $this->assertStringContainsString('WHERE revoked_at IS NULL', $db->queries[0]);
-    }
-
-    public function testHydrationSurvivesANonArrayResult(): void
-    {
-        // $wpdb answers null on a failed query rather than raising.
-        $db = new WpdbStub();
-        $db->nextResults = [];
-
-        $this->assertSame([], (new WpdbDeviceRepository($db))->findAllLive());
-    }
-
-    public function testListPutsLiveHandsetsFirstThenNewest(): void
-    {
-        // The admin page should open on what is currently enrolled rather
-        // than on a wall of history. id DESC stabilises pagination when
-        // rows share a timestamp.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->list(50, 0);
-
-        $this->assertStringContainsString(
-            'ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC',
-            $db->queries[0],
-        );
-    }
-
-    public function testInstallCreatesThePayloadKeyColumn(): void
-    {
-        $db = new WpdbStub();
-
-        WpdbDeviceRepository::install($db);
-
-        $sql = implode("\n", array_map('strval', $GLOBALS['__reach_dbdelta']));
-
-        $this->assertStringContainsString('payload_key', $sql);
-    }
-
-    public function testCreateNeverStoresThePayloadKeyInTheClear(): void
-    {
-        // The column exists so a database dump on its own yields nothing
-        // usable. Writing the key as given would defeat the whole point.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->create(
-            str_repeat('a', 64),
-            'jo@example.test',
-            7,
-            'Pixel 8',
-            'android',
-            Device::PUSH_FCM,
-            'fcm-token',
-            1_700_000_000,
-            'the-secret-key',
-        );
-
-        $this->assertCount(1, $db->inserted);
-        $stored = $db->inserted[0]['data']['payload_key'];
-
-        $this->assertIsString($stored);
-        $this->assertNotSame('', $stored);
-        $this->assertStringNotContainsString('the-secret-key', $stored);
-    }
-
-    public function testCreateWithNoPayloadKeyStoresNothing(): void
-    {
-        // Rather than an encrypted empty string, which would be
-        // indistinguishable from a real key to everything downstream.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->create(
-            str_repeat('a', 64),
-            'jo@example.test',
-            7,
-            'Pixel 8',
-            'android',
-            Device::PUSH_FCM,
-            'fcm-token',
-            1_700_000_000,
-        );
-
-        $this->assertSame('', $db->inserted[0]['data']['payload_key']);
-    }
-
-    public function testPayloadKeyForReadsBackWhatCreateWrote(): void
-    {
-        // The round trip through the column, which is what proves the
-        // width is sufficient and the domain matches on both sides.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->create(
-            str_repeat('a', 64),
-            'jo@example.test',
-            7,
-            'Pixel 8',
-            'android',
-            Device::PUSH_FCM,
-            'fcm-token',
-            1_700_000_000,
-            'the-secret-key',
-        );
-
-        $stored = $db->inserted[0]['data']['payload_key'];
-        $this->assertIsString($stored);
-        $this->assertLessThanOrEqual(255, strlen($stored), 'must fit the column');
-
-        $db->nextVar = $stored;
-
-        $this->assertSame('the-secret-key', $repo->payloadKeyFor(7));
-    }
-
-    public function testPayloadKeyForIsEmptyForAHandsetEnrolledBeforeTheColumn(): void
-    {
-        $db = new WpdbStub();
-        $db->nextVar = '';
-
-        $this->assertSame('', (new WpdbDeviceRepository($db))->payloadKeyFor(7));
-    }
-
-    public function testListOrdersByARequestedColumn(): void
-    {
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->list(50, 0, 'last_seen_at', 'asc');
-
-        $this->assertStringContainsString('ORDER BY last_seen_at ASC, id DESC', $db->queries[0]);
-    }
-
-    public function testListTreatsAnythingOtherThanAscAsDescending(): void
-    {
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->list(50, 0, 'platform', 'sideways');
-
-        $this->assertStringContainsString('ORDER BY platform DESC, id DESC', $db->queries[0]);
-    }
-
-    #[DataProvider('unsortableColumns')]
-    public function testListRefusesAColumnItDoesNotRecognise(string $column): void
-    {
-        // ORDER BY takes no prepared placeholder, so the column can only
-        // be made safe by refusing anything not on the whitelist. An
-        // unrecognised name is not an error either: the admin screen puts
-        // two tables behind one `orderby`, so a column belonging to the
-        // other one has to mean "leave this list in its default order".
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->list(50, 0, $column, 'asc');
-
-        $this->assertStringContainsString(
-            'ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC',
-            $db->queries[0],
-        );
-        // And exactly one of them: a refused column must not be appended
-        // to the default clause, only dropped in favour of it.
-        $this->assertSame(1, substr_count($db->queries[0], 'ORDER BY'));
-    }
-
-    /** @return array<string, array{0: string}> */
-    public static function unsortableColumns(): array
-    {
-        return [
-            'a column of another table on the same screen' => ['acknowledged'],
-            'a real column that is not offered'            => ['token_hash'],
-            'an injection attempt'                         => ['id; DROP TABLE wp_users'],
-        ];
-    }
-
-    public function testListClampsLimitAndOffset(): void
-    {
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $repo->list(99_999, -5);
-
-        $this->assertStringContainsString('LIMIT 500 OFFSET 0', $db->queries[0]);
-    }
-
-    public function testCountAllReturnsTheVar(): void
-    {
-        $db = new WpdbStub();
-        $db->nextVar = 9;
-
-        $this->assertSame(9, (new WpdbDeviceRepository($db))->countAll());
-        $this->assertStringContainsString('SELECT COUNT(*) FROM wp_reach_devices', $db->queries[0]);
-    }
-
-    public function testTouchUpdatesOnlyTheLastSeenStamp(): void
-    {
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $this->assertTrue($repo->touch(7, 1_700_000_900));
-
-        $this->assertCount(1, $db->updated);
-        $this->assertSame('wp_reach_devices', $db->updated[0]['table']);
-        $this->assertSame(['last_seen_at' => 1_700_000_900], $db->updated[0]['data']);
-        $this->assertSame(['id' => 7], $db->updated[0]['where']);
-    }
-
-    public function testUpdatePushTokenWritesBothHalvesTogether(): void
-    {
-        // Provider and token are one fact — wantsPush() needs both — so
-        // they must never be written apart.
-        $db = new WpdbStub();
-        $repo = new WpdbDeviceRepository($db);
-
-        $this->assertTrue($repo->updatePushToken(7, 'fcm', 'new-token'));
-
-        $this->assertSame(
-            ['push_provider' => 'fcm', 'push_token' => 'new-token'],
-            $db->updated[0]['data'],
-        );
-        $this->assertSame(['id' => 7], $db->updated[0]['where']);
-    }
-
-    public function testRevokeTouchesOnlyAStillLiveRow(): void
-    {
-        // Idempotent, and it preserves the moment a handset was actually
-        // cut off rather than the moment someone clicked twice.
-        $db = new WpdbStub();
-        $db->nextQueryResult = 1;
-        $repo = new WpdbDeviceRepository($db);
-
-        $this->assertTrue($repo->revoke(7, 1_700_009_000));
-
-        $this->assertStringContainsString(
-            'UPDATE wp_reach_devices SET revoked_at = 1700009000 WHERE id = 7 AND revoked_at IS NULL',
-            $db->queries[0],
-        );
-    }
-
-    public function testRevokingAnAlreadyRevokedHandsetReportsNoChange(): void
-    {
-        $db = new WpdbStub();
-        $db->nextQueryResult = 0;
-
-        $this->assertFalse((new WpdbDeviceRepository($db))->revoke(7, 1_000));
-    }
-
-    public function testRevokeAllForMemberCutsOffEveryLiveHandset(): void
-    {
-        // What runs when a responder stops being eligible, so it has to
-        // reach every handset in one statement rather than one at a time.
-        $db = new WpdbStub();
-        $db->nextQueryResult = 3;
-        $repo = new WpdbDeviceRepository($db);
-
-        $this->assertSame(3, $repo->revokeAllForMember('jo@example.com', 1_700_009_000));
-
-        $q = $db->queries[0];
-        $this->assertStringContainsString('SET revoked_at = 1700009000', $q);
-        $this->assertStringContainsString("WHERE member_email = 'jo@example.com'", $q);
-        $this->assertStringContainsString('AND revoked_at IS NULL', $q);
-    }
-
-    public function testRevokeAllForMemberReportsZeroWhenTheUpdateFails(): void
-    {
-        $db = new WpdbStub();
-        $db->nextQueryResult = false;
-
-        $this->assertSame(0, (new WpdbDeviceRepository($db))->revokeAllForMember('jo@example.com', 1_000));
-    }
-
-    public function testAnEnrolledHandsetWithoutATokenYetFallsBackToPolling(): void
-    {
-        // The app enrols before Firebase hands a token over, and that gap
-        // must not produce a push to nowhere.
-        $db = new WpdbStub();
-        $db->nextRow = $this->row(['push_provider' => 'fcm', 'push_token' => '']);
-
-        $device = (new WpdbDeviceRepository($db))->findById(7);
-
-        $this->assertNotNull($device);
-        $this->assertFalse($device->wantsPush());
-    }
-
-    /**
-     * @return array<string, array{0: string, 1: string}>
-     */
-    public static function platforms(): array
-    {
-        return [
-            'android'          => ['android', 'android'],
-            'ios'              => ['ios', 'ios'],
-            'maccatalyst'      => ['maccatalyst', 'maccatalyst'],
-            'windows'          => ['windows', 'windows'],
-            'cased and padded' => ['  Android  ', 'android'],
-            'unrecognised'     => ['blackberry', ''],
-            'empty'            => ['', ''],
-        ];
-    }
-
-    #[DataProvider('platforms')]
-    public function testPlatformNormalisation(string $claimed, string $expected): void
-    {
-        // '' is a bad request to every caller: the platform decides the
-        // delivery path, so guessing would silently enrol a handset that
-        // never receives anything.
-        $this->assertSame($expected, Device::normalisePlatform($claimed));
-    }
+    return $overrides + [
+        'id'            => 7,
+        'token_hash'    => str_repeat('a', 64),
+        'member_email'  => 'jo@example.com',
+        'member_id'     => 42,
+        'label'         => 'Duty handset',
+        'platform'      => 'android',
+        'push_provider' => 'fcm',
+        'push_token'    => 'fcm-token',
+        'created_at'    => 1_700_000_000,
+        'last_seen_at'  => 1_700_000_500,
+        'revoked_at'    => null,
+    ];
 }
+
+test('install creates the table with the three indexes it actually uses', function () {
+    $GLOBALS['__reach_dbdelta'] = [];
+    $db = new WpdbStub();
+
+    WpdbDeviceRepository::install($db);
+
+    $sql = $GLOBALS['__reach_dbdelta'][0];
+    $this->assertStringContainsString('CREATE TABLE wp_reach_devices', $sql);
+    // Authenticate a bearer token …
+    $this->assertStringContainsString('UNIQUE KEY token_hash (token_hash)', $sql);
+    // … find one responder's handsets …
+    $this->assertStringContainsString('KEY member_email (member_email)', $sql);
+    // … and list every live handset for a broadcast.
+    $this->assertStringContainsString('KEY revoked_at (revoked_at)', $sql);
+});
+
+test('token hash is fixed width and push token is generous', function () {
+    // The hash is always a hex SHA-256, so CHAR(64) keeps the unique
+    // index compact. FCM registration tokens have no documented
+    // maximum and have grown twice — a truncated one is a handset
+    // that silently never rings.
+    $GLOBALS['__reach_dbdelta'] = [];
+    WpdbDeviceRepository::install(new WpdbStub());
+
+    $sql = $GLOBALS['__reach_dbdelta'][0];
+    $this->assertStringContainsString('token_hash CHAR(64) NOT NULL', $sql);
+    $this->assertStringContainsString('push_token VARCHAR(512)', $sql);
+});
+
+test('table name uses the prefix', function () {
+    $db = new WpdbStub();
+    $db->prefix = 'blog7_';
+
+    $this->assertSame('blog7_reach_devices', WpdbDeviceRepository::tableName($db));
+});
+
+test('create stores the hash and returns the enrolled device', function () {
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $device = $repo->create(
+        str_repeat('b', 64),
+        'jo@example.com',
+        42,
+        'Duty handset',
+        'android',
+        'fcm',
+        'fcm-token',
+        1_700_000_000,
+    );
+
+    $this->assertCount(1, $db->inserted);
+    $this->assertSame('wp_reach_devices', $db->inserted[0]['table']);
+    $data = $db->inserted[0]['data'];
+    $this->assertSame(str_repeat('b', 64), $data['token_hash']);
+    // A new handset counts as seen at enrolment, not never.
+    $this->assertSame(1_700_000_000, $data['last_seen_at']);
+    $this->assertArrayNotHasKey('revoked_at', $data);
+
+    $this->assertSame(1, $device->id);
+    $this->assertSame('jo@example.com', $device->memberEmail);
+    $this->assertFalse($device->isRevoked());
+    $this->assertTrue($device->wantsPush());
+});
+
+test('create never stores the bearer token itself', function () {
+    // Only the hash is kept, so a database dump cannot be replayed as
+    // a set of live handset credentials.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->create(hash('sha256', 'the-secret-token'), 'jo@example.com', 42, '', 'ios', '', '', 1_000);
+
+    $this->assertStringNotContainsString(
+        'the-secret-token',
+        (string) wp_json_encode($db->inserted[0]['data']),
+    );
+});
+
+test('find by token hash refuses revoked rows in the query itself', function () {
+    // A revoked token must be indistinguishable from an unknown one
+    // at every call site, and the surest way to guarantee that is to
+    // never return the row.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->findByTokenHash(str_repeat('a', 64));
+
+    $q = $db->queries[0];
+    $this->assertStringContainsString("WHERE token_hash = '" . str_repeat('a', 64) . "'", $q);
+    $this->assertStringContainsString('AND revoked_at IS NULL', $q);
+});
+
+test('find by token hash hydrates a live row', function () {
+    $db = new WpdbStub();
+    $db->nextRow = row();
+    $repo = new WpdbDeviceRepository($db);
+
+    $device = $repo->findByTokenHash(str_repeat('a', 64));
+
+    $this->assertNotNull($device);
+    $this->assertSame(7, $device->id);
+    $this->assertSame(42, $device->memberId);
+    $this->assertSame('Duty handset', $device->label);
+    $this->assertSame('android', $device->platform);
+    $this->assertSame(1_700_000_500, $device->lastSeenAt);
+    $this->assertNull($device->revokedAt);
+    $this->assertFalse($device->isRevoked());
+});
+
+test('find by token hash returns null on miss', function () {
+    $db = new WpdbStub();
+    $db->nextRow = null;
+
+    $this->assertNull((new WpdbDeviceRepository($db))->findByTokenHash('nope'));
+});
+
+test('find by id returns a row regardless of revocation', function () {
+    // Unlike the token lookup: the admin page needs to show a revoked
+    // handset and when it was cut off.
+    $db = new WpdbStub();
+    $db->nextRow = row(['revoked_at' => 1_700_009_000]);
+    $repo = new WpdbDeviceRepository($db);
+
+    $device = $repo->findById(7);
+
+    $this->assertNotNull($device);
+    $this->assertTrue($device->isRevoked());
+    $this->assertSame(1_700_009_000, $device->revokedAt);
+    $this->assertStringNotContainsString('revoked_at IS NULL', $db->queries[0]);
+});
+
+test('find by id returns null on miss', function () {
+    $db = new WpdbStub();
+    $db->nextRow = null;
+
+    $this->assertNull((new WpdbDeviceRepository($db))->findById(99));
+});
+
+test('find by member email lists only live handsets', function () {
+    $db = new WpdbStub();
+    $db->nextResults = [row(), row(['id' => 8])];
+    $repo = new WpdbDeviceRepository($db);
+
+    $devices = $repo->findByMemberEmail('jo@example.com');
+
+    $this->assertCount(2, $devices);
+    $q = $db->queries[0];
+    $this->assertStringContainsString("WHERE member_email = 'jo@example.com'", $q);
+    $this->assertStringContainsString('AND revoked_at IS NULL', $q);
+    $this->assertStringContainsString('ORDER BY id ASC', $q);
+});
+
+test('find all live is the broadcast list', function () {
+    $db = new WpdbStub();
+    $db->nextResults = [row()];
+    $repo = new WpdbDeviceRepository($db);
+
+    $this->assertCount(1, $repo->findAllLive());
+    $this->assertStringContainsString('WHERE revoked_at IS NULL', $db->queries[0]);
+});
+
+test('hydration survives a non array result', function () {
+    // $wpdb answers null on a failed query rather than raising.
+    $db = new WpdbStub();
+    $db->nextResults = [];
+
+    $this->assertSame([], (new WpdbDeviceRepository($db))->findAllLive());
+});
+
+test('list puts live handsets first then newest', function () {
+    // The admin page should open on what is currently enrolled rather
+    // than on a wall of history. id DESC stabilises pagination when
+    // rows share a timestamp.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->list(50, 0);
+
+    $this->assertStringContainsString(
+        'ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC',
+        $db->queries[0],
+    );
+});
+
+test('install creates the payload key column', function () {
+    $db = new WpdbStub();
+
+    WpdbDeviceRepository::install($db);
+
+    $sql = implode("\n", array_map('strval', $GLOBALS['__reach_dbdelta']));
+
+    $this->assertStringContainsString('payload_key', $sql);
+});
+
+test('create never stores the payload key in the clear', function () {
+    // The column exists so a database dump on its own yields nothing
+    // usable. Writing the key as given would defeat the whole point.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->create(
+        str_repeat('a', 64),
+        'jo@example.test',
+        7,
+        'Pixel 8',
+        'android',
+        Device::PUSH_FCM,
+        'fcm-token',
+        1_700_000_000,
+        'the-secret-key',
+    );
+
+    $this->assertCount(1, $db->inserted);
+    $stored = $db->inserted[0]['data']['payload_key'];
+
+    $this->assertIsString($stored);
+    $this->assertNotSame('', $stored);
+    $this->assertStringNotContainsString('the-secret-key', $stored);
+});
+
+test('create with no payload key stores nothing', function () {
+    // Rather than an encrypted empty string, which would be
+    // indistinguishable from a real key to everything downstream.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->create(
+        str_repeat('a', 64),
+        'jo@example.test',
+        7,
+        'Pixel 8',
+        'android',
+        Device::PUSH_FCM,
+        'fcm-token',
+        1_700_000_000,
+    );
+
+    $this->assertSame('', $db->inserted[0]['data']['payload_key']);
+});
+
+test('payload key for reads back what create wrote', function () {
+    // The round trip through the column, which is what proves the
+    // width is sufficient and the domain matches on both sides.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->create(
+        str_repeat('a', 64),
+        'jo@example.test',
+        7,
+        'Pixel 8',
+        'android',
+        Device::PUSH_FCM,
+        'fcm-token',
+        1_700_000_000,
+        'the-secret-key',
+    );
+
+    $stored = $db->inserted[0]['data']['payload_key'];
+    $this->assertIsString($stored);
+    $this->assertLessThanOrEqual(255, strlen($stored), 'must fit the column');
+
+    $db->nextVar = $stored;
+
+    $this->assertSame('the-secret-key', $repo->payloadKeyFor(7));
+});
+
+test('payload key for is empty for a handset enrolled before the column', function () {
+    $db = new WpdbStub();
+    $db->nextVar = '';
+
+    $this->assertSame('', (new WpdbDeviceRepository($db))->payloadKeyFor(7));
+});
+
+test('list orders by a requested column', function () {
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->list(50, 0, 'last_seen_at', 'asc');
+
+    $this->assertStringContainsString('ORDER BY last_seen_at ASC, id DESC', $db->queries[0]);
+});
+
+test('list treats anything other than asc as descending', function () {
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->list(50, 0, 'platform', 'sideways');
+
+    $this->assertStringContainsString('ORDER BY platform DESC, id DESC', $db->queries[0]);
+});
+
+test('list refuses a column it does not recognise', function (string $column) {
+    // ORDER BY takes no prepared placeholder, so the column can only
+    // be made safe by refusing anything not on the whitelist. An
+    // unrecognised name is not an error either: the admin screen puts
+    // two tables behind one `orderby`, so a column belonging to the
+    // other one has to mean "leave this list in its default order".
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->list(50, 0, $column, 'asc');
+
+    $this->assertStringContainsString(
+        'ORDER BY (revoked_at IS NULL) DESC, created_at DESC, id DESC',
+        $db->queries[0],
+    );
+    // And exactly one of them: a refused column must not be appended
+    // to the default clause, only dropped in favour of it.
+    $this->assertSame(1, substr_count($db->queries[0], 'ORDER BY'));
+})->with('unsortableColumns');
+
+/** @return array<string, array{0: string}> */
+dataset('unsortableColumns', function (): array {
+    return [
+        'a column of another table on the same screen' => ['acknowledged'],
+        'a real column that is not offered'            => ['token_hash'],
+        'an injection attempt'                         => ['id; DROP TABLE wp_users'],
+    ];
+});
+
+test('list clamps limit and offset', function () {
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $repo->list(99_999, -5);
+
+    $this->assertStringContainsString('LIMIT 500 OFFSET 0', $db->queries[0]);
+});
+
+test('count all returns the var', function () {
+    $db = new WpdbStub();
+    $db->nextVar = 9;
+
+    $this->assertSame(9, (new WpdbDeviceRepository($db))->countAll());
+    $this->assertStringContainsString('SELECT COUNT(*) FROM wp_reach_devices', $db->queries[0]);
+});
+
+test('touch updates only the last seen stamp', function () {
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $this->assertTrue($repo->touch(7, 1_700_000_900));
+
+    $this->assertCount(1, $db->updated);
+    $this->assertSame('wp_reach_devices', $db->updated[0]['table']);
+    $this->assertSame(['last_seen_at' => 1_700_000_900], $db->updated[0]['data']);
+    $this->assertSame(['id' => 7], $db->updated[0]['where']);
+});
+
+test('update push token writes both halves together', function () {
+    // Provider and token are one fact — wantsPush() needs both — so
+    // they must never be written apart.
+    $db = new WpdbStub();
+    $repo = new WpdbDeviceRepository($db);
+
+    $this->assertTrue($repo->updatePushToken(7, 'fcm', 'new-token'));
+
+    $this->assertSame(
+        ['push_provider' => 'fcm', 'push_token' => 'new-token'],
+        $db->updated[0]['data'],
+    );
+    $this->assertSame(['id' => 7], $db->updated[0]['where']);
+});
+
+test('revoke touches only a still live row', function () {
+    // Idempotent, and it preserves the moment a handset was actually
+    // cut off rather than the moment someone clicked twice.
+    $db = new WpdbStub();
+    $db->nextQueryResult = 1;
+    $repo = new WpdbDeviceRepository($db);
+
+    $this->assertTrue($repo->revoke(7, 1_700_009_000));
+
+    $this->assertStringContainsString(
+        'UPDATE wp_reach_devices SET revoked_at = 1700009000 WHERE id = 7 AND revoked_at IS NULL',
+        $db->queries[0],
+    );
+});
+
+test('revoking an already revoked handset reports no change', function () {
+    $db = new WpdbStub();
+    $db->nextQueryResult = 0;
+
+    $this->assertFalse((new WpdbDeviceRepository($db))->revoke(7, 1_000));
+});
+
+test('revoke all for member cuts off every live handset', function () {
+    // What runs when a responder stops being eligible, so it has to
+    // reach every handset in one statement rather than one at a time.
+    $db = new WpdbStub();
+    $db->nextQueryResult = 3;
+    $repo = new WpdbDeviceRepository($db);
+
+    $this->assertSame(3, $repo->revokeAllForMember('jo@example.com', 1_700_009_000));
+
+    $q = $db->queries[0];
+    $this->assertStringContainsString('SET revoked_at = 1700009000', $q);
+    $this->assertStringContainsString("WHERE member_email = 'jo@example.com'", $q);
+    $this->assertStringContainsString('AND revoked_at IS NULL', $q);
+});
+
+test('revoke all for member reports zero when the update fails', function () {
+    $db = new WpdbStub();
+    $db->nextQueryResult = false;
+
+    $this->assertSame(0, (new WpdbDeviceRepository($db))->revokeAllForMember('jo@example.com', 1_000));
+});
+
+test('an enrolled handset without a token yet falls back to polling', function () {
+    // The app enrols before Firebase hands a token over, and that gap
+    // must not produce a push to nowhere.
+    $db = new WpdbStub();
+    $db->nextRow = row(['push_provider' => 'fcm', 'push_token' => '']);
+
+    $device = (new WpdbDeviceRepository($db))->findById(7);
+
+    $this->assertNotNull($device);
+    $this->assertFalse($device->wantsPush());
+});
+
+/**
+ * @return array<string, array{0: string, 1: string}>
+ */
+dataset('platforms', function (): array {
+    return [
+        'android'          => ['android', 'android'],
+        'ios'              => ['ios', 'ios'],
+        'maccatalyst'      => ['maccatalyst', 'maccatalyst'],
+        'windows'          => ['windows', 'windows'],
+        'cased and padded' => ['  Android  ', 'android'],
+        'unrecognised'     => ['blackberry', ''],
+        'empty'            => ['', ''],
+    ];
+});
+
+test('platform normalisation', function (string $claimed, string $expected) {
+    // '' is a bad request to every caller: the platform decides the
+    // delivery path, so guessing would silently enrol a handset that
+    // never receives anything.
+    $this->assertSame($expected, Device::normalisePlatform($claimed));
+})->with('platforms');

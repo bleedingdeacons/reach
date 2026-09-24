@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
-use Reach\Tests\ReachTestCase;
 use Reach\Core\Settings;
 
 /**
@@ -18,63 +17,53 @@ use Reach\Core\Settings;
  * admin form, but the Settings primitive needs to support either
  * choice, and we test the simple cases here).
  */
-final class SettingsTest extends ReachTestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
 
-        WpState::$options = [];
-    }
+beforeEach(function () {
+    WpState::$options = [];
+});
 
-    public function testClientIdRoundTrip(): void
-    {
-        $settings = new Settings();
-        $settings->setClientId('google', 'abc123.apps.googleusercontent.com');
-        $this->assertSame('abc123.apps.googleusercontent.com', $settings->getClientId('google'));
-    }
+test('client id round trip', function () {
+    $settings = new Settings();
+    $settings->setClientId('google', 'abc123.apps.googleusercontent.com');
+    $this->assertSame('abc123.apps.googleusercontent.com', $settings->getClientId('google'));
+});
 
-    public function testClientSecretRoundTrip(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'a-very-secret-string');
-        $this->assertSame('a-very-secret-string', $settings->getClientSecret('google'));
-    }
+test('client secret round trip', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'a-very-secret-string');
+    $this->assertSame('a-very-secret-string', $settings->getClientSecret('google'));
+});
 
-    public function testStoredSecretIsCiphertext(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'plaintext-secret');
+test('stored secret is ciphertext', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'plaintext-secret');
 
-        $raw = WpState::$options[Settings::OPTION_SECRETS]['client_secret_google'];
-        $this->assertNotSame('plaintext-secret', $raw);
-        $this->assertStringNotContainsString('plaintext-secret', base64_decode($raw, true) ?: '');
-    }
+    $raw = WpState::$options[Settings::OPTION_SECRETS]['client_secret_google'];
+    $this->assertNotSame('plaintext-secret', $raw);
+    $this->assertStringNotContainsString('plaintext-secret', base64_decode($raw, true) ?: '');
+});
 
-    public function testRotatingSaltInvalidatesSecret(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'plaintext-secret');
+test('rotating salt invalidates secret', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'plaintext-secret');
 
-        // Rotate the auth salt — simulating an admin action.
-        $this->salts['auth'] = 'new-auth-salt-' . str_repeat('z', 48);
+    // Rotate the auth salt — simulating an admin action.
+    $this->salts['auth'] = 'new-auth-salt-' . str_repeat('z', 48);
 
-        // Decryption with the new key must fail and return empty,
-        // never raise — admins shouldn't see a fatal on a salt rotation.
-        $this->assertSame('', $settings->getClientSecret('google'));
-    }
+    // Decryption with the new key must fail and return empty,
+    // never raise — admins shouldn't see a fatal on a salt rotation.
+    $this->assertSame('', $settings->getClientSecret('google'));
+});
 
-    public function testEmptySecretDeletesEntry(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'something');
-        $this->assertNotEmpty($settings->getClientSecret('google'));
+test('empty secret deletes entry', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'something');
+    $this->assertNotEmpty($settings->getClientSecret('google'));
 
-        $settings->setClientSecret('google', '');
-        $this->assertSame('', $settings->getClientSecret('google'));
-        $this->assertArrayNotHasKey(
-            'client_secret_google',
-            WpState::$options[Settings::OPTION_SECRETS] ?? []
-        );
-    }
-}
+    $settings->setClientSecret('google', '');
+    $this->assertSame('', $settings->getClientSecret('google'));
+    $this->assertArrayNotHasKey(
+        'client_secret_google',
+        WpState::$options[Settings::OPTION_SECRETS] ?? []
+    );
+});

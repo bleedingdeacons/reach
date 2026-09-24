@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Reach\Tests;
 
-use Reach\Tests\ReachTestCase;
 use Reach\CallRequests\CallRequest;
 use Reach\CallRequests\WpdbCallRequestRepository;
-
-require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliased to wpdb)
+use Reach\Tests\Fixtures\WpdbStub;
 
 /**
  * Cover the write paths of {@see WpdbCallRequestRepository}: create()'s
@@ -17,89 +15,74 @@ require_once __DIR__ . '/WpdbCallAttemptRepositoryTest.php'; // WpdbStub (aliase
  * including the legacy-PII column drop that removes caller personal data
  * left over from the pre-email schema on upgrade.
  */
-final class WpdbCallRequestWriteTest extends ReachTestCase
-{
-    private WpdbStub $wpdb;
-    private WpdbCallRequestRepository $repo;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->wpdb = new WpdbStub();
+    $this->repo = new WpdbCallRequestRepository($this->wpdb);
+    $GLOBALS['__reach_dbdelta'] = [];
+});
 
-        $this->wpdb = new WpdbStub();
-        $this->repo = new WpdbCallRequestRepository($this->wpdb);
-        $GLOBALS['__reach_dbdelta'] = [];
-    }
+test('create inserts tracking row and returns record', function () {
+    $request = $this->repo->create('Responder', 'BS5 / Easton', 'r@example.com', 'google', 1_700_000_000);
 
-    public function testCreateInsertsTrackingRowAndReturnsRecord(): void
-    {
-        $request = $this->repo->create('Responder', 'BS5 / Easton', 'r@example.com', 'google', 1_700_000_000);
+    $this->assertInstanceOf(CallRequest::class, $request);
+    $this->assertSame(1, $request->id);
+    $this->assertSame('CR-000001', $request->serial());
+    $this->assertCount(1, $this->wpdb->inserted);
+    $data = $this->wpdb->inserted[0]['data'];
+    // Only non-identifying tracking data is stored.
+    $this->assertSame('Responder', $data['responder_name']);
+    $this->assertSame('BS5 / Easton', $data['area']);
+    $this->assertArrayNotHasKey('caller_name', $data);
+    $this->assertArrayNotHasKey('caller_phone', $data);
+});
 
-        $this->assertInstanceOf(CallRequest::class, $request);
-        $this->assertSame(1, $request->id);
-        $this->assertSame('CR-000001', $request->serial());
-        $this->assertCount(1, $this->wpdb->inserted);
-        $data = $this->wpdb->inserted[0]['data'];
-        // Only non-identifying tracking data is stored.
-        $this->assertSame('Responder', $data['responder_name']);
-        $this->assertSame('BS5 / Easton', $data['area']);
-        $this->assertArrayNotHasKey('caller_name', $data);
-        $this->assertArrayNotHasKey('caller_phone', $data);
-    }
+test('mark completed returns true when a pending row is updated', function () {
+    $this->wpdb->nextQueryResult = 1; // one row updated
+    $this->assertTrue($this->repo->markCompleted(5, 42, 'Volunteer', 1_700_000_500));
+});
 
-    public function testMarkCompletedReturnsTrueWhenAPendingRowIsUpdated(): void
-    {
-        $this->wpdb->nextQueryResult = 1; // one row updated
-        $this->assertTrue($this->repo->markCompleted(5, 42, 'Volunteer', 1_700_000_500));
-    }
+test('mark completed returns false when already completed', function () {
+    $this->wpdb->nextQueryResult = 0; // WHERE completed_at IS NULL matched nothing
+    $this->assertFalse($this->repo->markCompleted(5, 42, 'Volunteer', 1_700_000_500));
+});
 
-    public function testMarkCompletedReturnsFalseWhenAlreadyCompleted(): void
-    {
-        $this->wpdb->nextQueryResult = 0; // WHERE completed_at IS NULL matched nothing
-        $this->assertFalse($this->repo->markCompleted(5, 42, 'Volunteer', 1_700_000_500));
-    }
+test('delete returns true when a row is removed', function () {
+    $this->wpdb->nextDeleteResult = 1;
+    $this->assertTrue($this->repo->delete(9));
+    $this->assertSame(['id' => 9], $this->wpdb->deletes[0]['where']);
+});
 
-    public function testDeleteReturnsTrueWhenARowIsRemoved(): void
-    {
-        $this->wpdb->nextDeleteResult = 1;
-        $this->assertTrue($this->repo->delete(9));
-        $this->assertSame(['id' => 9], $this->wpdb->deletes[0]['where']);
-    }
+test('delete returns false when nothing removed', function () {
+    $this->wpdb->nextDeleteResult = 0;
+    $this->assertFalse($this->repo->delete(9));
+});
 
-    public function testDeleteReturnsFalseWhenNothingRemoved(): void
-    {
-        $this->wpdb->nextDeleteResult = 0;
-        $this->assertFalse($this->repo->delete(9));
-    }
+test('install creates table and drops legacy pii columns', function () {
+    // nextVar > 0 makes the legacy index and every legacy PII column
+    // "exist", so install() issues the ALTER TABLE ... DROP statements —
+    // exercising the upgrade path that purges old caller data.
+    $this->wpdb->nextVar = 1;
 
-    public function testInstallCreatesTableAndDropsLegacyPiiColumns(): void
-    {
-        // nextVar > 0 makes the legacy index and every legacy PII column
-        // "exist", so install() issues the ALTER TABLE ... DROP statements —
-        // exercising the upgrade path that purges old caller data.
-        $this->wpdb->nextVar = 1;
+    WpdbCallRequestRepository::install($this->wpdb);
 
-        WpdbCallRequestRepository::install($this->wpdb);
+    $this->assertCount(1, $GLOBALS['__reach_dbdelta']);
+    $this->assertStringContainsString('CREATE TABLE wp_reach_call_requests', $GLOBALS['__reach_dbdelta'][0]);
 
-        $this->assertCount(1, $GLOBALS['__reach_dbdelta']);
-        $this->assertStringContainsString('CREATE TABLE wp_reach_call_requests', $GLOBALS['__reach_dbdelta'][0]);
+    $altered = implode("\n", $this->wpdb->queries);
+    $this->assertStringContainsString('DROP INDEX member_created', $altered);
+    $this->assertStringContainsString('DROP COLUMN `caller_name`', $altered);
+    $this->assertStringContainsString('DROP COLUMN `caller_phone`', $altered);
+    $this->assertStringContainsString('DROP COLUMN `note`', $altered);
+});
 
-        $altered = implode("\n", $this->wpdb->queries);
-        $this->assertStringContainsString('DROP INDEX member_created', $altered);
-        $this->assertStringContainsString('DROP COLUMN `caller_name`', $altered);
-        $this->assertStringContainsString('DROP COLUMN `caller_phone`', $altered);
-        $this->assertStringContainsString('DROP COLUMN `note`', $altered);
-    }
+test('install on fresh schema drops nothing', function () {
+    // nextVar = 0 → no legacy index/columns exist → no ALTER statements.
+    $this->wpdb->nextVar = 0;
 
-    public function testInstallOnFreshSchemaDropsNothing(): void
-    {
-        // nextVar = 0 → no legacy index/columns exist → no ALTER statements.
-        $this->wpdb->nextVar = 0;
+    WpdbCallRequestRepository::install($this->wpdb);
 
-        WpdbCallRequestRepository::install($this->wpdb);
-
-        $altered = implode("\n", $this->wpdb->queries);
-        $this->assertStringNotContainsString('DROP COLUMN', $altered);
-        $this->assertStringNotContainsString('DROP INDEX', $altered);
-    }
-}
+    $altered = implode("\n", $this->wpdb->queries);
+    $this->assertStringNotContainsString('DROP COLUMN', $altered);
+    $this->assertStringNotContainsString('DROP INDEX', $altered);
+});

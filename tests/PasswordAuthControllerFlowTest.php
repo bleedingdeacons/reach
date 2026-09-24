@@ -7,7 +7,6 @@ namespace Reach\Tests;
 use Scrutiny\Audit\Interfaces\AuditLogger;
 use BleedingDeacons\WpMocks\WpState;
 use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
-use Reach\Tests\ReachTestCase;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
@@ -21,10 +20,6 @@ use Reach\Tests\Fixtures\MemberStub;
 use Unity\Testing\Doubles\InMemoryMemberRepository;
 use Scrutiny\Testing\Doubles\SpyAuditLogger;
 
-require_once __DIR__ . '/PasswordAuthenticatorTest.php';       // InMemoryPasswordCredentialRepository, MemberStub(Repository)
-require_once __DIR__ . '/PasswordAuthControllerGateTest.php';  // SpyAuditLogger
-require_once __DIR__ . '/NearestMembersControllerTest.php';    // SpyAuditLogger
-
 /**
  * Success-path and throttle cover for {@see PasswordAuthController},
  * complementing the rejection-focused PasswordAuthControllerGateTest.
@@ -36,113 +31,25 @@ require_once __DIR__ . '/NearestMembersControllerTest.php';    // SpyAuditLogger
  * signal); and completing a reset with a strong password auto-signs an
  * eligible member in.
  */
-final class PasswordAuthControllerFlowTest extends ReachTestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
 
-        WpState::$mail = [];
-        WpState::$transients = [];
-        $_SERVER['REMOTE_ADDR'] = '203.0.113.9';
-    }
-
-    public function testLoginSuccessIssuesSessionAndAuditsAuthentication(): void
-    {
-        $repo = new InMemoryPasswordCredentialRepository();
-        $repo->seedPassword('user@example.com', 'correcthorse10');
-        $audit = new SpyAuditLogger();
-        $controller = $this->controller([new MemberStub('user@example.com')], $repo, $audit);
-
-        $result = $controller->login(new WP_REST_Request([
-            'email'    => 'user@example.com',
-            'password' => 'correcthorse10',
-        ]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(200, $result->get_status());
-        $this->assertArrayHasKey('redirect', $result->get_data());
-
-        // One authentication audit row against the member.
-        $this->assertCount(1, $audit->entries);
-        $this->assertSame('view', $audit->entries[0]['action']);
-        $this->assertSame('authentication', $audit->entries[0]['fieldName']);
-    }
-
-    public function testLoginIsRefusedWhenPerIpLimitTripped(): void
-    {
-        // Seed the per-IP login bucket up to the limit (50 / 15-min window)
-        // so the controller's own call tips it over.
-        $rl = new RateLimiter();
-        for ($i = 0; $i < 50; $i++) {
-            $rl->overLimit('login:203.0.113.9', 50, 15 * 60);
-        }
-
-        $repo = new InMemoryPasswordCredentialRepository();
-        $repo->seedPassword('user@example.com', 'correcthorse10');
-        $controller = $this->controller([new MemberStub('user@example.com')], $repo);
-
-        $result = $controller->login(new WP_REST_Request([
-            'email'    => 'user@example.com',
-            'password' => 'correcthorse10',
-        ]));
-
-        $this->assertInstanceOf(WP_Error::class, $result);
-        $this->assertSame('reach_rate_limited', $result->get_error_code());
-        $this->assertSame(429, $result->get_error_data()['status'] ?? null);
-    }
-
-    public function testRequestResetSkipsSendWhenFloodLimitTrippedButStillAcknowledges(): void
-    {
-        // Seed the per-IP reset bucket to its cap (10 / hour).
-        $rl = new RateLimiter();
-        for ($i = 0; $i < 10; $i++) {
-            $rl->overLimit('reset:203.0.113.9', 10, 60 * 60);
-        }
-
-        $controller = $this->controller([new MemberStub('user@example.com')]);
-
-        $result = $controller->requestReset(new WP_REST_Request(['email' => 'user@example.com']));
-
-        // Same acknowledgement as always — no enumeration, no flood signal.
-        $this->assertSame(200, $result->get_status());
-        $this->assertTrue($result->get_data()['sent']);
-        // …but no email actually went out because the flood cap was hit.
-        $this->assertCount(0, WpState::$mail);
-    }
-
-    public function testSetPasswordSuccessSignsEligibleMemberIn(): void
-    {
-        $controller = $this->controller([new MemberStub('user@example.com')]);
-
-        // Get a genuine reset token via the request-reset flow.
-        $controller->requestReset(new WP_REST_Request(['email' => 'user@example.com']));
-        $token = $this->tokenFromLastMail();
-
-        $result = $controller->setPassword(new WP_REST_Request([
-            'token'    => $token,
-            'password' => 'a-strong-enough-password',
-        ]));
-
-        $this->assertInstanceOf(WP_REST_Response::class, $result);
-        $this->assertSame(200, $result->get_status());
-        $data = $result->get_data();
-        $this->assertTrue($data['signed_in']);
-        $this->assertStringContainsString('/reach/home', $data['redirect']);
-    }
+beforeEach(function () {
 
     // --- helpers ----------------------------------------------------------
 
     /**
      * @param array<int, \Unity\Members\Interfaces\Member> $members
      */
-    private function controller(
+    $this->controller = function (
         array $members,
         ?InMemoryPasswordCredentialRepository $repo = null,
         ?AuditLogger $audit = null,
     ): PasswordAuthController {
         $repo    = $repo ?? new InMemoryPasswordCredentialRepository();
         $memRepo = new InMemoryMemberRepository($members);
+        /**
+         * The mailer the authenticator under test was built with, kept so
+         * {@see tokenFromLastMail()} can flush its queue.
+         */
         $this->mailer = new PasswordResetMailer();
         $auth    = new PasswordAuthenticator($repo, $memRepo, $this->mailer, new PasswordPolicy());
 
@@ -153,16 +60,9 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
             $audit ?? new SpyAuditLogger(),
             new RateLimiter(),
         );
-    }
+    };
 
-    /**
-     * The mailer the authenticator under test was built with, kept so
-     * {@see tokenFromLastMail()} can flush its queue.
-     */
-    private PasswordResetMailer $mailer;
-
-    private function tokenFromLastMail(): string
-    {
+    $this->tokenFromLastMail = function (): string {
         // Reset links are queued and sent after the response, so that an
         // eligible address and an ineligible one cost the same to answer
         // (see PasswordResetMailer). In production the flush runs on
@@ -175,5 +75,89 @@ final class PasswordAuthControllerFlowTest extends ReachTestCase
         $message = (string) end($mail)['message'];
         $this->assertSame(1, preg_match('/token=([A-Za-z0-9\-_]+)/', $message, $m));
         return $m[1];
+    };
+
+    WpState::$mail = [];
+    WpState::$transients = [];
+    $_SERVER['REMOTE_ADDR'] = '203.0.113.9';
+});
+
+test('login success issues session and audits authentication', function () {
+    $repo = new InMemoryPasswordCredentialRepository();
+    $repo->seedPassword('user@example.com', 'correcthorse10');
+    $audit = new SpyAuditLogger();
+    $controller = ($this->controller)([new MemberStub('user@example.com')], $repo, $audit);
+
+    $result = $controller->login(new WP_REST_Request([
+        'email'    => 'user@example.com',
+        'password' => 'correcthorse10',
+    ]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(200, $result->get_status());
+    $this->assertArrayHasKey('redirect', $result->get_data());
+
+    // One authentication audit row against the member.
+    $this->assertCount(1, $audit->entries);
+    $this->assertSame('view', $audit->entries[0]['action']);
+    $this->assertSame('authentication', $audit->entries[0]['fieldName']);
+});
+
+test('login is refused when per ip limit tripped', function () {
+    // Seed the per-IP login bucket up to the limit (50 / 15-min window)
+    // so the controller's own call tips it over.
+    $rl = new RateLimiter();
+    for ($i = 0; $i < 50; $i++) {
+        $rl->overLimit('login:203.0.113.9', 50, 15 * 60);
     }
-}
+
+    $repo = new InMemoryPasswordCredentialRepository();
+    $repo->seedPassword('user@example.com', 'correcthorse10');
+    $controller = ($this->controller)([new MemberStub('user@example.com')], $repo);
+
+    $result = $controller->login(new WP_REST_Request([
+        'email'    => 'user@example.com',
+        'password' => 'correcthorse10',
+    ]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_rate_limited', $result->get_error_code());
+    $this->assertSame(429, $result->get_error_data()['status'] ?? null);
+});
+
+test('request reset skips send when flood limit tripped but still acknowledges', function () {
+    // Seed the per-IP reset bucket to its cap (10 / hour).
+    $rl = new RateLimiter();
+    for ($i = 0; $i < 10; $i++) {
+        $rl->overLimit('reset:203.0.113.9', 10, 60 * 60);
+    }
+
+    $controller = ($this->controller)([new MemberStub('user@example.com')]);
+
+    $result = $controller->requestReset(new WP_REST_Request(['email' => 'user@example.com']));
+
+    // Same acknowledgement as always — no enumeration, no flood signal.
+    $this->assertSame(200, $result->get_status());
+    $this->assertTrue($result->get_data()['sent']);
+    // …but no email actually went out because the flood cap was hit.
+    $this->assertCount(0, WpState::$mail);
+});
+
+test('set password success signs eligible member in', function () {
+    $controller = ($this->controller)([new MemberStub('user@example.com')]);
+
+    // Get a genuine reset token via the request-reset flow.
+    $controller->requestReset(new WP_REST_Request(['email' => 'user@example.com']));
+    $token = ($this->tokenFromLastMail)();
+
+    $result = $controller->setPassword(new WP_REST_Request([
+        'token'    => $token,
+        'password' => 'a-strong-enough-password',
+    ]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(200, $result->get_status());
+    $data = $result->get_data();
+    $this->assertTrue($data['signed_in']);
+    $this->assertStringContainsString('/reach/home', $data['redirect']);
+});

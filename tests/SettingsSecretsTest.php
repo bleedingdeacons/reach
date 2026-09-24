@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
-use Reach\Tests\ReachTestCase;
 use Reach\Core\Settings;
 
 /**
@@ -17,123 +16,105 @@ use Reach\Core\Settings;
  * wrong-key blob must decrypt to the empty string rather than leaking
  * anything or erroring.
  */
-final class SettingsSecretsTest extends ReachTestCase
-{
-    protected function setUp(): void
-    {
-        parent::setUp();
 
-        WpState::$options = [];
-    }
+beforeEach(function () {
+    WpState::$options = [];
+});
 
-    public function testClientSecretRoundTripsThroughEncryption(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'super-secret-value');
+test('client secret round trips through encryption', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'super-secret-value');
 
-        $this->assertSame('super-secret-value', $settings->getClientSecret('google'));
-    }
+    $this->assertSame('super-secret-value', $settings->getClientSecret('google'));
+});
 
-    public function testStoredClientSecretIsNotPlaintext(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'super-secret-value');
+test('stored client secret is not plaintext', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'super-secret-value');
 
-        // Inspect the raw option row: the plaintext must not appear anywhere.
-        $stored = WpState::$options[Settings::OPTION_SECRETS] ?? [];
-        $raw = json_encode($stored);
-        $this->assertStringNotContainsString('super-secret-value', (string) $raw);
-        $this->assertNotSame('', $stored['client_secret_google'] ?? '');
-    }
+    // Inspect the raw option row: the plaintext must not appear anywhere.
+    $stored = WpState::$options[Settings::OPTION_SECRETS] ?? [];
+    $raw = json_encode($stored);
+    $this->assertStringNotContainsString('super-secret-value', (string) $raw);
+    $this->assertNotSame('', $stored['client_secret_google'] ?? '');
+});
 
-    public function testEmptySecretRemovesTheStoredKey(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'value');
-        $settings->setClientSecret('google', '');
+test('empty secret removes the stored key', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'value');
+    $settings->setClientSecret('google', '');
 
-        $this->assertSame('', $settings->getClientSecret('google'));
-        $this->assertArrayNotHasKey('client_secret_google', WpState::$options[Settings::OPTION_SECRETS] ?? []);
-    }
+    $this->assertSame('', $settings->getClientSecret('google'));
+    $this->assertArrayNotHasKey('client_secret_google', WpState::$options[Settings::OPTION_SECRETS] ?? []);
+});
 
-    public function testUnsetSecretReturnsEmptyString(): void
-    {
-        $this->assertSame('', (new Settings())->getClientSecret('microsoft'));
-    }
+test('unset secret returns empty string', function () {
+    $this->assertSame('', (new Settings())->getClientSecret('microsoft'));
+});
 
-    public function testCorruptedCiphertextDecryptsToEmptyStringNotAnError(): void
-    {
-        // A too-short / garbage blob must be rejected by the length guard and
-        // return '' rather than emitting an openssl warning or partial data.
-        WpState::$options[Settings::OPTION_SECRETS] = [
-            'client_secret_google' => base64_encode('too-short'),
-        ];
+test('corrupted ciphertext decrypts to empty string not an error', function () {
+    // A too-short / garbage blob must be rejected by the length guard and
+    // return '' rather than emitting an openssl warning or partial data.
+    WpState::$options[Settings::OPTION_SECRETS] = [
+        'client_secret_google' => base64_encode('too-short'),
+    ];
 
-        $this->assertSame('', (new Settings())->getClientSecret('google'));
-    }
+    $this->assertSame('', (new Settings())->getClientSecret('google'));
+});
 
-    public function testSecretIsUnreadableAfterTheSaltRotates(): void
-    {
-        $settings = new Settings();
-        $settings->setClientSecret('google', 'value');
+test('secret is unreadable after the salt rotates', function () {
+    $settings = new Settings();
+    $settings->setClientSecret('google', 'value');
 
-        // Rotating the auth salt (a WP recovery action) changes the derived
-        // key, so previously stored secrets no longer decrypt — the intended
-        // behaviour after a suspected breach.
-        $this->salts['auth'] = 'rotated-salt-' . str_repeat('z', 48);
+    // Rotating the auth salt (a WP recovery action) changes the derived
+    // key, so previously stored secrets no longer decrypt — the intended
+    // behaviour after a suspected breach.
+    $this->salts['auth'] = 'rotated-salt-' . str_repeat('z', 48);
 
-        $this->assertSame('', $settings->getClientSecret('google'));
-    }
+    $this->assertSame('', $settings->getClientSecret('google'));
+});
 
-    public function testProviderNameIsNormalisedForBothIdAndSecret(): void
-    {
-        $settings = new Settings();
-        $settings->setClientId('Google!!', 'id-123');
-        $settings->setClientSecret('Google!!', 'secret-123');
+test('provider name is normalised for both id and secret', function () {
+    $settings = new Settings();
+    $settings->setClientId('Google!!', 'id-123');
+    $settings->setClientSecret('Google!!', 'secret-123');
 
-        // Normalisation strips non [a-z0-9_] so the mixed-case/punctuated
-        // form resolves to the same key as the clean one.
-        $this->assertSame('id-123', $settings->getClientId('google'));
-        $this->assertSame('secret-123', $settings->getClientSecret('google'));
-    }
+    // Normalisation strips non [a-z0-9_] so the mixed-case/punctuated
+    // form resolves to the same key as the clean one.
+    $this->assertSame('id-123', $settings->getClientId('google'));
+    $this->assertSame('secret-123', $settings->getClientSecret('google'));
+});
 
-    // --- place bias -------------------------------------------------------
+// --- place bias -------------------------------------------------------
+test('place bias set get and clear', function () {
+    $settings = new Settings();
+    $this->assertSame('', $settings->getPlaceBias());
 
-    public function testPlaceBiasSetGetAndClear(): void
-    {
-        $settings = new Settings();
-        $this->assertSame('', $settings->getPlaceBias());
+    $settings->setPlaceBias('  BS5  ');
+    $this->assertSame('BS5', $settings->getPlaceBias());
 
-        $settings->setPlaceBias('  BS5  ');
-        $this->assertSame('BS5', $settings->getPlaceBias());
+    $settings->setPlaceBias('   ');
+    $this->assertSame('', $settings->getPlaceBias());
+});
 
-        $settings->setPlaceBias('   ');
-        $this->assertSame('', $settings->getPlaceBias());
-    }
+// --- call-request email ----------------------------------------------
+test('call request email falls back to admin email when unset', function () {
+    WpState::$options['admin_email'] = 'admin@example.com';
+    $this->assertSame('admin@example.com', (new Settings())->getCallRequestEmail());
+});
 
-    // --- call-request email ----------------------------------------------
+test('call request email stored and returned when valid', function () {
+    $settings = new Settings();
+    $settings->setCallRequestEmail('ops@example.com');
+    $this->assertSame('ops@example.com', $settings->getCallRequestEmail());
+});
 
-    public function testCallRequestEmailFallsBackToAdminEmailWhenUnset(): void
-    {
-        WpState::$options['admin_email'] = 'admin@example.com';
-        $this->assertSame('admin@example.com', (new Settings())->getCallRequestEmail());
-    }
+test('invalid call request email is stored blank and falls back', function () {
+    WpState::$options['admin_email'] = 'admin@example.com';
+    $settings = new Settings();
+    $settings->setCallRequestEmail('not-an-email');
 
-    public function testCallRequestEmailStoredAndReturnedWhenValid(): void
-    {
-        $settings = new Settings();
-        $settings->setCallRequestEmail('ops@example.com');
-        $this->assertSame('ops@example.com', $settings->getCallRequestEmail());
-    }
-
-    public function testInvalidCallRequestEmailIsStoredBlankAndFallsBack(): void
-    {
-        WpState::$options['admin_email'] = 'admin@example.com';
-        $settings = new Settings();
-        $settings->setCallRequestEmail('not-an-email');
-
-        // Invalid input is not stored, so the getter falls back to admin.
-        $this->assertSame('admin@example.com', $settings->getCallRequestEmail());
-        $this->assertArrayNotHasKey('call_request_email', WpState::$options[Settings::OPTION_PUBLIC] ?? []);
-    }
-}
+    // Invalid input is not stored, so the getter falls back to admin.
+    $this->assertSame('admin@example.com', $settings->getCallRequestEmail());
+    $this->assertArrayNotHasKey('call_request_email', WpState::$options[Settings::OPTION_PUBLIC] ?? []);
+});

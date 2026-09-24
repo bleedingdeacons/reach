@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Admin;
 
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\Attributes\Test;
 use function Brain\Monkey\Functions\when;
 use BleedingDeacons\WpMocks\Exceptions\WpDieException;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Admin\SettingsPage;
 use Reach\Core\Settings;
-use Reach\Tests\ReachTestCase;
 use ReflectionMethod;
 use Scrutiny\Privacy\PersonalDataPolicy;
 
@@ -37,441 +34,16 @@ use Scrutiny\Privacy\PersonalDataPolicy;
  * blank one keeps what is stored, and only the explicit remove checkbox
  * clears. The form itself must never send a secret back to the browser.
  */
-#[CoversClass(\Reach\Admin\SettingsPage::class)]
-final class SettingsPageTest extends ReachTestCase
-{
-    private Settings $settings;
-    private SettingsPage $page;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+covers(\Reach\Admin\SettingsPage::class);
 
-        $_GET = [];
-        $_POST = [];
-
-        $this->settings = new Settings();
-        $this->page = new SettingsPage($this->settings);
-
-        // Not part of the shared WordPress stub set — it lives in wp-admin.
-        when('submit_button')->alias(static function (): void {
-            echo '<button type="submit" class="button button-primary">Save Changes</button>';
-        });
-    }
-
-    protected function tearDown(): void
-    {
-        $_GET = [];
-        $_POST = [];
-
-        parent::tearDown();
-    }
-
-    // ── registration ──────────────────────────────────────────────────
-    #[Test]
-    public function register_hooks_the_menu_the_init_and_the_save_handler(): void
-    {
-        $this->page->register();
-
-        foreach (['admin_menu', 'admin_init', 'admin_post_reach_save_settings'] as $hook) {
-            $this->assertActionAdded($hook, false, 'expected ' . $hook . ' to be hooked');
-        }
-    }
-
-    /**
-     * Stricter than the menu it hangs off: a user who can see Reach's
-     * personal-data screens but cannot manage options simply never sees this
-     * item, which is WordPress doing the hiding for us.
-     */
-    #[Test]
-    public function add_menu_attaches_under_reach_behind_manage_options(): void
-    {
-        $this->page->addMenu();
-
-        $this->assertCount(1, WpState::$menus);
-        $this->assertSame('submenu', WpState::$menus[0]['type']);
-        $this->assertSame('reach', WpState::$menus[0]['parent']);
-        $this->assertSame('reach-settings', WpState::$menus[0]['slug']);
-        $this->assertSame('manage_options', WpState::$menus[0]['cap']);
-        $this->assertNotSame(PersonalDataPolicy::VIEW_CAPABILITY, WpState::$menus[0]['cap']);
-    }
-
-    /**
-     * registerSettings() is deliberately empty: the secret fields need merge
-     * logic ("empty means don't change") that the Settings API has no way to
-     * express, so the save goes through admin-post.php instead. Asserting the
-     * emptiness is what stops someone quietly reintroducing register_setting()
-     * and with it a code path that overwrites a stored secret with a blank.
-     */
-    #[Test]
-    public function register_settings_registers_nothing_with_the_settings_api(): void
-    {
-        $registered = [];
-        when('register_setting')->alias(
-            static function (string $group, string $name, mixed $args = []) use (&$registered): void {
-                $registered[] = $name;
-            }
-        );
-
-        $this->page->registerSettings();
-
-        $this->assertSame([], $registered);
-    }
-
-    // ── capability guards ─────────────────────────────────────────────
-    #[Test]
-    public function the_screen_renders_nothing_without_manage_options(): void
-    {
-        WpState::$deniedCaps = ['manage_options'];
-        $this->settings->setClientId('google', 'google-client-id');
-
-        $html = $this->render();
-
-        $this->assertSame('', $html);
-        $this->assertStringNotContainsString('google-client-id', $html);
-    }
-
-    /**
-     * The personal-data capability is not a substitute here: it opens the
-     * three operational screens, not the credentials.
-     */
-    #[Test]
-    public function saving_without_manage_options_dies(): void
-    {
-        WpState::$deniedCaps = ['manage_options'];
-        WpState::$userCan = true;
-
-        $_POST = ['place_bias' => 'BS5'];
-
-        $this->expectException(WpDieException::class);
-        $this->page->handleSave();
-    }
-
-    #[Test]
-    public function nothing_is_written_when_the_save_is_refused(): void
-    {
-        WpState::$deniedCaps = ['manage_options'];
-        $_POST = ['place_bias' => 'BS5'];
-
-        try {
-            $this->page->handleSave();
-        } catch (WpDieException) {
-            // Expected; the assertion is that the write never happened.
-        }
-
-        $this->assertSame('', $this->settings->getPlaceBias());
-    }
-
-    // ── the rendered form ─────────────────────────────────────────────
-    #[Test]
-    public function the_form_posts_to_admin_post_with_a_nonce(): void
-    {
-        $html = $this->render();
-
-        $this->assertStringContainsString('action="https://example.test/wp-admin/admin-post.php"', $html);
-        $this->assertStringContainsString('name="action" value="reach_save_settings"', $html);
-        $this->assertStringContainsString('value="nonce-reach_save_settings"', $html);
-        $this->assertStringContainsString('Save Changes', $html);
-    }
-
-    #[Test]
-    public function the_saved_notice_shows_only_after_a_save(): void
-    {
-        $this->assertStringNotContainsString('Settings saved.', $this->render());
-
-        $_GET = ['updated' => '1'];
-
-        $this->assertStringContainsString('Settings saved.', $this->render());
-    }
-
-    #[Test]
-    public function the_find_page_settings_are_rendered_with_their_stored_values(): void
-    {
-        $this->settings->setPlaceBias('BS5');
-        $this->settings->setOutOfHours('22:00', '08:00');
-        $this->settings->setCallRequestEmail('callbacks@example.test');
-
-        $html = $this->render();
-
-        $this->assertStringContainsString('value="BS5"', $html);
-        $this->assertStringContainsString('value="22:00"', $html);
-        $this->assertStringContainsString('value="08:00"', $html);
-        $this->assertStringContainsString('value="callbacks@example.test"', $html);
-    }
-
-    #[Test]
-    public function the_call_request_field_offers_the_site_admin_address_as_its_placeholder(): void
-    {
-        WpState::$options['admin_email'] = 'admin@example.test';
-
-        $html = $this->render();
-
-        $this->assertStringContainsString('placeholder="admin@example.test"', $html);
-        // With nothing configured, the getter already falls back to that same
-        // address, so it is also the field's value.
-        $this->assertStringContainsString('value="admin@example.test"', $html);
-    }
-
-    #[Test]
-    public function the_redirect_uris_an_admin_has_to_register_are_shown(): void
-    {
-        $html = $this->render();
-
-        $this->assertStringContainsString('reach/v1/oauth/callback', $html);
-        $this->assertStringContainsString('/reach/signin', $html);
-    }
-
-    #[Test]
-    public function every_provider_gets_a_client_id_field(): void
-    {
-        $html = $this->render();
-
-        foreach (['google', 'microsoft', 'apple', 'facebook'] as $provider) {
-            $this->assertStringContainsString('name="client_id_' . $provider . '"', $html);
-        }
-        foreach (['Google', 'Microsoft', 'Apple', 'Facebook'] as $label) {
-            $this->assertStringContainsString('<h3>' . $label . '</h3>', $html);
-        }
-    }
-
-    /**
-     * Apple's client-side flow has no client secret, so offering a field for
-     * one would invite an admin to paste a credential nothing reads.
-     */
-    #[Test]
-    public function apple_gets_no_client_secret_field(): void
-    {
-        $html = $this->render();
-
-        foreach (['google', 'microsoft', 'facebook'] as $provider) {
-            $this->assertStringContainsString('name="client_secret_' . $provider . '"', $html);
-        }
-        $this->assertStringNotContainsString('name="client_secret_apple"', $html);
-    }
-
-    #[Test]
-    public function a_stored_client_id_is_rendered_but_a_stored_secret_never_is(): void
-    {
-        $this->settings->setClientId('google', 'google-client-id');
-        $this->settings->setClientSecret('google', 'super-secret-value');
-
-        $html = $this->render();
-
-        $this->assertStringContainsString('value="google-client-id"', $html);
-        $this->assertStringNotContainsString('super-secret-value', $html);
-        // Shown as a fixed-width placeholder instead, so an admin can see one
-        // is set without it being readable off the form.
-        $this->assertStringContainsString('•••••••• (saved — leave blank to keep)', $html);
-        $this->assertStringContainsString('name="remove_secret_google"', $html);
-    }
-
-    #[Test]
-    public function a_provider_with_no_stored_secret_offers_no_remove_checkbox(): void
-    {
-        $html = $this->render();
-
-        $this->assertStringNotContainsString('name="remove_secret_google"', $html);
-        $this->assertStringNotContainsString('leave blank to keep', $html);
-    }
-
-    // ── saving (reflection: the live caller exits) ────────────────────
-    #[Test]
-    public function the_find_page_settings_are_saved(): void
-    {
-        $_POST = [
-            'place_bias'         => '  BS5  ',
-            'out_of_hours_start' => '22:00',
-            'out_of_hours_end'   => '08:00',
-            'call_request_email' => 'callbacks@example.test',
-        ];
-
-        $this->save();
-
-        $this->assertSame('BS5', $this->settings->getPlaceBias());
-        $this->assertSame('22:00', $this->settings->getOutOfHoursStart());
-        $this->assertSame('08:00', $this->settings->getOutOfHoursEnd());
-        $this->assertSame('callbacks@example.test', $this->settings->getCallRequestEmail());
-    }
-
-    #[Test]
-    public function an_absent_field_clears_the_value_it_names(): void
-    {
-        $this->settings->setPlaceBias('BS5');
-        $this->settings->setOutOfHours('22:00', '08:00');
-
-        // An empty POST is what an admin submitting a cleared form sends.
-        $this->save();
-
-        $this->assertSame('', $this->settings->getPlaceBias());
-        $this->assertSame('', $this->settings->getOutOfHoursStart());
-        $this->assertSame('', $this->settings->getOutOfHoursEnd());
-    }
-
-    /**
-     * The shape checks are Settings' job, not the page's — the page only
-     * unslashes and string-guards — but the pairing is worth pinning: junk in
-     * either field disables the window rather than half-configuring it.
-     */
-    #[Test]
-    public function an_unparseable_out_of_hours_bound_is_stored_blank(): void
-    {
-        $_POST = ['out_of_hours_start' => 'half past nine', 'out_of_hours_end' => '08:00'];
-
-        $this->save();
-
-        $this->assertSame('', $this->settings->getOutOfHoursStart());
-        $this->assertSame('08:00', $this->settings->getOutOfHoursEnd());
-    }
-
-    #[Test]
-    public function an_invalid_call_request_address_falls_back_to_the_site_admin(): void
-    {
-        WpState::$options['admin_email'] = 'admin@example.test';
-        $_POST = ['call_request_email' => 'not-an-address'];
-
-        $this->save();
-
-        $this->assertSame('admin@example.test', $this->settings->getCallRequestEmail());
-    }
-
-    #[Test]
-    public function every_provider_client_id_is_saved(): void
-    {
-        $_POST = [
-            'client_id_google'    => 'google-id',
-            'client_id_microsoft' => 'microsoft-id',
-            'client_id_apple'     => 'apple-id',
-            'client_id_facebook'  => 'facebook-id',
-        ];
-
-        $this->save();
-
-        $this->assertSame('google-id', $this->settings->getClientId('google'));
-        $this->assertSame('microsoft-id', $this->settings->getClientId('microsoft'));
-        $this->assertSame('apple-id', $this->settings->getClientId('apple'));
-        $this->assertSame('facebook-id', $this->settings->getClientId('facebook'));
-    }
-
-    #[Test]
-    public function a_submitted_secret_is_stored_encrypted_and_reads_back(): void
-    {
-        $_POST = ['client_secret_google' => '  a-new-secret  '];
-
-        $this->save();
-
-        $this->assertSame('a-new-secret', $this->settings->getClientSecret('google'));
-
-        $stored = WpState::$options[Settings::OPTION_SECRETS];
-        $this->assertIsArray($stored);
-        $this->assertStringNotContainsString(
-            'a-new-secret',
-            (string) json_encode($stored),
-            'the secret must not be recoverable from the option row',
-        );
-    }
-
-    /**
-     * The rule the whole manual handler exists for: an empty secret field is
-     * "leave it alone", because the form never shows the stored value and so
-     * an admin editing anything else submits it blank every time.
-     */
-    #[Test]
-    public function an_empty_secret_field_leaves_the_stored_secret_alone(): void
-    {
-        $this->settings->setClientSecret('google', 'existing-secret');
-
-        $_POST = ['client_secret_google' => '', 'client_id_google' => 'google-id'];
-        $this->save();
-
-        $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
-        $this->assertSame('google-id', $this->settings->getClientId('google'));
-    }
-
-    #[Test]
-    public function an_absent_secret_field_leaves_the_stored_secret_alone(): void
-    {
-        $this->settings->setClientSecret('google', 'existing-secret');
-
-        $this->save();
-
-        $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
-    }
-
-    #[Test]
-    public function the_remove_checkbox_clears_the_stored_secret(): void
-    {
-        $this->settings->setClientSecret('google', 'existing-secret');
-
-        $_POST = ['remove_secret_google' => '1'];
-        $this->save();
-
-        $this->assertSame('', $this->settings->getClientSecret('google'));
-    }
-
-    /**
-     * Remove wins over a value typed into the field in the same submit —
-     * ticking the box and typing a new secret is contradictory, and clearing
-     * is the safer reading.
-     */
-    #[Test]
-    public function the_remove_checkbox_beats_a_secret_typed_alongside_it(): void
-    {
-        $this->settings->setClientSecret('google', 'existing-secret');
-
-        $_POST = ['remove_secret_google' => '1', 'client_secret_google' => 'a-new-secret'];
-        $this->save();
-
-        $this->assertSame('', $this->settings->getClientSecret('google'));
-    }
-
-    #[Test]
-    public function an_unticked_remove_checkbox_does_not_clear_anything(): void
-    {
-        $this->settings->setClientSecret('google', 'existing-secret');
-
-        $_POST = ['remove_secret_google' => '0'];
-        $this->save();
-
-        $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
-    }
-
-    #[Test]
-    public function a_secret_posted_for_apple_is_ignored(): void
-    {
-        $_POST = ['client_secret_apple' => 'apple-has-no-secret', 'remove_secret_apple' => '1'];
-
-        $this->save();
-
-        $this->assertSame('', $this->settings->getClientSecret('apple'));
-        $this->assertArrayNotHasKey(
-            Settings::OPTION_SECRETS,
-            WpState::$options,
-            'Apple never reaches the secret store at all, not even to clear it',
-        );
-    }
-
-    #[Test]
-    public function saving_one_provider_does_not_disturb_another(): void
-    {
-        $this->settings->setClientSecret('google', 'google-secret');
-        $this->settings->setClientSecret('facebook', 'facebook-secret');
-
-        $_POST = ['remove_secret_google' => '1'];
-        $this->save();
-
-        $this->assertSame('', $this->settings->getClientSecret('google'));
-        $this->assertSame('facebook-secret', $this->settings->getClientSecret('facebook'));
-    }
-
+beforeEach(function () {
     // ── helpers ───────────────────────────────────────────────────────
-
-    private function save(): void
-    {
+    $this->save = function (): void {
         (new ReflectionMethod(SettingsPage::class, 'saveFromRequest'))->invoke($this->page);
-    }
+    };
 
-    private function render(): string
-    {
+    $this->render = function (): string {
         ob_start();
         try {
             $this->page->render();
@@ -480,5 +52,361 @@ final class SettingsPageTest extends ReachTestCase
         }
 
         return $html;
+    };
+
+    $_GET = [];
+    $_POST = [];
+
+    $this->settings = new Settings();
+    $this->page = new SettingsPage($this->settings);
+
+    // Not part of the shared WordPress stub set — it lives in wp-admin.
+    when('submit_button')->alias(static function (): void {
+        echo '<button type="submit" class="button button-primary">Save Changes</button>';
+    });
+});
+
+afterEach(function () {
+    $_GET = [];
+    $_POST = [];
+});
+
+// ── registration ──────────────────────────────────────────────────
+test('register hooks the menu the init and the save handler', function () {
+    $this->page->register();
+
+    foreach (['admin_menu', 'admin_init', 'admin_post_reach_save_settings'] as $hook) {
+        $this->assertActionAdded($hook, false, 'expected ' . $hook . ' to be hooked');
     }
-}
+});
+
+/**
+ * Stricter than the menu it hangs off: a user who can see Reach's
+ * personal-data screens but cannot manage options simply never sees this
+ * item, which is WordPress doing the hiding for us.
+ */
+test('add menu attaches under reach behind manage options', function () {
+    $this->page->addMenu();
+
+    $this->assertCount(1, WpState::$menus);
+    $this->assertSame('submenu', WpState::$menus[0]['type']);
+    $this->assertSame('reach', WpState::$menus[0]['parent']);
+    $this->assertSame('reach-settings', WpState::$menus[0]['slug']);
+    $this->assertSame('manage_options', WpState::$menus[0]['cap']);
+    $this->assertNotSame(PersonalDataPolicy::VIEW_CAPABILITY, WpState::$menus[0]['cap']);
+});
+
+/**
+ * registerSettings() is deliberately empty: the secret fields need merge
+ * logic ("empty means don't change") that the Settings API has no way to
+ * express, so the save goes through admin-post.php instead. Asserting the
+ * emptiness is what stops someone quietly reintroducing register_setting()
+ * and with it a code path that overwrites a stored secret with a blank.
+ */
+test('register settings registers nothing with the settings api', function () {
+    $registered = [];
+    when('register_setting')->alias(
+        static function (string $group, string $name, mixed $args = []) use (&$registered): void {
+            $registered[] = $name;
+        }
+    );
+
+    $this->page->registerSettings();
+
+    $this->assertSame([], $registered);
+});
+
+// ── capability guards ─────────────────────────────────────────────
+test('the screen renders nothing without manage options', function () {
+    WpState::$deniedCaps = ['manage_options'];
+    $this->settings->setClientId('google', 'google-client-id');
+
+    $html = ($this->render)();
+
+    $this->assertSame('', $html);
+    $this->assertStringNotContainsString('google-client-id', $html);
+});
+
+/**
+ * The personal-data capability is not a substitute here: it opens the
+ * three operational screens, not the credentials.
+ */
+test('saving without manage options dies', function () {
+    WpState::$deniedCaps = ['manage_options'];
+    WpState::$userCan = true;
+
+    $_POST = ['place_bias' => 'BS5'];
+
+    $this->expectException(WpDieException::class);
+    $this->page->handleSave();
+});
+
+test('nothing is written when the save is refused', function () {
+    WpState::$deniedCaps = ['manage_options'];
+    $_POST = ['place_bias' => 'BS5'];
+
+    try {
+        $this->page->handleSave();
+    } catch (WpDieException) {
+        // Expected; the assertion is that the write never happened.
+    }
+
+    $this->assertSame('', $this->settings->getPlaceBias());
+});
+
+// ── the rendered form ─────────────────────────────────────────────
+test('the form posts to admin post with a nonce', function () {
+    $html = ($this->render)();
+
+    $this->assertStringContainsString('action="https://example.test/wp-admin/admin-post.php"', $html);
+    $this->assertStringContainsString('name="action" value="reach_save_settings"', $html);
+    $this->assertStringContainsString('value="nonce-reach_save_settings"', $html);
+    $this->assertStringContainsString('Save Changes', $html);
+});
+
+test('the saved notice shows only after a save', function () {
+    $this->assertStringNotContainsString('Settings saved.', ($this->render)());
+
+    $_GET = ['updated' => '1'];
+
+    $this->assertStringContainsString('Settings saved.', ($this->render)());
+});
+
+test('the find page settings are rendered with their stored values', function () {
+    $this->settings->setPlaceBias('BS5');
+    $this->settings->setOutOfHours('22:00', '08:00');
+    $this->settings->setCallRequestEmail('callbacks@example.test');
+
+    $html = ($this->render)();
+
+    $this->assertStringContainsString('value="BS5"', $html);
+    $this->assertStringContainsString('value="22:00"', $html);
+    $this->assertStringContainsString('value="08:00"', $html);
+    $this->assertStringContainsString('value="callbacks@example.test"', $html);
+});
+
+test('the call request field offers the site admin address as its placeholder', function () {
+    WpState::$options['admin_email'] = 'admin@example.test';
+
+    $html = ($this->render)();
+
+    $this->assertStringContainsString('placeholder="admin@example.test"', $html);
+    // With nothing configured, the getter already falls back to that same
+    // address, so it is also the field's value.
+    $this->assertStringContainsString('value="admin@example.test"', $html);
+});
+
+test('the redirect uris an admin has to register are shown', function () {
+    $html = ($this->render)();
+
+    $this->assertStringContainsString('reach/v1/oauth/callback', $html);
+    $this->assertStringContainsString('/reach/signin', $html);
+});
+
+test('every provider gets a client id field', function () {
+    $html = ($this->render)();
+
+    foreach (['google', 'microsoft', 'apple', 'facebook'] as $provider) {
+        $this->assertStringContainsString('name="client_id_' . $provider . '"', $html);
+    }
+    foreach (['Google', 'Microsoft', 'Apple', 'Facebook'] as $label) {
+        $this->assertStringContainsString('<h3>' . $label . '</h3>', $html);
+    }
+});
+
+/**
+ * Apple's client-side flow has no client secret, so offering a field for
+ * one would invite an admin to paste a credential nothing reads.
+ */
+test('apple gets no client secret field', function () {
+    $html = ($this->render)();
+
+    foreach (['google', 'microsoft', 'facebook'] as $provider) {
+        $this->assertStringContainsString('name="client_secret_' . $provider . '"', $html);
+    }
+    $this->assertStringNotContainsString('name="client_secret_apple"', $html);
+});
+
+test('a stored client id is rendered but a stored secret never is', function () {
+    $this->settings->setClientId('google', 'google-client-id');
+    $this->settings->setClientSecret('google', 'super-secret-value');
+
+    $html = ($this->render)();
+
+    $this->assertStringContainsString('value="google-client-id"', $html);
+    $this->assertStringNotContainsString('super-secret-value', $html);
+    // Shown as a fixed-width placeholder instead, so an admin can see one
+    // is set without it being readable off the form.
+    $this->assertStringContainsString('•••••••• (saved — leave blank to keep)', $html);
+    $this->assertStringContainsString('name="remove_secret_google"', $html);
+});
+
+test('a provider with no stored secret offers no remove checkbox', function () {
+    $html = ($this->render)();
+
+    $this->assertStringNotContainsString('name="remove_secret_google"', $html);
+    $this->assertStringNotContainsString('leave blank to keep', $html);
+});
+
+// ── saving (reflection: the live caller exits) ────────────────────
+test('the find page settings are saved', function () {
+    $_POST = [
+        'place_bias'         => '  BS5  ',
+        'out_of_hours_start' => '22:00',
+        'out_of_hours_end'   => '08:00',
+        'call_request_email' => 'callbacks@example.test',
+    ];
+
+    ($this->save)();
+
+    $this->assertSame('BS5', $this->settings->getPlaceBias());
+    $this->assertSame('22:00', $this->settings->getOutOfHoursStart());
+    $this->assertSame('08:00', $this->settings->getOutOfHoursEnd());
+    $this->assertSame('callbacks@example.test', $this->settings->getCallRequestEmail());
+});
+
+test('an absent field clears the value it names', function () {
+    $this->settings->setPlaceBias('BS5');
+    $this->settings->setOutOfHours('22:00', '08:00');
+
+    // An empty POST is what an admin submitting a cleared form sends.
+    ($this->save)();
+
+    $this->assertSame('', $this->settings->getPlaceBias());
+    $this->assertSame('', $this->settings->getOutOfHoursStart());
+    $this->assertSame('', $this->settings->getOutOfHoursEnd());
+});
+
+/**
+ * The shape checks are Settings' job, not the page's — the page only
+ * unslashes and string-guards — but the pairing is worth pinning: junk in
+ * either field disables the window rather than half-configuring it.
+ */
+test('an unparseable out of hours bound is stored blank', function () {
+    $_POST = ['out_of_hours_start' => 'half past nine', 'out_of_hours_end' => '08:00'];
+
+    ($this->save)();
+
+    $this->assertSame('', $this->settings->getOutOfHoursStart());
+    $this->assertSame('08:00', $this->settings->getOutOfHoursEnd());
+});
+
+test('an invalid call request address falls back to the site admin', function () {
+    WpState::$options['admin_email'] = 'admin@example.test';
+    $_POST = ['call_request_email' => 'not-an-address'];
+
+    ($this->save)();
+
+    $this->assertSame('admin@example.test', $this->settings->getCallRequestEmail());
+});
+
+test('every provider client id is saved', function () {
+    $_POST = [
+        'client_id_google'    => 'google-id',
+        'client_id_microsoft' => 'microsoft-id',
+        'client_id_apple'     => 'apple-id',
+        'client_id_facebook'  => 'facebook-id',
+    ];
+
+    ($this->save)();
+
+    $this->assertSame('google-id', $this->settings->getClientId('google'));
+    $this->assertSame('microsoft-id', $this->settings->getClientId('microsoft'));
+    $this->assertSame('apple-id', $this->settings->getClientId('apple'));
+    $this->assertSame('facebook-id', $this->settings->getClientId('facebook'));
+});
+
+test('a submitted secret is stored encrypted and reads back', function () {
+    $_POST = ['client_secret_google' => '  a-new-secret  '];
+
+    ($this->save)();
+
+    $this->assertSame('a-new-secret', $this->settings->getClientSecret('google'));
+
+    $stored = WpState::$options[Settings::OPTION_SECRETS];
+    $this->assertIsArray($stored);
+    $this->assertStringNotContainsString(
+        'a-new-secret',
+        (string) json_encode($stored),
+        'the secret must not be recoverable from the option row',
+    );
+});
+
+/**
+ * The rule the whole manual handler exists for: an empty secret field is
+ * "leave it alone", because the form never shows the stored value and so
+ * an admin editing anything else submits it blank every time.
+ */
+test('an empty secret field leaves the stored secret alone', function () {
+    $this->settings->setClientSecret('google', 'existing-secret');
+
+    $_POST = ['client_secret_google' => '', 'client_id_google' => 'google-id'];
+    ($this->save)();
+
+    $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
+    $this->assertSame('google-id', $this->settings->getClientId('google'));
+});
+
+test('an absent secret field leaves the stored secret alone', function () {
+    $this->settings->setClientSecret('google', 'existing-secret');
+
+    ($this->save)();
+
+    $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
+});
+
+test('the remove checkbox clears the stored secret', function () {
+    $this->settings->setClientSecret('google', 'existing-secret');
+
+    $_POST = ['remove_secret_google' => '1'];
+    ($this->save)();
+
+    $this->assertSame('', $this->settings->getClientSecret('google'));
+});
+
+/**
+ * Remove wins over a value typed into the field in the same submit —
+ * ticking the box and typing a new secret is contradictory, and clearing
+ * is the safer reading.
+ */
+test('the remove checkbox beats a secret typed alongside it', function () {
+    $this->settings->setClientSecret('google', 'existing-secret');
+
+    $_POST = ['remove_secret_google' => '1', 'client_secret_google' => 'a-new-secret'];
+    ($this->save)();
+
+    $this->assertSame('', $this->settings->getClientSecret('google'));
+});
+
+test('an unticked remove checkbox does not clear anything', function () {
+    $this->settings->setClientSecret('google', 'existing-secret');
+
+    $_POST = ['remove_secret_google' => '0'];
+    ($this->save)();
+
+    $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
+});
+
+test('a secret posted for apple is ignored', function () {
+    $_POST = ['client_secret_apple' => 'apple-has-no-secret', 'remove_secret_apple' => '1'];
+
+    ($this->save)();
+
+    $this->assertSame('', $this->settings->getClientSecret('apple'));
+    $this->assertArrayNotHasKey(
+        Settings::OPTION_SECRETS,
+        WpState::$options,
+        'Apple never reaches the secret store at all, not even to clear it',
+    );
+});
+
+test('saving one provider does not disturb another', function () {
+    $this->settings->setClientSecret('google', 'google-secret');
+    $this->settings->setClientSecret('facebook', 'facebook-secret');
+
+    $_POST = ['remove_secret_google' => '1'];
+    ($this->save)();
+
+    $this->assertSame('', $this->settings->getClientSecret('google'));
+    $this->assertSame('facebook-secret', $this->settings->getClientSecret('facebook'));
+});

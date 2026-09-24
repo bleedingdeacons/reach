@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
-use Reach\Tests\ReachTestCase;
 use Reach\Auth\JwtVerifier;
 
 /**
@@ -18,155 +17,144 @@ use Reach\Auth\JwtVerifier;
  * expiry are each given their own negative-case test so a future
  * regression in any single check is caught immediately.
  */
-final class JwtVerifierTest extends ReachTestCase
-{
-    private string $privateKey = '';
-    private string $jwks = '';
-    private string $kid = 'test-kid';
-    private string $jwksUrl = 'https://example.test/jwks.json';
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+beforeEach(function () {
+    $this->privateKey = '';
 
-        WpState::$transients = [];
+    $this->jwks = '';
 
-        $res = openssl_pkey_new([
-            'private_key_bits' => 2048,
-            'private_key_type' => OPENSSL_KEYTYPE_RSA,
-        ]);
+    $this->kid = 'test-kid';
 
-        // Skip rather than fail when the platform cannot generate a key at
-        // all. openssl_pkey_new() needs an openssl.cnf, which is absent on
-        // some Windows PHP builds; that is a missing local prerequisite, not
-        // a defect in the verifier. CI has one, so these still run there.
-        if ($res === false) {
-            self::markTestSkipped('openssl_pkey_new() unavailable: ' . (openssl_error_string() ?: 'unknown error'));
-        }
-
-        openssl_pkey_export($res, $privateKey);
-        $details = openssl_pkey_get_details($res);
-        $this->privateKey = $privateKey;
-
-        // Build a JWKS document with the matching public key.
-        $this->jwks = json_encode([
-            'keys' => [[
-                'kty' => 'RSA',
-                'alg' => 'RS256',
-                'use' => 'sig',
-                'kid' => $this->kid,
-                'n' => self::base64Url($details['rsa']['n']),
-                'e' => self::base64Url($details['rsa']['e']),
-            ]],
-        ]);
-
-        // Stub wp_remote_get to return our JWKS for the test URL.
-        $jwks = $this->jwks;
-        $jwksUrl = $this->jwksUrl;
-        $this->stubHttp(static function (string $url) use ($jwks, $jwksUrl) {
-            if ($url !== $jwksUrl) {
-                return new \WP_Error('no_stub', 'No stub for ' . $url);
-            }
-            return [
-                'response' => ['code' => 200],
-                'body'     => $jwks,
-            ];
-        });
-    }
-
-    public function testValidTokenVerifies(): void
-    {
-        $claims = [
-            'iss'   => 'https://issuer.example',
-            'aud'   => 'client-id-123',
-            'sub'   => 'user-456',
-            'email' => 'a@example.com',
-            'email_verified' => true,
-            'nonce' => 'expected-nonce',
-            'iat'   => time(),
-            'exp'   => time() + 3600,
-        ];
-        $token = $this->mint($claims);
-
-        $verified = (new JwtVerifier())->verify(
-            $token,
-            $this->jwksUrl,
-            'https://issuer.example',
-            'client-id-123',
-            'expected-nonce'
-        );
-
-        $this->assertNotNull($verified);
-        $this->assertSame('a@example.com', $verified['email']);
-    }
-
-    public function testWrongIssuerRejected(): void
-    {
-        $token = $this->mint(['iss' => 'https://other.example', 'aud' => 'client-id-123', 'iat' => time(), 'exp' => time() + 3600]);
-        $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
-    }
-
-    public function testWrongAudienceRejected(): void
-    {
-        $token = $this->mint(['iss' => 'https://issuer.example', 'aud' => 'wrong-client', 'iat' => time(), 'exp' => time() + 3600]);
-        $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
-    }
-
-    public function testWrongNonceRejected(): void
-    {
-        $token = $this->mint([
-            'iss' => 'https://issuer.example', 'aud' => 'client-id-123',
-            'nonce' => 'bad', 'iat' => time(), 'exp' => time() + 3600,
-        ]);
-        $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123', 'expected'));
-    }
-
-    public function testExpiredTokenRejected(): void
-    {
-        $token = $this->mint([
-            'iss' => 'https://issuer.example', 'aud' => 'client-id-123',
-            'iat' => time() - 7200, 'exp' => time() - 3600,
-        ]);
-        $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
-    }
-
-    public function testNoneAlgorithmRejected(): void
-    {
-        $header = self::base64Url(json_encode(['alg' => 'none', 'kid' => $this->kid, 'typ' => 'JWT']));
-        $payload = self::base64Url(json_encode([
-            'iss' => 'https://issuer.example', 'aud' => 'client-id-123',
-            'iat' => time(), 'exp' => time() + 3600,
-        ]));
-        $token = $header . '.' . $payload . '.';
-
-        $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
-    }
-
-    public function testTamperedSignatureRejected(): void
-    {
-        $token = $this->mint(['iss' => 'https://issuer.example', 'aud' => 'client-id-123', 'iat' => time(), 'exp' => time() + 3600]);
-        $parts = explode('.', $token);
-        $parts[2] = strtr($parts[2], 'a', 'b');
-        $tampered = implode('.', $parts);
-
-        $this->assertNull((new JwtVerifier())->verify($tampered, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
-    }
+    $this->jwksUrl = 'https://example.test/jwks.json';
 
     /**
      * @param array<string, mixed> $claims
      */
-    private function mint(array $claims): string
-    {
-        $header = self::base64Url(json_encode(['alg' => 'RS256', 'kid' => $this->kid, 'typ' => 'JWT']));
-        $payload = self::base64Url(json_encode($claims));
+    $this->mint = function (array $claims): string {
+        $header = ($this->base64Url)(json_encode(['alg' => 'RS256', 'kid' => $this->kid, 'typ' => 'JWT']));
+        $payload = ($this->base64Url)(json_encode($claims));
         $signed = $header . '.' . $payload;
 
         openssl_sign($signed, $signature, $this->privateKey, OPENSSL_ALGO_SHA256);
-        return $signed . '.' . self::base64Url($signature);
+        return $signed . '.' . ($this->base64Url)($signature);
+    };
+
+    $this->base64Url = function (string $data): string {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    };
+
+    WpState::$transients = [];
+
+    $res = openssl_pkey_new([
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+
+    // Skip rather than fail when the platform cannot generate a key at
+    // all. openssl_pkey_new() needs an openssl.cnf, which is absent on
+    // some Windows PHP builds; that is a missing local prerequisite, not
+    // a defect in the verifier. CI has one, so these still run there.
+    if ($res === false) {
+        $this->markTestSkipped('openssl_pkey_new() unavailable: ' . (openssl_error_string() ?: 'unknown error'));
     }
 
-    private static function base64Url(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-    }
-}
+    openssl_pkey_export($res, $privateKey);
+    $details = openssl_pkey_get_details($res);
+    $this->privateKey = $privateKey;
+
+    // Build a JWKS document with the matching public key.
+    $this->jwks = json_encode([
+        'keys' => [[
+            'kty' => 'RSA',
+            'alg' => 'RS256',
+            'use' => 'sig',
+            'kid' => $this->kid,
+            'n' => ($this->base64Url)($details['rsa']['n']),
+            'e' => ($this->base64Url)($details['rsa']['e']),
+        ]],
+    ]);
+
+    // Stub wp_remote_get to return our JWKS for the test URL.
+    $jwks = $this->jwks;
+    $jwksUrl = $this->jwksUrl;
+    $this->stubHttp(static function (string $url) use ($jwks, $jwksUrl) {
+        if ($url !== $jwksUrl) {
+            return new \WP_Error('no_stub', 'No stub for ' . $url);
+        }
+        return [
+            'response' => ['code' => 200],
+            'body'     => $jwks,
+        ];
+    });
+});
+
+test('valid token verifies', function () {
+    $claims = [
+        'iss'   => 'https://issuer.example',
+        'aud'   => 'client-id-123',
+        'sub'   => 'user-456',
+        'email' => 'a@example.com',
+        'email_verified' => true,
+        'nonce' => 'expected-nonce',
+        'iat'   => time(),
+        'exp'   => time() + 3600,
+    ];
+    $token = ($this->mint)($claims);
+
+    $verified = (new JwtVerifier())->verify(
+        $token,
+        $this->jwksUrl,
+        'https://issuer.example',
+        'client-id-123',
+        'expected-nonce'
+    );
+
+    $this->assertNotNull($verified);
+    $this->assertSame('a@example.com', $verified['email']);
+});
+
+test('wrong issuer rejected', function () {
+    $token = ($this->mint)(['iss' => 'https://other.example', 'aud' => 'client-id-123', 'iat' => time(), 'exp' => time() + 3600]);
+    $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
+});
+
+test('wrong audience rejected', function () {
+    $token = ($this->mint)(['iss' => 'https://issuer.example', 'aud' => 'wrong-client', 'iat' => time(), 'exp' => time() + 3600]);
+    $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
+});
+
+test('wrong nonce rejected', function () {
+    $token = ($this->mint)([
+        'iss' => 'https://issuer.example', 'aud' => 'client-id-123',
+        'nonce' => 'bad', 'iat' => time(), 'exp' => time() + 3600,
+    ]);
+    $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123', 'expected'));
+});
+
+test('expired token rejected', function () {
+    $token = ($this->mint)([
+        'iss' => 'https://issuer.example', 'aud' => 'client-id-123',
+        'iat' => time() - 7200, 'exp' => time() - 3600,
+    ]);
+    $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
+});
+
+test('none algorithm rejected', function () {
+    $header = ($this->base64Url)(json_encode(['alg' => 'none', 'kid' => $this->kid, 'typ' => 'JWT']));
+    $payload = ($this->base64Url)(json_encode([
+        'iss' => 'https://issuer.example', 'aud' => 'client-id-123',
+        'iat' => time(), 'exp' => time() + 3600,
+    ]));
+    $token = $header . '.' . $payload . '.';
+
+    $this->assertNull((new JwtVerifier())->verify($token, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
+});
+
+test('tampered signature rejected', function () {
+    $token = ($this->mint)(['iss' => 'https://issuer.example', 'aud' => 'client-id-123', 'iat' => time(), 'exp' => time() + 3600]);
+    $parts = explode('.', $token);
+    $parts[2] = strtr($parts[2], 'a', 'b');
+    $tampered = implode('.', $parts);
+
+    $this->assertNull((new JwtVerifier())->verify($tampered, $this->jwksUrl, 'https://issuer.example', 'client-id-123'));
+});

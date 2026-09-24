@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
-use Reach\Tests\ReachTestCase;
 use Reach\Core\Settings;
 
 /**
@@ -16,88 +15,76 @@ use Reach\Core\Settings;
  * epoch below is therefore built with gmmktime() so "now" is an exact,
  * timezone-free clock time and the assertions stay deterministic.
  */
-final class SettingsOutOfHoursTest extends ReachTestCase
+
+/** Epoch for a given UTC wall-clock time on a fixed reference day. */
+function epochAt(int $hour, int $minute): int
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        WpState::$options = [];
-    }
-
-    /** Epoch for a given UTC wall-clock time on a fixed reference day. */
-    private function epochAt(int $hour, int $minute): int
-    {
-        return gmmktime($hour, $minute, 0, 1, 1, 2021);
-    }
-
-    public function testDisabledWhenUnset(): void
-    {
-        $settings = new Settings();
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(3, 0)));
-    }
-
-    public function testDisabledWhenOnlyOneBoundSet(): void
-    {
-        $settings = new Settings();
-        $settings->setOutOfHours('22:00', '');
-        $this->assertSame('', $settings->getOutOfHoursEnd());
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(23, 0)));
-    }
-
-    public function testEqualBoundsTreatedAsOff(): void
-    {
-        $settings = new Settings();
-        $settings->setOutOfHours('09:00', '09:00');
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(9, 0)));
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(15, 0)));
-    }
-
-    public function testSameDayWindow(): void
-    {
-        $settings = new Settings();
-        $settings->setOutOfHours('09:00', '17:00');
-
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(9, 0)));   // start inclusive
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(12, 30)));
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(16, 59)));
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(8, 59)));
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(17, 0)));  // end exclusive
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(23, 0)));
-    }
-
-    public function testWindowSpanningMidnight(): void
-    {
-        $settings = new Settings();
-        $settings->setOutOfHours('22:00', '08:00');
-
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(22, 0)));  // start inclusive
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(23, 30)));
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(0, 0)));
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(7, 59)));
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(8, 0)));  // end exclusive
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(12, 0)));
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(21, 59)));
-    }
-
-    public function testNormalisesSecondsAndStores(): void
-    {
-        $settings = new Settings();
-        // An <input type="time" step="1"> can submit H:i:s — the seconds
-        // should be dropped to a clean H:i.
-        $settings->setOutOfHours('22:00:30', '08:00:00');
-
-        $this->assertSame('22:00', $settings->getOutOfHoursStart());
-        $this->assertSame('08:00', $settings->getOutOfHoursEnd());
-        $this->assertTrue($settings->isOutOfHours($this->epochAt(23, 0)));
-    }
-
-    public function testInvalidTimeStoredBlankAndDisablesWindow(): void
-    {
-        $settings = new Settings();
-        $settings->setOutOfHours('99:99', '08:00');
-
-        $this->assertSame('', $settings->getOutOfHoursStart());
-        $this->assertFalse($settings->isOutOfHours($this->epochAt(2, 0)));
-    }
+    return gmmktime($hour, $minute, 0, 1, 1, 2021);
 }
+
+beforeEach(function () {
+    WpState::$options = [];
+});
+
+test('disabled when unset', function () {
+    $settings = new Settings();
+    $this->assertFalse($settings->isOutOfHours(epochAt(3, 0)));
+});
+
+test('disabled when only one bound set', function () {
+    $settings = new Settings();
+    $settings->setOutOfHours('22:00', '');
+    $this->assertSame('', $settings->getOutOfHoursEnd());
+    $this->assertFalse($settings->isOutOfHours(epochAt(23, 0)));
+});
+
+test('equal bounds treated as off', function () {
+    $settings = new Settings();
+    $settings->setOutOfHours('09:00', '09:00');
+    $this->assertFalse($settings->isOutOfHours(epochAt(9, 0)));
+    $this->assertFalse($settings->isOutOfHours(epochAt(15, 0)));
+});
+
+test('same day window', function () {
+    $settings = new Settings();
+    $settings->setOutOfHours('09:00', '17:00');
+
+    $this->assertTrue($settings->isOutOfHours(epochAt(9, 0)));   // start inclusive
+    $this->assertTrue($settings->isOutOfHours(epochAt(12, 30)));
+    $this->assertTrue($settings->isOutOfHours(epochAt(16, 59)));
+    $this->assertFalse($settings->isOutOfHours(epochAt(8, 59)));
+    $this->assertFalse($settings->isOutOfHours(epochAt(17, 0)));  // end exclusive
+    $this->assertFalse($settings->isOutOfHours(epochAt(23, 0)));
+});
+
+test('window spanning midnight', function () {
+    $settings = new Settings();
+    $settings->setOutOfHours('22:00', '08:00');
+
+    $this->assertTrue($settings->isOutOfHours(epochAt(22, 0)));  // start inclusive
+    $this->assertTrue($settings->isOutOfHours(epochAt(23, 30)));
+    $this->assertTrue($settings->isOutOfHours(epochAt(0, 0)));
+    $this->assertTrue($settings->isOutOfHours(epochAt(7, 59)));
+    $this->assertFalse($settings->isOutOfHours(epochAt(8, 0)));  // end exclusive
+    $this->assertFalse($settings->isOutOfHours(epochAt(12, 0)));
+    $this->assertFalse($settings->isOutOfHours(epochAt(21, 59)));
+});
+
+test('normalises seconds and stores', function () {
+    $settings = new Settings();
+    // An <input type="time" step="1"> can submit H:i:s — the seconds
+    // should be dropped to a clean H:i.
+    $settings->setOutOfHours('22:00:30', '08:00:00');
+
+    $this->assertSame('22:00', $settings->getOutOfHoursStart());
+    $this->assertSame('08:00', $settings->getOutOfHoursEnd());
+    $this->assertTrue($settings->isOutOfHours(epochAt(23, 0)));
+});
+
+test('invalid time stored blank and disables window', function () {
+    $settings = new Settings();
+    $settings->setOutOfHours('99:99', '08:00');
+
+    $this->assertSame('', $settings->getOutOfHoursStart());
+    $this->assertFalse($settings->isOutOfHours(epochAt(2, 0)));
+});
