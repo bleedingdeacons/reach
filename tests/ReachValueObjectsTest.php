@@ -6,9 +6,6 @@ namespace Reach\Tests;
 
 use InvalidArgumentException;
 use Reach\Auth\Base64Url;
-use Reach\Auth\Providers\OAuthProvider;
-use Reach\Auth\ProviderRegistry;
-use Reach\Auth\VerifiedIdentity;
 use Reach\CallAttempts\CallAttempt;
 use Reach\CallRequests\CallRequest;
 use Reach\Geocoding\Coordinates;
@@ -16,41 +13,13 @@ use Reach\Geocoding\Coordinates;
 /**
  * Cover the small immutable value objects and helper traits that carry no
  * WordPress or network dependency: coordinate range validation, the
- * base64url codec, the provider registry, and the DTO accessors. Cheap to
- * run, and they pin behaviour (range rejection, case-insensitive provider
- * lookup, serial formatting) that other classes quietly rely on.
+ * base64url codec, and the DTO accessors. Cheap to run, and they pin
+ * behaviour (range rejection, serial formatting) that other classes quietly
+ * rely on. VerifiedIdentity and ProviderRegistry moved to the Guardian
+ * library, and are tested there.
  */
 
 beforeEach(function () {
-    // --- helpers ----------------------------------------------------------
-    $this->fakeProvider = function (string $name): OAuthProvider {
-        return new class ($name) implements OAuthProvider {
-            public function __construct(private string $providerName)
-            {
-            }
-            public function name(): string
-            {
-                return $this->providerName;
-            }
-            public function isServerSide(): bool
-            {
-                return true;
-            }
-            public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
-            {
-                return 'https://example.test/auth';
-            }
-            public function handleCallback(string $code, string $nonce, string $redirectUri, ?string $codeVerifier = null): ?VerifiedIdentity
-            {
-                return null;
-            }
-            public function verifyIdToken(string $idToken, string $nonce): ?VerifiedIdentity
-            {
-                return null;
-            }
-        };
-    };
-
     /**
      * A tiny object exposing the protected Base64Url trait methods so the
      * codec can be tested without going through one of its many callers.
@@ -101,41 +70,6 @@ dataset('outOfRangeCoordinates', function (): array {
         'lng too low'  => [0.0, -180.1],
         'lng too high' => [0.0, 180.1],
     ];
-});
-
-// --- VerifiedIdentity -------------------------------------------------
-test('verified identity defaults provider email to null', function () {
-    $id = new VerifiedIdentity('a@example.com', 'google', 'sub-1');
-    $this->assertSame('a@example.com', $id->email);
-    $this->assertSame('google', $id->provider);
-    $this->assertSame('sub-1', $id->sub);
-    $this->assertNull($id->providerEmail);
-});
-
-test('verified identity carries provider email when anonymised', function () {
-    $id = new VerifiedIdentity('real@example.com', 'facebook', 'sub-2', 'relay@privaterelay.facebook.com');
-    $this->assertSame('relay@privaterelay.facebook.com', $id->providerEmail);
-});
-
-// --- ProviderRegistry -------------------------------------------------
-test('provider registry looks up case insensitively by name', function () {
-    $registry = new ProviderRegistry();
-    $google = ($this->fakeProvider)('Google');
-    $registry->register($google);
-
-    $this->assertSame($google, $registry->get('google'));
-    $this->assertSame($google, $registry->get('GOOGLE'));
-    $this->assertNull($registry->get('microsoft'));
-    $this->assertSame(['google'], $registry->names());
-});
-
-test('provider registry registration is idempotent by normalised name', function () {
-    $registry = new ProviderRegistry();
-    $registry->register(($this->fakeProvider)('Apple'));
-    $registry->register(($this->fakeProvider)('apple'));
-
-    // Same normalised key — one entry, the later registration winning.
-    $this->assertCount(1, $registry->names());
 });
 
 // --- Base64Url --------------------------------------------------------

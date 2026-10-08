@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Reach\Tests;
 
 use BleedingDeacons\WpMocks\WpState;
-use Reach\Auth\ProviderRegistry;
+use Guardian\ProviderRegistry;
 use Reach\Core\ReachServiceProvider;
 use Reach\Geocoding\Geocoder;
 use Reach\Geocoding\PostcodesIoGeocoder;

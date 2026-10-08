@@ -10,7 +10,7 @@ use Unity\Testing\Doubles\InMemoryPasswordCredentialRepository;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
 use Reach\Auth\PasswordResetResult;
-use Reach\Auth\VerifiedIdentity;
+use Guardian\VerifiedIdentity;
 use Unity\Members\Interfaces\Member;
 use Unity\Members\ResponderCertification;
 use Reach\Tests\Fixtures\MemberStub;

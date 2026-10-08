@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\Admin\ProviderCredentialsSection;
+use Guardian\Admin\ProviderField;
 use Reach\Alerts\Fcm\ServiceAccount;
 use Reach\Core\Settings;
 
@@ -22,15 +24,14 @@ use Reach\Core\Settings;
  *     typically a postcode like "BS5"; see Settings::getPlaceBias).
  *
  *   - Authentication — the four OAuth providers (Google, Microsoft,
- *     Apple, Facebook). Each provider gets a client ID field and a
- *     write-only client secret field: the existing secret is
- *     displayed as a fixed-width placeholder so an admin can see it's
- *     set without it being readable from the form.
+ *     Apple, Facebook), rendered and saved by Guardian's
+ *     ProviderCredentialsSection: a client ID field and a write-only
+ *     client secret field for each, with its redirect URI to copy.
  *
  * Secrets are AES-256-GCM encrypted at rest by the Settings class
  * (see Reach\Core\Settings::encrypt) and never come back to the
  * browser. Submitting an empty secret field leaves the stored value
- * untouched — clearing requires checking the explicit "remove"
+ * untouched — clearing requires ticking the explicit "clear"
  * checkbox.
  */
 final class SettingsPage
@@ -40,14 +41,6 @@ final class SettingsPage
     // so there is no option group to register anything against.
     private const PAGE_SLUG = 'reach-settings';
     private const CAPABILITY = 'manage_options';
-
-    /** @var array<int, array{name: string, label: string, redirect_help: string}> */
-    private const PROVIDERS = [
-        ['name' => 'google',    'label' => 'Google',    'redirect_help' => 'wp-json/reach/v1/oauth/callback'],
-        ['name' => 'microsoft', 'label' => 'Microsoft', 'redirect_help' => 'wp-json/reach/v1/oauth/callback'],
-        ['name' => 'apple',     'label' => 'Apple',     'redirect_help' => 'reach/signin (page URL, used for popup)'],
-        ['name' => 'facebook',  'label' => 'Facebook',  'redirect_help' => 'wp-json/reach/v1/oauth/callback'],
-    ];
 
     public function __construct(
         private readonly Settings $settings,
@@ -100,9 +93,6 @@ final class SettingsPage
         if (isset($_GET['updated']) && $_GET['updated'] === '1') {
             $notice = '<div class="notice notice-success is-dismissible"><p>Settings saved.</p></div>';
         }
-
-        $callbackUrl = rest_url('reach/v1/oauth/callback');
-        $appleRedirectUrl = home_url('/reach/signin');
 
         // The stored key file is never echoed back — like the OAuth
         // client secrets, it is write-only once saved. What is shown is
@@ -241,134 +231,7 @@ final class SettingsPage
                 <h2>Authentication</h2>
                 <p>Configure the OAuth providers that Reach uses to verify a visitor&rsquo;s email address. Each provider needs a client ID and (except Apple) a client secret. Secrets are encrypted at rest.</p>
 
-                <h3>Redirect URIs</h3>
-                <p>Register these with each provider. The domain matches your WordPress Site Address &mdash; change it under <em>Settings &rarr; General</em> if it&rsquo;s wrong.</p>
-                <table class="form-table">
-                    <tr>
-                        <th>Google / Microsoft / Facebook callback</th>
-                        <td>
-                            <code class="reach-copyable" id="reach-callback-url"><?php echo esc_html($callbackUrl); ?></code>
-                            <button type="button"
-                                    class="button button-secondary reach-copy-btn"
-                                    data-clipboard-target="reach-callback-url">Copy</button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th>Apple redirect (popup)</th>
-                        <td>
-                            <code class="reach-copyable" id="reach-apple-url"><?php echo esc_html($appleRedirectUrl); ?></code>
-                            <button type="button"
-                                    class="button button-secondary reach-copy-btn"
-                                    data-clipboard-target="reach-apple-url">Copy</button>
-                        </td>
-                    </tr>
-                </table>
-
-                <style>
-                    .reach-copyable {
-                        display: inline-block;
-                        padding: 4px 8px;
-                        background: #f0f0f1;
-                        border: 1px solid #c3c4c7;
-                        border-radius: 3px;
-                        margin-right: 6px;
-                        user-select: all;
-                    }
-                    .reach-copy-btn[data-copied="1"] {
-                        color: #00713c;
-                        border-color: #00713c;
-                    }
-                </style>
-                <script>
-                    (function () {
-                        document.querySelectorAll('.reach-copy-btn').forEach(function (btn) {
-                            btn.addEventListener('click', function () {
-                                var targetId = btn.getAttribute('data-clipboard-target');
-                                var target = document.getElementById(targetId);
-                                if (!target) {
-                                    return;
-                                }
-                                var text = target.textContent.trim();
-                                var done = function () {
-                                    var original = btn.textContent;
-                                    btn.textContent = 'Copied';
-                                    btn.setAttribute('data-copied', '1');
-                                    setTimeout(function () {
-                                        btn.textContent = original;
-                                        btn.removeAttribute('data-copied');
-                                    }, 1500);
-                                };
-                                if (navigator.clipboard && window.isSecureContext) {
-                                    navigator.clipboard.writeText(text).then(done, function () {
-                                        fallbackCopy(text, done);
-                                    });
-                                } else {
-                                    fallbackCopy(text, done);
-                                }
-                            });
-                        });
-
-                        function fallbackCopy(text, done) {
-                            var ta = document.createElement('textarea');
-                            ta.value = text;
-                            ta.setAttribute('readonly', '');
-                            ta.style.position = 'absolute';
-                            ta.style.left = '-9999px';
-                            document.body.appendChild(ta);
-                            ta.select();
-                            try {
-                                document.execCommand('copy');
-                                done();
-                            } catch (e) {
-                                // Last resort: leave the value selected so the
-                                // admin can Ctrl/Cmd-C manually.
-                            }
-                            document.body.removeChild(ta);
-                        }
-                    })();
-                </script>
-
-                <?php foreach (self::PROVIDERS as $provider) : ?>
-                    <h3><?php echo esc_html($provider['label']); ?></h3>
-                    <table class="form-table">
-                        <tr>
-                            <th><label for="reach_client_id_<?php echo esc_attr($provider['name']); ?>">Client ID</label></th>
-                            <td>
-                                <input type="text"
-                                       id="reach_client_id_<?php echo esc_attr($provider['name']); ?>"
-                                       name="client_id_<?php echo esc_attr($provider['name']); ?>"
-                                       value="<?php echo esc_attr($this->settings->getClientId($provider['name'])); ?>"
-                                       class="regular-text"
-                                       autocomplete="off">
-                            </td>
-                        </tr>
-                        <?php if ($provider['name'] !== 'apple') : ?>
-                        <tr>
-                            <th><label for="reach_client_secret_<?php echo esc_attr($provider['name']); ?>">Client Secret</label></th>
-                            <td>
-                                <?php $hasSecret = $this->settings->getClientSecret($provider['name']) !== ''; ?>
-                                <input type="password"
-                                       id="reach_client_secret_<?php echo esc_attr($provider['name']); ?>"
-                                       name="client_secret_<?php echo esc_attr($provider['name']); ?>"
-                                       value=""
-                                       placeholder="<?php echo $hasSecret ? '•••••••• (saved — leave blank to keep)' : ''; ?>"
-                                       class="regular-text"
-                                       autocomplete="new-password">
-                                <?php if ($hasSecret) : ?>
-                                    <p>
-                                        <label>
-                                            <input type="checkbox"
-                                                   name="remove_secret_<?php echo esc_attr($provider['name']); ?>"
-                                                   value="1">
-                                            Remove the stored secret
-                                        </label>
-                                    </p>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                    </table>
-                <?php endforeach; ?>
+                <?php $this->providerSection()->render(); ?>
 
                 <?php submit_button(); ?>
             </form>
@@ -447,36 +310,28 @@ final class SettingsPage
 
         $this->settings->setApnsCriticalEnabled(!empty($_POST['apns_critical']));
 
-        foreach (self::PROVIDERS as $provider) {
-            $name = $provider['name'];
+        $this->providerSection()->save($_POST);
+    }
 
-            // Client ID — straightforward write.
-            $idKey = 'client_id_' . $name;
-            $clientId = isset($_POST[$idKey]) && is_string($_POST[$idKey])
-                ? sanitize_text_field(wp_unslash($_POST[$idKey]))
-                : '';
-            $this->settings->setClientId($name, $clientId);
+    /**
+     * The client id and secret rows for the four providers, from Guardian.
+     *
+     * Field names carry no prefix, so they are the names this page always
+     * used (`client_id_google`, `client_secret_google`); only the clearing
+     * checkbox is now `clear_secret_*`.
+     */
+    private function providerSection(): ProviderCredentialsSection
+    {
+        $callbackUrl = rest_url('reach/v1/oauth/callback');
 
-            // Apple has no client secret in the client-side flow.
-            if ($name === 'apple') {
-                continue;
-            }
-
-            $secretKey = 'client_secret_' . $name;
-            $removeKey = 'remove_secret_' . $name;
-
-            if (!empty($_POST[$removeKey])) {
-                $this->settings->setClientSecret($name, '');
-                continue;
-            }
-
-            $newSecret = isset($_POST[$secretKey]) && is_string($_POST[$secretKey])
-                ? trim(wp_unslash($_POST[$secretKey]))
-                : '';
-            if ($newSecret !== '') {
-                $this->settings->setClientSecret($name, $newSecret);
-            }
-            // Empty + no remove flag → leave existing secret untouched.
-        }
+        return new ProviderCredentialsSection($this->settings, [
+            ProviderField::google($callbackUrl),
+            ProviderField::microsoft($callbackUrl),
+            ProviderField::apple(
+                home_url('/reach/signin'),
+                'Apple signs in through its JS SDK in a popup, which returns to the page above — register it as the return URL. No client secret is needed, only the Service ID the ID token is issued for.',
+            ),
+            ProviderField::facebook($callbackUrl),
+        ]);
     }
 }

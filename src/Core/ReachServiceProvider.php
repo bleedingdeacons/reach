@@ -8,6 +8,12 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\Jwt\JwtVerifier;
+use Guardian\ProviderRegistry;
+use Guardian\Providers\AppleProvider;
+use Guardian\Providers\FacebookProvider;
+use Guardian\Providers\GoogleProvider;
+use Guardian\Providers\MicrosoftProvider;
 use Psr\Container\ContainerInterface;
 use Reach\Admin\CallAttemptsPage;
 use Reach\Admin\CallRequestsPage;
@@ -30,16 +36,10 @@ use Reach\Alerts\WpdbAlertRepository;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\DeviceTokenMinter;
-use Reach\Auth\JwtVerifier;
 use Reach\Auth\PasswordAuthenticator;
 use Unity\Auth\Interfaces\PasswordCredentialRepository;
 use Reach\Auth\PasswordPolicy;
 use Reach\Auth\PasswordResetMailer;
-use Reach\Auth\ProviderRegistry;
-use Reach\Auth\Providers\AppleProvider;
-use Reach\Auth\Providers\FacebookProvider;
-use Reach\Auth\Providers\GoogleProvider;
-use Reach\Auth\Providers\MicrosoftProvider;
 use Reach\Auth\StateStore;
 use Reach\CallAttempts\AttemptTokenMinter;
 use Reach\CallAttempts\CallAttemptRepository;
@@ -101,7 +101,9 @@ final class ReachServiceProvider
             $c->get(SessionRevocationList::class),
         ));
         $container->register(StateStore::class, fn() => new StateStore());
-        $container->register(JwtVerifier::class, fn() => new JwtVerifier());
+        // Guardian's verifier, logging to Reach's channel and fetching key
+        // sets as Reach.
+        $container->register(JwtVerifier::class, fn() => new JwtVerifier(UserAgent::plugin(), 'reach'));
 
         // ── Hand: handsets, their credentials, and the alerts they ring for ──
         //
@@ -173,14 +175,17 @@ final class ReachServiceProvider
             $c->get(AlertDispatcher::class),
         ));
 
-        // Providers.
+        // Providers, from the Guardian library. Settings is the
+        // CredentialStore they read client ids and secrets from.
         $container->register(GoogleProvider::class, fn(ContainerInterface $c) => new GoogleProvider(
             $c->get(Settings::class),
             $c->get(JwtVerifier::class),
+            UserAgent::plugin(),
         ));
         $container->register(MicrosoftProvider::class, fn(ContainerInterface $c) => new MicrosoftProvider(
             $c->get(Settings::class),
             $c->get(JwtVerifier::class),
+            UserAgent::plugin(),
         ));
         $container->register(AppleProvider::class, fn(ContainerInterface $c) => new AppleProvider(
             $c->get(Settings::class),
@@ -189,6 +194,7 @@ final class ReachServiceProvider
         $container->register(FacebookProvider::class, fn(ContainerInterface $c) => new FacebookProvider(
             $c->get(Settings::class),
             $c->get(JwtVerifier::class),
+            UserAgent::plugin(),
         ));
 
         $container->register(ProviderRegistry::class, function (ContainerInterface $c) {

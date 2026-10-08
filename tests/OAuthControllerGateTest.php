@@ -8,10 +8,10 @@ use BleedingDeacons\WpMocks\WpState;
 use Reach\Core\RateLimiter;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
-use Reach\Auth\ProviderRegistry;
-use Reach\Auth\Providers\OAuthProvider;
+use Guardian\ProviderRegistry;
+use Guardian\Providers\OAuthProvider;
 use Reach\Auth\StateStore;
-use Reach\Auth\VerifiedIdentity;
+use Guardian\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\OAuthController;
 use Reach\Session\CurrentSession;
@@ -293,6 +293,10 @@ final class GateStubProvider implements OAuthProvider
     public function isServerSide(): bool
     {
         return true;
+    }
+    public function requiresPkce(): bool
+    {
+        return false;
     }
     public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
     {

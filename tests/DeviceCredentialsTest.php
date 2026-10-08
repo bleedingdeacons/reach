@@ -7,7 +7,7 @@ namespace Reach\Tests;
 use BleedingDeacons\WpMocks\WpState;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceTokenMinter;
-use Reach\Auth\VerifiedIdentity;
+use Guardian\VerifiedIdentity;
 
 /**
  * The two credentials in the device flow: the short-lived exchange code

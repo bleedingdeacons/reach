@@ -15,9 +15,10 @@ if (!defined('ABSPATH')) {
  * are replaced with `-` and `_` respectively, and trailing `=` padding
  * is omitted. This is the form used in JWTs, OAuth/OIDC PKCE
  * challenges, and most other web-token contexts — including the
- * HMAC-signed cookie body Reach uses for sessions, the JWKS modulus
- * and exponent in RS256 verification, the attempt-token signature
- * binding viewer to member, and the Microsoft ID-token preview parse.
+ * HMAC-signed cookie body Reach uses for sessions, the attempt-token
+ * signature binding viewer to member, and the FCM service-account
+ * assertion. (The JWT verification that also used it moved to the
+ * Guardian library, which carries its own copy.)
  *
  * Pre-1.x there were four near-identical copies of these helpers, one
  * per class that happened to need them. They differed only in error-

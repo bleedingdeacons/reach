@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Reach\Tests\Fixtures;
 
-use Reach\Auth\Providers\OAuthProvider;
-use Reach\Auth\VerifiedIdentity;
+use Guardian\Providers\OAuthProvider;
+use Guardian\VerifiedIdentity;
 
 /**
  * Configurable OAuthProvider double: fixed authorisation URL, and a preset
@@ -28,6 +28,11 @@ final class ConfigurableProvider implements OAuthProvider
     public function isServerSide(): bool
     {
         return $this->serverSide;
+    }
+
+    public function requiresPkce(): bool
+    {
+        return false;
     }
 
     public function getAuthorizationUrl(string $state, string $nonce, string $redirectUri, ?string $codeVerifier = null): string
