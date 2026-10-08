@@ -33,6 +33,13 @@ define('REACH_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('REACH_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('REACH_PLUGIN_FILE', __FILE__);
 
+// Load Composer autoloader if present. It supplies the Guardian library, which
+// does the OAuth sign-in; the production build ships it in vendor/.
+$reach_autoloader = REACH_PLUGIN_DIR . 'vendor/autoload.php';
+if (file_exists($reach_autoloader)) {
+    require_once $reach_autoloader;
+}
+
 // Autoloader for Reach namespace
 spl_autoload_register(function ($class) {
     try {

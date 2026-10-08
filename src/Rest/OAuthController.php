@@ -8,13 +8,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\ProviderRegistry;
+use Guardian\VerifiedIdentity;
 use Reach\Auth\AnonymisedEmailDetector;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\OutreachEligibility;
-use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
-use Reach\Auth\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
 use Reach\Session\CurrentSession;
 use Reach\Session\Session;

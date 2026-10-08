@@ -8,11 +8,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\ProviderRegistry;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\DeviceTokenMinter;
 use Reach\Auth\PasswordAuthenticator;
-use Reach\Auth\ProviderRegistry;
 use Reach\Auth\StateStore;
 use Reach\Core\RateLimiter;
 use Reach\Devices\CurrentDevice;

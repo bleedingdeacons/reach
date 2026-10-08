@@ -17,6 +17,8 @@ Public-facing front end for finding 12th-step members. Email-verified sign-in vi
 - PHP 8.1+ with `openssl` and `json`
 - [Unity](https://github.com/bleedingdeacons/unity) and [Scrutiny](https://github.com/bleedingdeacons/scrutiny) must be active
 
+OAuth sign-in — the four providers, ID-token verification and sign-in state — comes from the [Guardian](https://github.com/bleedingdeacons/guardian) library, which Reach requires through Composer and ships in its own `vendor/`. Fellowship bundles it too; whichever plugin loads it first supplies it to both, so the two move to a new Guardian major together.
+
 Reach hooks into Unity on `unity/loaded` and uses Unity's `MemberRepository` to source members. Every member surfaced is audit-logged through Scrutiny with the requesting visitor's verified email attached, so a regulator can answer "which Reach user saw this member's numbers, and when" from Scrutiny's audit table.
 
 ## Pages
@@ -44,8 +46,9 @@ Both pages render outside the WordPress theme — they're standalone mobile view
      sets the signed session cookie, 302 to /reach/find)
 ```
 
-Facebook requires PKCE on the web flow and uses a GET token endpoint;
-both are handled inside `FacebookProvider`. Google and Microsoft don't
+Facebook requires PKCE on the web flow; that is handled inside
+Guardian's `FacebookProvider`, which also POSTs to the token endpoint
+so the client secret stays out of URLs. Google and Microsoft don't
 need PKCE but receive a verifier anyway and ignore it — the controller
 mints one for every server-side flow.
 
@@ -580,8 +583,9 @@ One file stays a PHPUnit class: `SecureTransportConstantTest` defines
 separate process — and Pest does not support process isolation. Pest runs it
 as it is.
 
-The JWT and OAuth-provider tests generate RSA keys and skip themselves when
-OpenSSL has no config file to read. On a Windows PHP build without an
+The FCM client tests generate RSA keys and skip themselves when
+OpenSSL has no config file to read. (The JWT and OAuth-provider tests that
+did the same moved to Guardian with the code they test.) On a Windows PHP build without an
 `openssl.cnf` on its default path, point `OPENSSL_CONF` at one before running
 the suite, and check the skip count is 0.
 

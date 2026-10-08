@@ -8,10 +8,10 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\VerifiedIdentity;
 use Reach\Auth\OutreachEligibility;
 use Reach\Auth\PasswordAuthenticator;
 use Reach\Auth\PasswordResetResult;
-use Reach\Auth\VerifiedIdentity;
 use Reach\Core\RateLimiter;
 use Reach\Session\Session;
 use Reach\Session\SessionCookie;

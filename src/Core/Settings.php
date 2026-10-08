@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\Credentials\CredentialStore;
+
 /**
  * Settings store for Reach.
  *
@@ -19,8 +21,12 @@ if (!defined('ABSPATH')) {
  * Two reads, two writes — public values and secret values are kept in
  * separate option rows so we can render the admin form without
  * decrypting anything when no secret is being edited.
+ *
+ * It is the {@see CredentialStore} Guardian's providers read their client
+ * ids and secrets from, and the one the settings page's provider section
+ * writes to.
  */
-final class Settings
+final class Settings implements CredentialStore
 {
     public const OPTION_PUBLIC = 'reach_settings';
     public const OPTION_SECRETS = 'reach_secrets';

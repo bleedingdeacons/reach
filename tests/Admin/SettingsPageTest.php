@@ -31,7 +31,7 @@ use Scrutiny\Privacy\PersonalDataPolicy;
  * Secrets are the interesting part of the save, and all three of their rules
  * are asserted by reading the value back out of {@see Settings} — through the
  * real AES-256-GCM round trip, not a recorded call: a new value replaces, a
- * blank one keeps what is stored, and only the explicit remove checkbox
+ * blank one keeps what is stored, and only the explicit clear checkbox
  * clears. The form itself must never send a secret back to the browser.
  */
 
@@ -235,16 +235,17 @@ test('a stored client id is rendered but a stored secret never is', function () 
 
     $this->assertStringContainsString('value="google-client-id"', $html);
     $this->assertStringNotContainsString('super-secret-value', $html);
-    // Shown as a fixed-width placeholder instead, so an admin can see one
-    // is set without it being readable off the form.
-    $this->assertStringContainsString('•••••••• (saved — leave blank to keep)', $html);
-    $this->assertStringContainsString('name="remove_secret_google"', $html);
+    // Shown as a placeholder instead, so an admin can see one is set
+    // without it being readable off the form.
+    $this->assertStringContainsString('Saved — leave blank to keep', $html);
+    $this->assertStringContainsString('A secret is stored.', $html);
+    $this->assertStringContainsString('name="clear_secret_google"', $html);
 });
 
-test('a provider with no stored secret offers no remove checkbox', function () {
+test('a provider with no stored secret offers no clear checkbox', function () {
     $html = ($this->render)();
 
-    $this->assertStringNotContainsString('name="remove_secret_google"', $html);
+    $this->assertStringNotContainsString('name="clear_secret_google"', $html);
     $this->assertStringNotContainsString('leave blank to keep', $html);
 });
 
@@ -355,40 +356,40 @@ test('an absent secret field leaves the stored secret alone', function () {
     $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
 });
 
-test('the remove checkbox clears the stored secret', function () {
+test('the clear checkbox clears the stored secret', function () {
     $this->settings->setClientSecret('google', 'existing-secret');
 
-    $_POST = ['remove_secret_google' => '1'];
+    $_POST = ['clear_secret_google' => '1'];
     ($this->save)();
 
     $this->assertSame('', $this->settings->getClientSecret('google'));
 });
 
 /**
- * Remove wins over a value typed into the field in the same submit —
+ * Clearing wins over a value typed into the field in the same submit —
  * ticking the box and typing a new secret is contradictory, and clearing
  * is the safer reading.
  */
-test('the remove checkbox beats a secret typed alongside it', function () {
+test('the clear checkbox beats a secret typed alongside it', function () {
     $this->settings->setClientSecret('google', 'existing-secret');
 
-    $_POST = ['remove_secret_google' => '1', 'client_secret_google' => 'a-new-secret'];
+    $_POST = ['clear_secret_google' => '1', 'client_secret_google' => 'a-new-secret'];
     ($this->save)();
 
     $this->assertSame('', $this->settings->getClientSecret('google'));
 });
 
-test('an unticked remove checkbox does not clear anything', function () {
+test('an unticked clear checkbox does not clear anything', function () {
     $this->settings->setClientSecret('google', 'existing-secret');
 
-    $_POST = ['remove_secret_google' => '0'];
+    $_POST = ['clear_secret_google' => '0'];
     ($this->save)();
 
     $this->assertSame('existing-secret', $this->settings->getClientSecret('google'));
 });
 
 test('a secret posted for apple is ignored', function () {
-    $_POST = ['client_secret_apple' => 'apple-has-no-secret', 'remove_secret_apple' => '1'];
+    $_POST = ['client_secret_apple' => 'apple-has-no-secret', 'clear_secret_apple' => '1'];
 
     ($this->save)();
 
@@ -404,7 +405,7 @@ test('saving one provider does not disturb another', function () {
     $this->settings->setClientSecret('google', 'google-secret');
     $this->settings->setClientSecret('facebook', 'facebook-secret');
 
-    $_POST = ['remove_secret_google' => '1'];
+    $_POST = ['clear_secret_google' => '1'];
     ($this->save)();
 
     $this->assertSame('', $this->settings->getClientSecret('google'));

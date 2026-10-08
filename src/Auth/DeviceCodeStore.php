@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\VerifiedIdentity;
+
 /**
  * Single-use exchange codes for the native-app sign-in flow.
  *
