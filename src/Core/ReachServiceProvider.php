@@ -78,14 +78,25 @@ use Unity\Members\Interfaces\MemberViewFactory;
 /**
  * Register Reach services into Unity's container.
  *
- * Each OAuth provider is registered individually and also assembled
- * into a ProviderRegistry so the OAuth controller can look one up by
- * name. The Geocoder is bound by interface so a test fake or
+ * The OAuth providers are assembled into a ProviderRegistry so the OAuth
+ * controller can look one up by name. It and the JWT verifier are
+ * registered under Reach's own ids ({@see self::PROVIDER_REGISTRY},
+ * {@see self::JWT_VERIFIER}), never under Guardian's class names: this is
+ * Unity's container, shared with every other plugin that uses Guardian,
+ * and the last to register a class name wins it. Until 3.1.1 Fellowship
+ * did, and Reach signed people in with Fellowship's Google client. The
+ * Geocoder is bound by interface so a test fake or
  * alternative implementation can be slotted in without touching the
  * resolver.
  */
 final class ReachServiceProvider
 {
+    /** Reach's Guardian provider registry, read from Reach's Settings. */
+    public const PROVIDER_REGISTRY = 'reach.guardian.providers';
+
+    /** Reach's Guardian ID-token verifier, logging to Reach's channel. */
+    public const JWT_VERIFIER = 'reach.guardian.jwt';
+
     public function register(Container $container): void
     {
         // Core helpers.
@@ -103,7 +114,7 @@ final class ReachServiceProvider
         $container->register(StateStore::class, fn() => new StateStore());
         // Guardian's verifier, logging to Reach's channel and fetching key
         // sets as Reach.
-        $container->register(JwtVerifier::class, fn() => new JwtVerifier(UserAgent::plugin(), 'reach'));
+        $container->register(self::JWT_VERIFIER, fn() => new JwtVerifier(UserAgent::plugin(), 'reach'));
 
         // ── Hand: handsets, their credentials, and the alerts they ring for ──
         //
@@ -176,33 +187,17 @@ final class ReachServiceProvider
         ));
 
         // Providers, from the Guardian library. Settings is the
-        // CredentialStore they read client ids and secrets from.
-        $container->register(GoogleProvider::class, fn(ContainerInterface $c) => new GoogleProvider(
-            $c->get(Settings::class),
-            $c->get(JwtVerifier::class),
-            UserAgent::plugin(),
-        ));
-        $container->register(MicrosoftProvider::class, fn(ContainerInterface $c) => new MicrosoftProvider(
-            $c->get(Settings::class),
-            $c->get(JwtVerifier::class),
-            UserAgent::plugin(),
-        ));
-        $container->register(AppleProvider::class, fn(ContainerInterface $c) => new AppleProvider(
-            $c->get(Settings::class),
-            $c->get(JwtVerifier::class),
-        ));
-        $container->register(FacebookProvider::class, fn(ContainerInterface $c) => new FacebookProvider(
-            $c->get(Settings::class),
-            $c->get(JwtVerifier::class),
-            UserAgent::plugin(),
-        ));
-
-        $container->register(ProviderRegistry::class, function (ContainerInterface $c) {
+        // CredentialStore they read client ids and secrets from. Built
+        // inside the registry rather than registered one by one, so no
+        // other plugin's registration can stand in for one of them.
+        $container->register(self::PROVIDER_REGISTRY, function (ContainerInterface $c) {
+            $settings = $c->get(Settings::class);
+            $verifier = $c->get(self::JWT_VERIFIER);
             $registry = new ProviderRegistry();
-            $registry->register($c->get(GoogleProvider::class));
-            $registry->register($c->get(MicrosoftProvider::class));
-            $registry->register($c->get(AppleProvider::class));
-            $registry->register($c->get(FacebookProvider::class));
+            $registry->register(new GoogleProvider($settings, $verifier, UserAgent::plugin()));
+            $registry->register(new MicrosoftProvider($settings, $verifier, UserAgent::plugin()));
+            $registry->register(new AppleProvider($settings, $verifier));
+            $registry->register(new FacebookProvider($settings, $verifier, UserAgent::plugin()));
             return $registry;
         });
 
@@ -262,7 +257,7 @@ final class ReachServiceProvider
 
         // REST controllers.
         $container->register(OAuthController::class, fn(ContainerInterface $c) => new OAuthController(
-            $c->get(ProviderRegistry::class),
+            $c->get(self::PROVIDER_REGISTRY),
             $c->get(StateStore::class),
             $c->get(SessionCookie::class),
             $c->get(MemberRepository::class),
@@ -319,7 +314,7 @@ final class ReachServiceProvider
             $c->get(ResponderGate::class),
             $c->get(CurrentDevice::class),
             $c->get(PasswordAuthenticator::class),
-            $c->get(ProviderRegistry::class),
+            $c->get(self::PROVIDER_REGISTRY),
             $c->get(StateStore::class),
             $c->get(RateLimiter::class),
             $c->get(AuditLogger::class),

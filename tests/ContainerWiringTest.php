@@ -108,7 +108,7 @@ test('service provider registers and resolves every service', function () {
     }
 
     // Spot-check the assembled graph.
-    $registry = $container->get(ProviderRegistry::class);
+    $registry = $container->get(ReachServiceProvider::PROVIDER_REGISTRY);
     $this->assertInstanceOf(ProviderRegistry::class, $registry);
     $this->assertEqualsCanonicalizing(
         ['google', 'microsoft', 'apple', 'facebook'],
@@ -118,6 +118,31 @@ test('service provider registers and resolves every service', function () {
     $this->assertInstanceOf(PostcodesIoGeocoder::class, $container->get(Geocoder::class));
     $this->assertInstanceOf(OAuthController::class, $container->get(OAuthController::class));
     $this->assertInstanceOf(CurrentSession::class, $container->get(CurrentSession::class));
+});
+
+test('nothing is registered under a Guardian class name', function () {
+    // Unity's container is shared with every plugin that uses Guardian,
+    // and the last to register a class name wins it.
+    $container = container();
+    (new ReachServiceProvider())->register($container);
+
+    foreach ($container->registeredIds() as $id) {
+        $this->assertStringStartsNotWith('Guardian\\', $id, "Reach registered $id, which another plugin can overwrite");
+    }
+});
+
+test('another plugin\'s Guardian registry does not reach Reach\'s sign in', function () {
+    // What happened on the test bed until 3.1.1: Fellowship registered
+    // Guardian's ProviderRegistry after Reach, and Reach sent people to
+    // Google with Fellowship's client.
+    WpState::$options[\Reach\Core\Settings::OPTION_PUBLIC] = ['client_id_google' => 'reach-client.apps.googleusercontent.com'];
+    $container = container();
+    (new ReachServiceProvider())->register($container);
+    $container->register(ProviderRegistry::class, fn() => new ProviderRegistry());
+
+    $google = $container->get(ReachServiceProvider::PROVIDER_REGISTRY)->get('google');
+    parse_str((string) parse_url($google->getAuthorizationUrl('s', 'n', 'https://example.org/cb'), PHP_URL_QUERY), $query);
+    $this->assertSame('reach-client.apps.googleusercontent.com', $query['client_id']);
 });
 
 // --- Plugin::init -----------------------------------------------------
