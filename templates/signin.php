@@ -273,7 +273,13 @@ $reachBlocking = $reachNotice !== null && $reachErrorCode === 'not_eligible';
                     AppleID.auth.init({
                         clientId: clientId,
                         scope: 'email',
-                        redirectURI: window.location.origin + '/reach/signin',
+                        // The site's own sign-in URL, not the origin's:
+                        // on a WordPress installed in a subdirectory
+                        // (the /amber test bed) the origin's
+                        // /reach/signin is another site's page, and
+                        // Apple refuses a return URL the Services ID
+                        // does not list.
+                        redirectURI: signinUrl,
                         state: tokens.state,
                         nonce: tokens.nonce,
                         usePopup: true
