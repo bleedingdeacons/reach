@@ -3,8 +3,8 @@ Contributors: thebleedingdeacons
 Requires at least: 6.1
 Tested up to: 7.1.1
 Requires PHP: 8.4
-Stable tag: 3.1.2
-Build date: 2026/11/19 16:52:15
+Stable tag: 3.2.0
+Build date: 2026/11/24 18:30:18
 License: MIT (Modified)
 
 Public-facing front end for finding 12th-step members. Email-verified sign-in via Google, Microsoft, or Apple, plus a mobile-first finder UI. Requires Unity and Scrutiny.
