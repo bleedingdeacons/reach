@@ -188,7 +188,10 @@ You need a paid **Apple Developer Program** membership.
    - **Domains and Subdomains:** add your domain, e.g. `example.com`
      (no scheme, no path).
    - **Return URLs:** add your sign-in page URL exactly:
-     `https://example.com/reach/signin`
+     `https://example.com/reach/signin`. On a WordPress installed in a
+     subdirectory, the subdirectory is part of it: the `/amber` test bed's is
+     `https://aa-bristol.org/amber/reach/signin`. One Services ID can list
+     several sites' return URLs.
    - Save. Apple may require you to verify domain ownership by hosting a
      verification file it provides — follow its prompt if so.
 5. In Reach (**Reach → Authentication**), paste the **Services ID
