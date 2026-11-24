@@ -200,13 +200,30 @@ You need a paid **Apple Developer Program** membership.
 > re-minted every six months. Reach deliberately avoids that by using the
 > browser-side flow, so there is no secret to manage and no key to rotate.
 
-> **Relay addresses are fine here.** If a user chooses "Hide My Email",
-> Apple issues a `privaterelay.appleid.com` address and forwards real
-> mail to it. Reach accepts these as genuine contact addresses.
+> **The first sign-in needs the real email.** Apple sends the email
+> reliably only the first time someone continues with Apple. Reach uses
+> that first sign-in to match them to their Unity member by email, then
+> stores Apple's user id on the member as the extended value
+> `AppleUserId` (visible in the member's **Extended values** box in
+> wp-admin). Every later sign-in finds the member by that id, with or
+> without an email. So someone who picks **Hide My Email** the first time
+> can't be matched and is refused, with a notice telling them to remove
+> Reach under Settings → their name → Sign in with Apple on their iPhone
+> and continue again, choosing **Share My Email**. To re-link a member
+> to a different Apple ID, they just sign in with it: a matching email
+> replaces the stored id.
 
-**Test:** once a Client ID is saved, the **Continue with Apple** button
-appears on `/reach/signin`. It loads Apple's SDK and opens Apple's sign-in
-popup; on success the ID token is posted back and you're signed in.
+**Apple devices only.** The Apple button is shown only to visitors on an
+iPhone, iPad or Mac (detected from the browser's user-agent), where the
+Apple ID is already on the device. Windows, Android and Linux visitors
+see the other providers and the password form, and their browsers are
+not sent Apple's SDK at all. So **test from an Apple device** — from a
+Windows PC the button will not appear even when Apple is configured.
+
+**Test:** once a Client ID is saved, open `/reach/signin` on an iPhone,
+iPad or Mac and the **Continue with Apple** button appears. It loads
+Apple's SDK and opens Apple's sign-in popup; on success the ID token is
+posted back and you're signed in.
 
 ---
 

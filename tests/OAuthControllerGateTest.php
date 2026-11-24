@@ -14,6 +14,7 @@ use Reach\Auth\StateStore;
 use Guardian\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
 use Reach\Rest\OAuthController;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
@@ -125,6 +126,7 @@ beforeEach(function () {
             new SessionRevocationList(),
             new SessionCsrf(),
             new RateLimiter(),
+            new SpyAuditLogger(),
         );
     };
 

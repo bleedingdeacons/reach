@@ -60,8 +60,10 @@ mail behind them — and a contactable email is required to verify a
 user, so the OAuth callback refuses sign-in rather than issuing a
 session. The user needs to sign in again and share their email, or use
 a different provider. Apple's `privaterelay.appleid.com` is *not*
-treated as anonymised: Apple genuinely forwards mail through its relay,
-so those addresses are accepted as the contact email.
+treated as anonymised: Apple genuinely forwards mail through its relay.
+It still matches no member's record, though, so a first Apple sign-in
+with Hide My Email is refused (`apple_hidden_email`) — see the Apple
+flow below.
 
 **Sign-in refusals are friendly pages, not JSON.** When the server-side
 callback can prove who someone is but can't let them in — an
@@ -76,7 +78,11 @@ reloads the sign-in page with the matching `reach_error` code. Unknown
 codes fall back to a generic message, so a bare JSON error is never
 shown.
 
-**Apple** — client-side flow via Apple's JS SDK:
+**Apple** — client-side flow via Apple's JS SDK. The button (and the
+SDK) is only sent to Apple devices — iPhone, iPad, Mac — judged from the
+user-agent by `Auth\AppleDevice`; everyone else gets the other providers
+and the password form. The Apple endpoints themselves stay open to any
+device.
 
 ```
 /reach/signin
@@ -87,6 +93,27 @@ shown.
     (Reach verifies the ID token against Apple's JWKS, sets the cookie,
      returns {redirect: "/reach/find"})
 ```
+
+**Apple is matched by user id, not email.** Apple sends the email
+reliably only on the first authorisation; a returning user's token may
+have none. Guardian's `AppleProvider::verifySignIn()` (1.3.0+) returns
+Apple's stable `sub` with or without an email, and
+`Auth\AppleAccountLink` resolves it:
+
+1. A member carrying `sub` as the Unity extended value `AppleUserId` is
+   the member, whatever email Apple sent.
+2. Otherwise, no email → refused, `apple_no_email`.
+3. Otherwise a member with that email is the member, and once the
+   eligibility gate passes Reach stores `AppleUserId` on them (audited
+   through Scrutiny).
+4. Otherwise refused: `apple_hidden_email` for a Hide My Email relay,
+   `not_eligible` for anything else.
+
+The session carries the member's own Unity address, not Apple's, so
+`CurrentSession` resolves it the usual way. The value is listed on the
+member's edit screen in wp-admin (Amber's **Extended values** box). If
+an older Guardian was autoloaded first by another plugin, the provider
+has no `verifySignIn()` and Reach falls back to matching by email only.
 
 ## Session model
 
