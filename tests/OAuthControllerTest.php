@@ -13,7 +13,11 @@ use Guardian\ProviderRegistry;
 use Reach\Auth\StateStore;
 use Guardian\VerifiedIdentity;
 use Reach\Devices\ResponderGate;
+use Guardian\AppleSignIn;
+use Reach\Auth\AppleAccountLink;
 use Reach\Rest\OAuthController;
+use Reach\Tests\Fixtures\AppleSignInProvider;
+use Scrutiny\Testing\Doubles\SpyAuditLogger;
 use Reach\Session\CurrentSession;
 use Reach\Session\SessionCookie;
 use Reach\Session\SessionCsrf;
@@ -90,6 +94,7 @@ beforeEach(function () {
             new SessionRevocationList(),
             new SessionCsrf(),
             new RateLimiter(),
+            $this->audit,
         );
     };
 
@@ -113,6 +118,7 @@ beforeEach(function () {
             $revocations,
             new SessionCsrf(),
             new RateLimiter(),
+            $this->audit,
         );
     };
 
@@ -132,6 +138,7 @@ beforeEach(function () {
 
     WpState::$transients = [];
     $this->state = new StateStore();
+    $this->audit = new SpyAuditLogger();
     $_COOKIE = [];
 });
 
@@ -295,6 +302,119 @@ test('apple rejects ineligible member', function () {
     $this->assertInstanceOf(WP_Error::class, $result);
     $this->assertSame('reach_not_eligible', $result->get_error_code());
     $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+});
+
+// --- apple, linked by Apple user id (Guardian 1.3.0+) ------------------
+//
+// The tests above drive ConfigurableProvider, which has no verifySignIn():
+// that is the fallback for an older Guardian loaded first by another plugin.
+// These drive the path a current Guardian takes.
+
+/**
+ * POST a sign-in through an Apple provider that answers $signIn, returning
+ * the controller's response.
+ */
+function appleSignIn(object $test, ?AppleSignIn $signIn, InMemoryMemberRepository $members): WP_REST_Response|WP_Error
+{
+    $registry = new ProviderRegistry();
+    $registry->register(new AppleSignInProvider($signIn));
+    $state = $test->state->issue('apple', 'https://example.test/reach/home')['state'];
+
+    return ($test->controller)($registry, $members)
+        ->apple(new WP_REST_Request(['id_token' => 'ok', 'state' => $state]));
+}
+
+test('apple first sign-in by email links the apple user id and audits it', function () {
+    $member = new MemberStub('member@example.test', id: 7);
+    $members = new InMemoryMemberRepository([$member]);
+
+    $result = appleSignIn($this, new AppleSignIn('sub-7', 'member@example.test', false), $members);
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(200, $result->get_status());
+    $this->assertSame('sub-7', $member->getUnityExtendedValue(AppleAccountLink::KEY));
+    $this->assertCount(1, $this->audit->entries);
+});
+
+test('apple returning sign-in with no email finds the member by apple user id', function () {
+    $member = new MemberStub('member@example.test', id: 7);
+    $member->setUnityExtendedValue(AppleAccountLink::KEY, 'sub-7');
+
+    $result = appleSignIn($this, new AppleSignIn('sub-7', null, false), new InMemoryMemberRepository([$member]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(200, $result->get_status());
+    // Already linked: nothing written, nothing audited.
+    $this->assertSame([], $this->audit->entries);
+});
+
+test('apple linked sign-in still works after the member changes address', function () {
+    $member = new MemberStub('new-address@example.test', id: 7);
+    $member->setUnityExtendedValue(AppleAccountLink::KEY, 'sub-7');
+
+    $result = appleSignIn($this, new AppleSignIn('sub-7', 'old-address@example.test', false), new InMemoryMemberRepository([$member]));
+
+    $this->assertInstanceOf(WP_REST_Response::class, $result);
+    $this->assertSame(200, $result->get_status());
+});
+
+test('apple session carries the member\'s own address, not apple\'s relay', function () {
+    $member = new MemberStub('member@example.test', id: 7);
+    $member->setUnityExtendedValue(AppleAccountLink::KEY, 'sub-7');
+
+    appleSignIn($this, new AppleSignIn('sub-7', 'abc123@privaterelay.appleid.com', true), new InMemoryMemberRepository([$member]));
+
+    $session = (new SessionCookie())->read();
+    $this->assertNotNull($session);
+    $this->assertSame('member@example.test', $session->email);
+    $this->assertSame('apple', $session->provider);
+    $this->assertSame('sub-7', $session->sub);
+    $this->assertSame('abc123@privaterelay.appleid.com', $session->providerEmail);
+});
+
+test('apple unlinked sign-in with no email is refused as apple_no_email', function () {
+    $result = appleSignIn($this, new AppleSignIn('sub-new', null, false), membersWith('member@example.test'));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_apple_no_email', $result->get_error_code());
+    $this->assertSame(403, $result->get_error_data()['status'] ?? null);
+});
+
+test('apple unlinked hide my email sign-in is refused as apple_hidden_email', function () {
+    $result = appleSignIn(
+        $this,
+        new AppleSignIn('sub-new', 'abc123@privaterelay.appleid.com', true),
+        membersWith('member@example.test'),
+    );
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_apple_hidden_email', $result->get_error_code());
+});
+
+test('apple unlinked real email matching nobody is refused as not_eligible', function () {
+    $result = appleSignIn($this, new AppleSignIn('sub-new', 'stranger@example.test', false), membersWith('member@example.test'));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_not_eligible', $result->get_error_code());
+});
+
+test('apple ineligible member is refused and not linked', function () {
+    $member = new MemberStub('member@example.test', false, false, id: 7);
+
+    $result = appleSignIn($this, new AppleSignIn('sub-7', 'member@example.test', false), new InMemoryMemberRepository([$member]));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_not_eligible', $result->get_error_code());
+    $this->assertNull($member->getUnityExtendedValue(AppleAccountLink::KEY));
+    $this->assertSame([], $this->audit->entries);
+});
+
+test('apple verification failure is a 401', function () {
+    $result = appleSignIn($this, null, membersWith('member@example.test'));
+
+    $this->assertInstanceOf(WP_Error::class, $result);
+    $this->assertSame('reach_signin_failed', $result->get_error_code());
+    $this->assertSame(401, $result->get_error_data()['status'] ?? null);
 });
 
 // --- appleStart / signout ---------------------------------------------

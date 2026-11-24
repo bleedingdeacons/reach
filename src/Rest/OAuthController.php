@@ -8,9 +8,12 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use Guardian\AppleSignIn;
 use Guardian\ProviderRegistry;
+use Guardian\Providers\AppleProvider;
 use Guardian\VerifiedIdentity;
 use Reach\Auth\AnonymisedEmailDetector;
+use Reach\Auth\AppleAccountLink;
 use Reach\Auth\DeviceCodeStore;
 use Reach\Auth\DeviceRedirectValidator;
 use Reach\Auth\OutreachEligibility;
@@ -23,6 +26,7 @@ use Reach\Session\SessionCsrf;
 use Reach\Session\SessionRevocationList;
 use Unity\Members\Interfaces\MemberRepository;
 use Reach\Core\RateLimiter;
+use Scrutiny\Audit\Interfaces\AuditLogger;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -46,7 +50,10 @@ use function register_rest_route;
  *
  *   POST /reach/v1/oauth/apple
  *        Body: { id_token, state, code? }
- *        Apple's client-side flow lands here from the in-page JS.
+ *        Apple's client-side flow lands here from the in-page JS. The
+ *        member is found by the Apple user id linked to them on their
+ *        first sign-in, since Apple sends the email reliably only then —
+ *        see {@see AppleAccountLink}.
  *
  *   POST /reach/v1/oauth/signout
  *        Clears the session cookie.
@@ -98,6 +105,7 @@ final class OAuthController
         private readonly SessionRevocationList $revocations,
         private readonly SessionCsrf $csrf,
         private readonly RateLimiter $rateLimiter,
+        private readonly AuditLogger $auditLogger,
     ) {
     }
 
@@ -330,6 +338,18 @@ final class OAuthController
             return new WP_Error('reach_unknown_provider', 'Apple sign-in is not configured.', ['status' => 400]);
         }
 
+        // Guardian 1.3.0+. On a site where another plugin's older Guardian
+        // was autoloaded first, the provider has no verifySignIn() and this
+        // falls back to matching by email alone, as before.
+        if (method_exists($provider, 'verifySignIn')) {
+            $apple = $provider->verifySignIn($idToken, $stored['nonce']);
+            if (!$apple instanceof AppleSignIn) {
+                return new WP_Error('reach_signin_failed', 'Sign-in failed.', ['status' => 401]);
+            }
+
+            return $this->completeAppleSignIn($apple);
+        }
+
         $identity = $provider->verifyIdToken($idToken, $stored['nonce']);
         if ($identity === null) {
             return new WP_Error('reach_signin_failed', 'Sign-in failed.', ['status' => 401]);
@@ -350,6 +370,79 @@ final class OAuthController
 
         $this->issueSessionFor($identity);
         return new WP_REST_Response(['redirect' => $this->homePageUrl()], 200);
+    }
+
+    /**
+     * Finish an Apple sign-in by the member it is linked to, linking it on
+     * the first sign-in that matches by email.
+     *
+     * See {@see AppleAccountLink} for who it resolves to. The link is
+     * written only after the eligibility gate has passed, so a refused
+     * sign-in leaves nothing behind on the member.
+     *
+     * The session carries the member's own Unity address rather than
+     * whatever Apple sent (possibly nothing, possibly a relay), because
+     * {@see CurrentSession} finds the member by the session's email on every
+     * request. Apple's address, when it differs, goes in `providerEmail`.
+     */
+    private function completeAppleSignIn(AppleSignIn $apple): WP_REST_Response|WP_Error
+    {
+        $result = (new AppleAccountLink($this->members))->resolve($apple);
+
+        $member = $result->member;
+        if ($member === null) {
+            return $this->appleRefusal($result->refusal ?? 'signin_failed');
+        }
+
+        if (!OutreachEligibility::permits($member)) {
+            return $this->appleRefusal('not_eligible');
+        }
+
+        if ($result->shouldLink) {
+            $member->setUnityExtendedValue(AppleAccountLink::KEY, $apple->sub);
+            $this->auditLogger->log(
+                AuditLogger::ACTION_UPDATE,
+                AuditLogger::ENTITY_MEMBER,
+                $member->getId(),
+                AppleAccountLink::KEY,
+                'Apple ID linked at Reach sign-in',
+            );
+        }
+
+        $email = strtolower(trim($member->getPersonalEmail()));
+        $now = time();
+        $this->sessionCookie->issue(new Session(
+            $email,
+            AppleProvider::PROVIDER_NAME,
+            $apple->sub,
+            $now,
+            $now + SessionCookie::TTL_SECONDS,
+            $apple->email !== null && $apple->email !== $email ? $apple->email : null,
+            Session::newId(),
+        ));
+        $this->currentSession->invalidate();
+
+        return new WP_REST_Response(['redirect' => $this->homePageUrl()], 200);
+    }
+
+    /**
+     * A refused Apple sign-in, in the shape the in-page JS turns into a
+     * `?reach_error=` notice: `reach_<slug>`, 403, as the identity was proven
+     * but may not proceed.
+     */
+    private function appleRefusal(string $slug): WP_Error
+    {
+        $messages = [
+            'not_eligible'       => 'This account is not registered to use Reach. Please contact your intergroup if you believe this is in error.',
+            'apple_hidden_email' => 'Your Apple ID shared a Hide My Email address, which cannot be matched to your intergroup record.',
+            'apple_no_email'     => 'Apple did not share an email address for this Apple ID, so it cannot be matched to your intergroup record.',
+        ];
+
+        return new WP_Error(
+            'reach_' . $slug,
+            $messages[$slug] ?? 'Sign-in failed.',
+            ['status' => 403],
+        );
     }
 
     /**

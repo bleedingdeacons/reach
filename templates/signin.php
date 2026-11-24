@@ -16,7 +16,8 @@ if (!defined('ABSPATH')) {
  * Apple's server-side flow requires a .p8-signed client secret;
  * instead the page loads Apple's JS SDK, asks Reach for a state+nonce,
  * and calls AppleID.auth.signIn() in the browser. The returned ID
- * token is POSTed back to /oauth/apple.
+ * token is POSTed back to /oauth/apple. The Apple button appears only
+ * on Apple devices.
  *
  * No tracking, no analytics, no fonts — the page is the smallest
  * possible thing that does the job. A user agent on a flaky mobile
@@ -29,7 +30,11 @@ if (!defined('ABSPATH')) {
 $reachSettings       = get_option('reach_settings', []);
 $googleConfigured    = !empty($reachSettings['client_id_google']);
 $microsoftConfigured = !empty($reachSettings['client_id_microsoft']);
-$appleConfigured     = !empty($reachSettings['client_id_apple']);
+// Apple is offered only on Apple devices (iPhone, iPad, Mac), where the
+// Apple ID is already signed in; see \Reach\Auth\AppleDevice. Everywhere
+// else neither the button nor Apple's SDK is sent.
+$appleConfigured     = !empty($reachSettings['client_id_apple'])
+    && \Reach\Auth\AppleDevice::isCurrentRequest();
 $facebookConfigured  = !empty($reachSettings['client_id_facebook']);
 $appleClientId       = $reachSettings['client_id_apple'] ?? '';
 
@@ -68,6 +73,17 @@ if ($reachErrorCode !== '') {
         'signin_failed' => [
             'title' => 'Sign-in didn’t complete',
             'body'  => 'Something went wrong while signing you in. Please try again.',
+        ],
+        // Apple asks whether to share or hide the email only the first time
+        // someone continues with Apple, so both fixes start by removing
+        // Reach from their Apple ID, which makes Apple ask again.
+        'apple_hidden_email' => [
+            'title' => 'Hide My Email can’t be matched to your record',
+            'body'  => 'You chose Hide My Email, so we can’t tell which intergroup member you are. On your iPhone go to Settings → your name → Sign in with Apple, remove Reach, then continue with Apple again and choose Share My Email. Or sign in another way.',
+        ],
+        'apple_no_email' => [
+            'title' => 'Apple didn’t share an email address',
+            'body'  => 'We need your email once to match your Apple ID to your intergroup record. On your iPhone go to Settings → your name → Sign in with Apple, remove Reach, then continue with Apple again and choose Share My Email. Or sign in another way.',
         ],
     ];
     $reachNotice = $reachNotices[$reachErrorCode] ?? [
@@ -174,7 +190,7 @@ $reachBlocking = $reachNotice !== null && $reachErrorCode === 'not_eligible';
                     <svg class="reach-btn__icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24">
                         <path fill="currentColor" d="M17.05 12.04c-.03-2.85 2.32-4.21 2.42-4.27-1.32-1.93-3.38-2.2-4.11-2.23-1.75-.18-3.42 1.03-4.31 1.03-.89 0-2.27-1.01-3.74-.98-1.92.03-3.7 1.12-4.69 2.84-2 3.47-.51 8.59 1.44 11.4.95 1.38 2.08 2.92 3.57 2.86 1.43-.06 1.97-.93 3.7-.93s2.22.93 3.74.9c1.54-.03 2.52-1.4 3.46-2.78 1.09-1.6 1.54-3.15 1.56-3.23-.03-.01-2.99-1.15-3.04-4.55zM14.21 4.04c.79-.96 1.32-2.29 1.17-3.61-1.13.05-2.5.75-3.32 1.71-.73.85-1.37 2.21-1.2 3.51 1.26.1 2.55-.64 3.35-1.61z"/>
                     </svg>
-                    <span>Sign in with Apple</span>
+                    <span>Continue with Apple</span>
                 </button>
             <?php endif; ?>
 
